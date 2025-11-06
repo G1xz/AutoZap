@@ -115,7 +115,7 @@ function FlowCanvasWrapper({
 export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorProps) {
   const router = useRouter()
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
-  const [edges, setEdges, onEdgesChange] = useEdgesState([])
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [workflowName, setWorkflowName] = useState('')
   const [workflowTrigger, setWorkflowTrigger] = useState('')
   const [workflowDescription, setWorkflowDescription] = useState('')
