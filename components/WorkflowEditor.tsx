@@ -27,12 +27,12 @@ import ConditionNode from './nodes/ConditionNode'
 import TriggerNode from './nodes/TriggerNode'
 
 const nodeTypes: NodeTypes = {
-  trigger: TriggerNode,
-  message: MessageNode,
-  wait: WaitNode,
-  questionnaire: QuestionnaireNode,
-  ai: AINode,
-  condition: ConditionNode,
+  trigger: TriggerNode as any,
+  message: MessageNode as any,
+  wait: WaitNode as any,
+  questionnaire: QuestionnaireNode as any,
+  ai: AINode as any,
+  condition: ConditionNode as any,
 }
 
 interface WorkflowEditorProps {
