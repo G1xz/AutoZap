@@ -64,13 +64,15 @@ function FlowCanvasWrapper({
 }) {
   const { screenToFlowPosition } = useReactFlow()
 
-  const handlePaneContextMenu = (event: React.MouseEvent) => {
+  const handlePaneContextMenu = (event: MouseEvent | React.MouseEvent) => {
     event.preventDefault()
+    const clientX = 'clientX' in event ? event.clientX : (event as MouseEvent).clientX
+    const clientY = 'clientY' in event ? event.clientY : (event as MouseEvent).clientY
     const position = screenToFlowPosition({
-      x: event.clientX,
-      y: event.clientY,
+      x: clientX,
+      y: clientY,
     })
-    onPaneContextMenu(event, position)
+    onPaneContextMenu(event as React.MouseEvent, position)
   }
 
   // Expõe função para obter posição central do viewport
@@ -209,7 +211,7 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
     }
   }
 
-  const handlePaneContextMenu = (event: React.MouseEvent, position: { x: number; y: number }) => {
+  const handlePaneContextMenu = (event: MouseEvent | React.MouseEvent, position: { x: number; y: number }) => {
     event.preventDefault()
     // Salva posição do canvas para criar o nó (onde o usuário clicou)
     setCanvasNodePosition(position)
