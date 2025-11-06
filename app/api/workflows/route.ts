@@ -1,0 +1,196 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
+import { prisma } from '@/lib/prisma'
+import { z } from 'zod'
+
+const workflowSchema = z.object({
+  name: z.string().min(1),
+  description: z.string().optional(),
+  trigger: z.string().min(1),
+  isActive: z.boolean().optional(),
+  instanceId: z.string().nullable().optional(),
+  nodes: z.array(
+    z.object({
+      id: z.string(),
+      type: z.string(),
+      positionX: z.number(),
+      positionY: z.number(),
+      data: z.string(), // JSON stringificado
+    })
+  ),
+  edges: z.array(
+    z.object({
+      sourceNodeId: z.string(),
+      targetNodeId: z.string(),
+      sourceHandle: z.string().nullable().optional(),
+      targetHandle: z.string().nullable().optional(),
+    })
+  ),
+})
+
+export async function GET(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+    }
+
+    const workflows = await prisma.workflow.findMany({
+      where: { userId: session.user.id },
+      include: {
+        nodes: {
+          orderBy: { createdAt: 'asc' },
+        },
+        instance: {
+          select: {
+            id: true,
+            name: true,
+            status: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    })
+
+    // Buscar conexões para cada workflow
+    const workflowsWithConnections = await Promise.all(
+      workflows.map(async (workflow) => {
+        const connections = await prisma.workflowConnection.findMany({
+          where: { workflowId: workflow.id },
+        })
+
+        return {
+          ...workflow,
+          connections,
+        }
+      })
+    )
+
+    return NextResponse.json(workflowsWithConnections)
+  } catch (error) {
+    console.error('Erro ao buscar workflows:', error)
+    return NextResponse.json(
+      { error: 'Erro ao buscar workflows' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+    }
+
+    // Verificar se prisma está disponível
+    if (!prisma || !prisma.workflow) {
+      console.error('Prisma client não está disponível:', { prisma, hasWorkflow: !!prisma?.workflow })
+      return NextResponse.json(
+        { error: 'Erro de configuração do banco de dados', details: 'Prisma client não inicializado' },
+        { status: 500 }
+      )
+    }
+
+    const body = await request.json()
+    const data = workflowSchema.parse(body)
+
+    // Verifica se instanceId pertence ao usuário (se fornecido)
+    if (data.instanceId) {
+      const instance = await prisma.whatsAppInstance.findUnique({
+        where: { id: data.instanceId },
+      })
+
+      if (!instance || instance.userId !== session.user.id) {
+        return NextResponse.json(
+          { error: 'Instância inválida' },
+          { status: 400 }
+        )
+      }
+    }
+
+    // Cria o workflow
+    const workflow = await prisma.workflow.create({
+      data: {
+        userId: session.user.id,
+        name: data.name,
+        description: data.description || null,
+        trigger: data.trigger,
+        isActive: data.isActive ?? true,
+        instanceId: data.instanceId || null,
+      },
+    })
+
+    // Cria os nós e mapeia IDs antigos para novos IDs do banco
+    const nodeIdMap = new Map<string, string>() // Mapeia ID temporário -> ID do banco
+    const nodes = await Promise.all(
+      data.nodes.map(async (nodeData) => {
+        const createdNode = await prisma.workflowNode.create({
+          data: {
+            workflowId: workflow.id,
+            type: nodeData.type,
+            positionX: nodeData.positionX,
+            positionY: nodeData.positionY,
+            data: nodeData.data,
+          },
+        })
+        // Mapeia o ID temporário para o ID real do banco
+        nodeIdMap.set(nodeData.id, createdNode.id)
+        return createdNode
+      })
+    )
+
+    // Cria as conexões usando os IDs mapeados do banco
+    const connections = data.edges && data.edges.length > 0
+      ? await Promise.all(
+          data.edges.map((edgeData) => {
+            const sourceNodeId = nodeIdMap.get(edgeData.sourceNodeId)
+            const targetNodeId = nodeIdMap.get(edgeData.targetNodeId)
+            
+            // Verifica se os IDs foram mapeados corretamente
+            if (!sourceNodeId || !targetNodeId) {
+              throw new Error(`Nó não encontrado para conexão: source=${edgeData.sourceNodeId}, target=${edgeData.targetNodeId}`)
+            }
+            
+            return prisma.workflowConnection.create({
+              data: {
+                workflowId: workflow.id,
+                sourceNodeId: sourceNodeId,
+                targetNodeId: targetNodeId,
+                sourceHandle: edgeData.sourceHandle || null,
+                targetHandle: edgeData.targetHandle || null,
+              },
+            })
+          })
+        )
+      : []
+
+    return NextResponse.json(
+      {
+        ...workflow,
+        nodes,
+        connections,
+      },
+      { status: 201 }
+    )
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return NextResponse.json(
+        { error: 'Dados inválidos', details: error.errors },
+        { status: 400 }
+      )
+    }
+
+    console.error('Erro ao criar workflow:', error)
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido'
+    return NextResponse.json(
+      { 
+        error: 'Erro ao criar workflow',
+        details: errorMessage 
+      },
+      { status: 500 }
+    )
+  }
+}
+

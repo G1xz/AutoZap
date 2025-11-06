@@ -1,0 +1,120 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* Estilo para o ReactFlow em tema dark */
+.react-flow {
+  background-color: #212121;
+}
+
+.react-flow__node {
+  background-color: transparent !important;
+  overflow: visible !important;
+}
+
+.react-flow__node-selected {
+  border-color: #3BBD4E !important;
+}
+
+/* Garantir que o wrapper interno do nó tenha border-radius mas permita handles visíveis */
+.react-flow__node > div {
+  border-radius: 8px !important;
+  overflow: visible !important;
+  position: relative !important;
+}
+
+.react-flow__node-default {
+  background-color: transparent !important;
+  overflow: visible !important;
+}
+
+.react-flow__node-default > div {
+  border-radius: 8px !important;
+  overflow: visible !important;
+  position: relative !important;
+}
+
+.react-flow__edge-path {
+  stroke: #616161;
+  stroke-width: 3px;
+  stroke-dasharray: 5 5;
+}
+
+/* Estilos padrão para handles customizados */
+.react-flow__handle {
+  pointer-events: all !important;
+  z-index: 10 !important;
+  background-color: #616161 !important;
+  border: 1.5px solid #212121 !important;
+  border-radius: 50% !important;
+  width: 10px !important;
+  height: 10px !important;
+}
+
+.react-flow__handle-top,
+.react-flow__handle-bottom,
+.react-flow__handle-left,
+.react-flow__handle-right {
+  background-color: #616161 !important;
+  border: 1.5px solid #212121 !important;
+  border-radius: 50% !important;
+  width: 10px !important;
+  height: 10px !important;
+}
+
+.react-flow__handle:hover {
+  background-color: #3BBD4E !important;
+  border-color: #3BBD4E !important;
+}
+
+.react-flow__controls {
+  background-color: #212121;
+  border: 1px solid #616161;
+}
+
+.react-flow__controls button {
+  background-color: #212121;
+  border-bottom: 1px solid #616161;
+  color: #ffffff;
+}
+
+.react-flow__controls button:hover {
+  background-color: #616161;
+}
+
+.react-flow__minimap {
+  background-color: #212121;
+  border: 1px solid #616161;
+}
+
+.react-flow__background {
+  background-color: #212121;
+}
+
+.react-flow__background-pattern {
+  opacity: 0.1;
+}

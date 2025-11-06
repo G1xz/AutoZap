@@ -1,0 +1,40 @@
+[1103/233708.618:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Feature xr-spatial-tracking's parameters are ignored.", source:  (0)
+[1103/233708.618:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'attribution-reporting'.", source:  (0)
+[1103/233708.618:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'compute-pressure'.", source:  (0)
+[1103/233708.618:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'interest-cohort'.", source:  (0)
+[1103/233708.618:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'private-state-token-issuance'.", source:  (0)
+[1103/233708.619:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'shared-storage'.", source:  (0)
+[1103/233708.619:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'shared-storage-select-url'.", source:  (0)
+[1103/233708.619:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'private-state-token-redemption'.", source:  (0)
+[1103/233708.619:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'unload'.", source:  (0)
+[1103/233708.619:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'window-management'.", source:  (0)
+[1103/233708.619:INFO:CONSOLE(0)] "Document-Policy HTTP header: Unrecognized document policy feature name include-js-call-stacks-in-crash-reports.", source: https://web.whatsapp.com/ (0)
+[1103/233710.679:INFO:CONSOLE(113)] "Event handler of 'x-storagemutated-1' event must be added on the initial evaluation of worker script.", source: https://static.whatsapp.net/rsrc.php/v4/yl/r/79TvLI_DhpW.js (113)
+[1103/233835.330:INFO:CONSOLE(77)] "ErrorUtils caught an error:
+
+Unexpected null or undefined: [useCollectionValues] Expected model to be present in collection
+
+Subsequent non-fatal errors won't be logged; see https://fburl.com/debugjs. [object Object]", source: https://static.whatsapp.net/rsrc.php/v4/ys/r/AwwRUFrg7qy.js (77)
+[1103/233912.260:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Feature xr-spatial-tracking's parameters are ignored.", source:  (0)
+[1103/233912.260:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'attribution-reporting'.", source:  (0)
+[1103/233912.260:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'compute-pressure'.", source:  (0)
+[1103/233912.260:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'interest-cohort'.", source:  (0)
+[1103/233912.260:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'private-state-token-issuance'.", source:  (0)
+[1103/233912.260:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Origin trial controlled feature not enabled: 'shared-storage'.", source:  (0)
+[1103/233912.260:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'shared-storage-select-url'.", source:  (0)
+[1103/233912.261:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'private-state-token-redemption'.", source:  (0)
+[1103/233912.261:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'unload'.", source:  (0)
+[1103/233912.261:INFO:CONSOLE(0)] "Error with Permissions-Policy header: Unrecognized feature: 'window-management'.", source:  (0)
+[1103/233912.261:INFO:CONSOLE(0)] "Document-Policy HTTP header: Unrecognized document policy feature name include-js-call-stacks-in-crash-reports.", source: https://web.whatsapp.com/?logout_reason=1 (0)
+[1103/233912.302:ERROR:entry_impl.cc(1072)] No file for 8000000a
+[1103/233912.303:ERROR:entry_impl.cc(1072)] No file for 80000008
+[1103/233912.306:ERROR:entry_impl.cc(1072)] No file for 80000006
+[1103/233912.310:ERROR:entry_impl.cc(1072)] No file for 80000009
+[1103/233912.310:ERROR:entry_impl.cc(1072)] No file for 80000005
+[1103/233912.574:ERROR:entry_impl.cc(1072)] No file for 80000013
+[1103/233912.575:ERROR:entry_impl.cc(1072)] No file for 8000000f
+[1103/233912.575:ERROR:entry_impl.cc(1072)] No file for 8000000b
+[1103/233912.576:ERROR:entry_impl.cc(1072)] No file for 80000010
+[1103/233912.576:ERROR:entry_impl.cc(1072)] No file for 8000000c
+[1103/233912.578:ERROR:entry_impl.cc(1072)] No file for 80000011
+[1103/233912.578:ERROR:entry_impl.cc(1072)] No file for 8000000e
