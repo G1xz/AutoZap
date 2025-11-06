@@ -10,7 +10,8 @@ interface QuestionnaireNodeData {
   options: Array<{ id: string; label: string; nextNodeId?: string }>
 }
 
-export default function QuestionnaireNode({ data, selected }: NodeProps<QuestionnaireNodeData>) {
+export default function QuestionnaireNode(props: NodeProps<QuestionnaireNodeData>) {
+  const { data, selected } = props
   const [isEditing, setIsEditing] = useState(false)
   const [question, setQuestion] = useState(data.question || '')
   const [options, setOptions] = useState(data.options || [{ id: '1', label: '' }])

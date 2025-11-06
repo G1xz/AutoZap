@@ -10,7 +10,8 @@ interface WaitNodeData {
   unit: 'seconds' | 'minutes' | 'hours'
 }
 
-export default function WaitNode({ data, selected }: NodeProps<WaitNodeData>) {
+export default function WaitNode(props: NodeProps<WaitNodeData>) {
+  const { data, selected } = props
   const [isEditing, setIsEditing] = useState(false)
   const [duration, setDuration] = useState(data.duration || 60)
   const [unit, setUnit] = useState(data.unit || 'seconds')

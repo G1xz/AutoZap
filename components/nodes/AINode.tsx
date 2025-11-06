@@ -12,7 +12,8 @@ interface AINodeData {
   maxTokens?: number
 }
 
-export default function AINode({ data, selected }: NodeProps<AINodeData>) {
+export default function AINode(props: NodeProps<AINodeData>) {
+  const { data, selected } = props
   const [isEditing, setIsEditing] = useState(false)
   const [prompt, setPrompt] = useState(data.prompt || '')
   const [systemPrompt, setSystemPrompt] = useState(data.systemPrompt || '')

@@ -11,7 +11,8 @@ interface ConditionNodeData {
   falseLabel?: string
 }
 
-export default function ConditionNode({ data, selected }: NodeProps<ConditionNodeData>) {
+export default function ConditionNode(props: NodeProps<ConditionNodeData>) {
+  const { data, selected } = props
   const [isEditing, setIsEditing] = useState(false)
   const [condition, setCondition] = useState(data.condition || '')
   const [trueLabel, setTrueLabel] = useState(data.trueLabel || 'Sim')
