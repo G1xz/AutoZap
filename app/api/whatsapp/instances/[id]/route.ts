@@ -28,10 +28,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Não autorizado' }, { status: 403 })
     }
 
-    // Desconecta o cliente antes de deletar
-    const { disconnectClient } = await import('@/lib/whatsapp')
-    await disconnectClient(params.id)
-
+    // Com WhatsApp Cloud API não há conexão persistente para desconectar
+    // Apenas deleta a instância do banco
     await prisma.whatsAppInstance.delete({
       where: { id: params.id },
     })
