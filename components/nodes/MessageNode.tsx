@@ -14,7 +14,7 @@ interface MessageNodeData {
 
 export default function MessageNode(props: NodeProps) {
   const { data, selected } = props
-  const nodeData = data as MessageNodeData
+  const nodeData = data as unknown as MessageNodeData
   const [isEditing, setIsEditing] = useState(false)
   const [message, setMessage] = useState(nodeData.message || '')
   const [fileUrl, setFileUrl] = useState(nodeData.fileUrl || '')

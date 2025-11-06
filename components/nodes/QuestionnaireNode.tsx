@@ -12,7 +12,7 @@ interface QuestionnaireNodeData {
 
 export default function QuestionnaireNode(props: NodeProps) {
   const { data, selected } = props
-  const nodeData = data as QuestionnaireNodeData
+  const nodeData = data as unknown as QuestionnaireNodeData
   const [isEditing, setIsEditing] = useState(false)
   const [question, setQuestion] = useState(nodeData.question || '')
   const [options, setOptions] = useState(nodeData.options || [{ id: '1', label: '' }])

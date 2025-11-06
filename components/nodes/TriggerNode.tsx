@@ -11,7 +11,7 @@ interface TriggerNodeData {
 
 export default function TriggerNode(props: NodeProps) {
   const { data, selected } = props
-  const nodeData = data as TriggerNodeData
+  const nodeData = data as unknown as TriggerNodeData
   const [isEditing, setIsEditing] = useState(false)
   const [trigger, setTrigger] = useState(nodeData.trigger || '')
   const inputRef = useRef<HTMLInputElement>(null)

@@ -13,7 +13,7 @@ interface ConditionNodeData {
 
 export default function ConditionNode(props: NodeProps) {
   const { data, selected } = props
-  const nodeData = data as ConditionNodeData
+  const nodeData = data as unknown as ConditionNodeData
   const [isEditing, setIsEditing] = useState(false)
   const [condition, setCondition] = useState(nodeData.condition || '')
   const [trueLabel, setTrueLabel] = useState(nodeData.trueLabel || 'Sim')

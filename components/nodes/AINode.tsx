@@ -14,7 +14,7 @@ interface AINodeData {
 
 export default function AINode(props: NodeProps) {
   const { data, selected } = props
-  const nodeData = data as AINodeData
+  const nodeData = data as unknown as AINodeData
   const [isEditing, setIsEditing] = useState(false)
   const [prompt, setPrompt] = useState(nodeData.prompt || '')
   const [systemPrompt, setSystemPrompt] = useState(nodeData.systemPrompt || '')
