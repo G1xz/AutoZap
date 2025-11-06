@@ -115,9 +115,10 @@ export async function executeWorkflows(
 
         // Busca informações do contato (nome, etc)
         // Usa o nome do webhook se disponível, senão tenta buscar da API
-        let contactName = message.contactName
+        let contactName = message.contactName || undefined
         if (!contactName) {
-          contactName = await getUserProfileName(instanceId, contactNumber)
+          const profileName = await getUserProfileName(instanceId, contactNumber)
+          contactName = profileName || undefined
         }
         
         const formattedPhone = contactNumber.replace(/\D/g, '')
