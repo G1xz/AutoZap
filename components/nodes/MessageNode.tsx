@@ -12,7 +12,7 @@ interface MessageNodeData {
   fileType?: 'image' | 'video' | 'document'
 }
 
-export default function MessageNode(props: NodeProps<MessageNodeData>) {
+export default function MessageNode(props: NodeProps) {
   const { data, selected } = props
   const [isEditing, setIsEditing] = useState(false)
   const [message, setMessage] = useState(data.message || '')

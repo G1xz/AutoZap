@@ -9,7 +9,7 @@ interface TriggerNodeData {
   trigger: string
 }
 
-export default function TriggerNode(props: NodeProps<TriggerNodeData>) {
+export default function TriggerNode(props: NodeProps) {
   const { data, selected } = props
   const [isEditing, setIsEditing] = useState(false)
   const [trigger, setTrigger] = useState(data.trigger || '')
