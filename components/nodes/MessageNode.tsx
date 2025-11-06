@@ -14,11 +14,12 @@ interface MessageNodeData {
 
 export default function MessageNode(props: NodeProps) {
   const { data, selected } = props
+  const nodeData = data as MessageNodeData
   const [isEditing, setIsEditing] = useState(false)
-  const [message, setMessage] = useState(data.message || '')
-  const [fileUrl, setFileUrl] = useState(data.fileUrl || '')
-  const [fileName, setFileName] = useState(data.fileName || '')
-  const [fileType, setFileType] = useState(data.fileType || 'image')
+  const [message, setMessage] = useState(nodeData.message || '')
+  const [fileUrl, setFileUrl] = useState(nodeData.fileUrl || '')
+  const [fileName, setFileName] = useState(nodeData.fileName || '')
+  const [fileType, setFileType] = useState(nodeData.fileType || 'image')
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -76,9 +77,9 @@ export default function MessageNode(props: NodeProps) {
         }
 
         // Atualiza os dados do nó
-        data.fileUrl = result.url
-        data.fileName = file.name
-        data.fileType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'document'
+        nodeData.fileUrl = result.url
+        nodeData.fileName = file.name
+        nodeData.fileType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'document'
       } else {
         alert('Erro ao fazer upload do arquivo')
       }
@@ -91,10 +92,10 @@ export default function MessageNode(props: NodeProps) {
   }
 
   const handleSave = () => {
-    data.message = message
-    data.fileUrl = fileUrl
-    data.fileName = fileName
-    data.fileType = fileType
+    nodeData.message = message
+    nodeData.fileUrl = fileUrl
+    nodeData.fileName = fileName
+    nodeData.fileType = fileType
     setIsEditing(false)
   }
 
@@ -102,9 +103,9 @@ export default function MessageNode(props: NodeProps) {
     setFileUrl('')
     setFileName('')
     setFileType('image')
-    data.fileUrl = undefined
-    data.fileName = undefined
-    data.fileType = undefined
+    nodeData.fileUrl = undefined
+    nodeData.fileName = undefined
+    nodeData.fileType = undefined
   }
 
   return (
@@ -119,7 +120,7 @@ export default function MessageNode(props: NodeProps) {
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">💬</span>
         <div className="flex-1">
-          <div className="font-semibold text-sm text-autozap-white">{data.label}</div>
+          <div className="font-semibold text-sm text-autozap-white">{nodeData.label}</div>
         </div>
       </div>
 

@@ -13,15 +13,16 @@ interface ConditionNodeData {
 
 export default function ConditionNode(props: NodeProps) {
   const { data, selected } = props
+  const nodeData = data as ConditionNodeData
   const [isEditing, setIsEditing] = useState(false)
-  const [condition, setCondition] = useState(data.condition || '')
-  const [trueLabel, setTrueLabel] = useState(data.trueLabel || 'Sim')
-  const [falseLabel, setFalseLabel] = useState(data.falseLabel || 'Não')
+  const [condition, setCondition] = useState(nodeData.condition || '')
+  const [trueLabel, setTrueLabel] = useState(nodeData.trueLabel || 'Sim')
+  const [falseLabel, setFalseLabel] = useState(nodeData.falseLabel || 'Não')
 
   const handleSave = () => {
-    data.condition = condition
-    data.trueLabel = trueLabel
-    data.falseLabel = falseLabel
+    nodeData.condition = condition
+    nodeData.trueLabel = trueLabel
+    nodeData.falseLabel = falseLabel
     setIsEditing(false)
   }
 
@@ -37,7 +38,7 @@ export default function ConditionNode(props: NodeProps) {
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">🔀</span>
         <div className="flex-1">
-          <div className="font-semibold text-sm text-autozap-white">{data.label}</div>
+          <div className="font-semibold text-sm text-autozap-white">{nodeData.label}</div>
         </div>
       </div>
 

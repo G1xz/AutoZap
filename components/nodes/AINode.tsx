@@ -14,17 +14,18 @@ interface AINodeData {
 
 export default function AINode(props: NodeProps) {
   const { data, selected } = props
+  const nodeData = data as AINodeData
   const [isEditing, setIsEditing] = useState(false)
-  const [prompt, setPrompt] = useState(data.prompt || '')
-  const [systemPrompt, setSystemPrompt] = useState(data.systemPrompt || '')
-  const [temperature, setTemperature] = useState(data.temperature ?? 0.7)
-  const [maxTokens, setMaxTokens] = useState(data.maxTokens ?? 500)
+  const [prompt, setPrompt] = useState(nodeData.prompt || '')
+  const [systemPrompt, setSystemPrompt] = useState(nodeData.systemPrompt || '')
+  const [temperature, setTemperature] = useState(nodeData.temperature ?? 0.7)
+  const [maxTokens, setMaxTokens] = useState(nodeData.maxTokens ?? 500)
 
   const handleSave = () => {
-    data.prompt = prompt
-    data.systemPrompt = systemPrompt
-    data.temperature = temperature
-    data.maxTokens = maxTokens
+    nodeData.prompt = prompt
+    nodeData.systemPrompt = systemPrompt
+    nodeData.temperature = temperature
+    nodeData.maxTokens = maxTokens
     setIsEditing(false)
   }
 
@@ -40,7 +41,7 @@ export default function AINode(props: NodeProps) {
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">🤖</span>
         <div className="flex-1">
-          <div className="font-semibold text-sm text-autozap-white">{data.label}</div>
+          <div className="font-semibold text-sm text-autozap-white">{nodeData.label}</div>
         </div>
       </div>
 

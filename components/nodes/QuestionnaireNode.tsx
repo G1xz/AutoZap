@@ -12,9 +12,10 @@ interface QuestionnaireNodeData {
 
 export default function QuestionnaireNode(props: NodeProps) {
   const { data, selected } = props
+  const nodeData = data as QuestionnaireNodeData
   const [isEditing, setIsEditing] = useState(false)
-  const [question, setQuestion] = useState(data.question || '')
-  const [options, setOptions] = useState(data.options || [{ id: '1', label: '' }])
+  const [question, setQuestion] = useState(nodeData.question || '')
+  const [options, setOptions] = useState(nodeData.options || [{ id: '1', label: '' }])
   const questionTextareaRef = useRef<HTMLTextAreaElement>(null)
   const optionInputRefs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -102,7 +103,7 @@ export default function QuestionnaireNode(props: NodeProps) {
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">❓</span>
         <div className="flex-1">
-          <div className="font-semibold text-sm text-autozap-white">{data.label}</div>
+          <div className="font-semibold text-sm text-autozap-white">{nodeData.label}</div>
         </div>
       </div>
 

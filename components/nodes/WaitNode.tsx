@@ -12,13 +12,14 @@ interface WaitNodeData {
 
 export default function WaitNode(props: NodeProps) {
   const { data, selected } = props
+  const nodeData = data as WaitNodeData
   const [isEditing, setIsEditing] = useState(false)
-  const [duration, setDuration] = useState(data.duration || 60)
-  const [unit, setUnit] = useState(data.unit || 'seconds')
+  const [duration, setDuration] = useState(nodeData.duration || 60)
+  const [unit, setUnit] = useState(nodeData.unit || 'seconds')
 
   const handleSave = () => {
-    data.duration = duration
-    data.unit = unit
+    nodeData.duration = duration
+    nodeData.unit = unit
     setIsEditing(false)
   }
 
@@ -39,7 +40,7 @@ export default function WaitNode(props: NodeProps) {
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">⏱️</span>
         <div className="flex-1">
-          <div className="font-semibold text-sm text-autozap-white">{data.label}</div>
+          <div className="font-semibold text-sm text-autozap-white">{nodeData.label}</div>
         </div>
       </div>
 

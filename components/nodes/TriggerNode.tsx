@@ -11,8 +11,9 @@ interface TriggerNodeData {
 
 export default function TriggerNode(props: NodeProps) {
   const { data, selected } = props
+  const nodeData = data as TriggerNodeData
   const [isEditing, setIsEditing] = useState(false)
-  const [trigger, setTrigger] = useState(data.trigger || '')
+  const [trigger, setTrigger] = useState(nodeData.trigger || '')
   const inputRef = useRef<HTMLInputElement>(null)
 
   const insertVariable = (variable: string) => {
@@ -38,7 +39,7 @@ export default function TriggerNode(props: NodeProps) {
   }
 
   const handleSave = () => {
-    data.trigger = trigger
+    nodeData.trigger = trigger
     setIsEditing(false)
   }
 
@@ -52,7 +53,7 @@ export default function TriggerNode(props: NodeProps) {
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">🚀</span>
         <div className="flex-1">
-          <div className="font-semibold text-sm text-autozap-white">{data.label}</div>
+          <div className="font-semibold text-sm text-autozap-white">{nodeData.label}</div>
         </div>
       </div>
 
