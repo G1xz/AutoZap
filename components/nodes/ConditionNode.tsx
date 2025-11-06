@@ -100,8 +100,8 @@ export default function ConditionNode(props: NodeProps) {
         </div>
       )}
 
-      <CustomHandle type="source" position={Position.Bottom} id="true" label={trueLabel} />
-      <CustomHandle type="source" position={Position.Bottom} id="false" label={falseLabel} style={{ left: 'auto', right: 10 }} />
+      <CustomHandle type="source" position={Position.Bottom} id="true" />
+      <CustomHandle type="source" position={Position.Bottom} id="false" style={{ left: 'auto', right: 10 }} />
     </div>
   )
 }
