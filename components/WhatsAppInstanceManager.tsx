@@ -350,18 +350,26 @@ export default function WhatsAppInstanceManager() {
                     
                     <div className="space-y-2">
                       <div>
-                        <p className="text-xs text-autozap-gray-medium mb-1">1️⃣ URL do Webhook (use se estiver usando localtunnel):</p>
+                        <p className="text-xs text-autozap-gray-medium mb-1">1️⃣ URL do Webhook:</p>
                         <div className="flex gap-2 items-center">
                           <code className="flex-1 text-xs text-autozap-white break-all bg-autozap-gray-dark px-2 py-1 rounded">
-                            {localtunnelUrl ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}` : 'Configure a URL do localtunnel acima'}
+                            {typeof window !== 'undefined' 
+                              ? `${window.location.origin}/api/whatsapp/webhook?instanceId=${instance.id}`
+                              : localtunnelUrl 
+                                ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}`
+                                : 'Carregando...'}
                           </code>
                           <button
                             onClick={() => {
-                              const url = localtunnelUrl ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}` : ''
+                              const url = typeof window !== 'undefined'
+                                ? `${window.location.origin}/api/whatsapp/webhook?instanceId=${instance.id}`
+                                : localtunnelUrl
+                                  ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}`
+                                  : ''
                               if (url) {
                                 copyToClipboard(url)
                               } else {
-                                alert('Configure a URL do localtunnel primeiro!')
+                                alert('Configure a URL primeiro!')
                               }
                             }}
                             className="px-3 py-1 bg-autozap-primary text-white rounded text-xs hover:bg-autozap-light transition-colors whitespace-nowrap"
@@ -369,6 +377,11 @@ export default function WhatsAppInstanceManager() {
                             Copiar URL
                           </button>
                         </div>
+                        <p className="text-xs text-autozap-gray-medium mt-1">
+                          {typeof window !== 'undefined' && window.location.hostname !== 'localhost'
+                            ? '✨ URL automática da Vercel (produção)'
+                            : 'Em desenvolvimento: configure o localtunnel acima ou use em produção'}
+                        </p>
                       </div>
 
                       <div>
@@ -401,9 +414,13 @@ export default function WhatsAppInstanceManager() {
                         <button
                           onClick={async () => {
                             // Copia URL primeiro
-                            const url = localtunnelUrl ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}` : ''
+                            const url = typeof window !== 'undefined'
+                              ? `${window.location.origin}/api/whatsapp/webhook?instanceId=${instance.id}`
+                              : localtunnelUrl
+                                ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}`
+                                : ''
                             if (!url) {
-                              alert('Configure a URL do localtunnel primeiro!')
+                              alert('Configure a URL primeiro!')
                               return
                             }
                             await copyToClipboard(url)

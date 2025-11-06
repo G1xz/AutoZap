@@ -1,6 +1,6 @@
 import { prisma } from './prisma'
 import { executeWorkflows, WhatsAppMessage } from './workflow-executor'
-import { getLocaltunnelUrl } from './localtunnel'
+import { getBaseUrl } from './localtunnel'
 
 export type { WhatsAppMessage }
 
@@ -205,12 +205,8 @@ export async function sendWhatsAppImage(
     // Converte URL relativa para absoluta
     let absoluteUrl = imageUrl
     if (imageUrl.startsWith('/')) {
-      // Busca URL do localtunnel do usuário
-      const tunnelUrl = getLocaltunnelUrl(instance.userId)
-      const baseUrl = tunnelUrl || 
-                     process.env.NEXT_PUBLIC_BASE_URL || 
-                     process.env.VERCEL_URL || 
-                     'http://localhost:3000'
+      // Usa URL automática (Vercel em produção, localtunnel em dev)
+      const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${imageUrl}`
       console.log(`📸 Enviando imagem: ${absoluteUrl}`)
     }
@@ -281,11 +277,7 @@ export async function sendWhatsAppVideo(
 
     let absoluteUrl = videoUrl
     if (videoUrl.startsWith('/')) {
-      const tunnelUrl = getLocaltunnelUrl(instance.userId)
-      const baseUrl = tunnelUrl || 
-                     process.env.NEXT_PUBLIC_BASE_URL || 
-                     process.env.VERCEL_URL || 
-                     'http://localhost:3000'
+      const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${videoUrl}`
     }
 
@@ -353,11 +345,7 @@ export async function sendWhatsAppDocument(
 
     let absoluteUrl = documentUrl
     if (documentUrl.startsWith('/')) {
-      const tunnelUrl = getLocaltunnelUrl(instance.userId)
-      const baseUrl = tunnelUrl || 
-                     process.env.NEXT_PUBLIC_BASE_URL || 
-                     process.env.VERCEL_URL || 
-                     'http://localhost:3000'
+      const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${documentUrl}`
     }
 
