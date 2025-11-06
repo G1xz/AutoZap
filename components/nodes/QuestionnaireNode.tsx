@@ -65,8 +65,8 @@ export default function QuestionnaireNode(props: NodeProps) {
   }
 
   const handleSave = () => {
-    data.question = question
-    data.options = options.filter((opt) => opt.label.trim())
+    nodeData.question = question
+    nodeData.options = options.filter((opt) => opt.label.trim())
     setIsEditing(false)
   }
 
