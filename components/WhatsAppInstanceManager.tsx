@@ -10,6 +10,7 @@ interface WhatsAppInstance {
   phone: string | null
   phoneId: string | null
   status: string
+  webhookVerifyToken: string | null
   createdAt: string
 }
 
