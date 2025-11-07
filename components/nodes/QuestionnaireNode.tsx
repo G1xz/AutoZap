@@ -93,9 +93,9 @@ export default function QuestionnaireNode(props: NodeProps) {
 
   return (
     <div
-      className={`px-4 py-3 shadow-lg rounded-lg bg-autozap-gray-dark border-2 ${
-        selected ? 'border-autozap-primary' : 'border-autozap-gray-medium'
-      } min-w-[250px] relative`}
+      className={`px-4 py-3 shadow-lg rounded-lg bg-white border-2 ${
+        selected ? 'border-autozap-primary' : 'border-gray-300'
+      } min-w-[220px] w-[220px] relative`}
       style={{ borderRadius: '8px', overflow: 'visible', position: 'relative' }}
     >
       <CustomHandle type="target" position={Position.Top} />
@@ -103,13 +103,13 @@ export default function QuestionnaireNode(props: NodeProps) {
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">❓</span>
         <div className="flex-1">
-          <div className="font-semibold text-sm text-autozap-white">{nodeData.label}</div>
+          <div className="font-semibold text-sm text-gray-900">{nodeData.label}</div>
         </div>
       </div>
 
         {isEditing ? (
           <div className="space-y-2">
-            <div className="text-xs text-autozap-gray-medium bg-autozap-gray-medium/20 p-2 rounded">
+            <div className="text-xs text-gray-600 bg-gray-100 p-2 rounded">
               <strong>Variáveis:</strong> Clique para inserir
             </div>
             <div className="flex flex-wrap gap-1">
@@ -138,10 +138,10 @@ export default function QuestionnaireNode(props: NodeProps) {
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder="Digite a pergunta... Use {{nome}} para personalizar!"
-              className="nodrag w-full text-xs border border-autozap-gray-medium rounded p-2 bg-autozap-gray-dark text-autozap-white placeholder-autozap-gray-medium"
+              className="nodrag w-full text-xs border border-gray-300 rounded p-2 bg-white text-gray-900 placeholder-gray-400"
               rows={2}
             />
-          <div className="text-xs font-semibold text-autozap-white">Opções:</div>
+          <div className="text-xs font-semibold text-gray-900">Opções:</div>
           {options.map((option, index) => {
             const filteredOptions = options.filter((opt) => opt.label.trim())
             const filteredIndex = filteredOptions.findIndex((opt) => opt.id === option.id)
@@ -179,7 +179,7 @@ export default function QuestionnaireNode(props: NodeProps) {
                     value={option.label}
                     onChange={(e) => updateOption(option.id, e.target.value)}
                     placeholder="Opção..."
-                    className="nodrag flex-1 text-xs border border-autozap-gray-medium rounded p-2 bg-autozap-gray-dark text-autozap-white placeholder-autozap-gray-medium"
+                    className="nodrag flex-1 text-xs border border-gray-300 rounded p-2 bg-white text-gray-900 placeholder-gray-400"
                   />
                   {options.length > 1 && (
                     <button
@@ -204,7 +204,7 @@ export default function QuestionnaireNode(props: NodeProps) {
                     }}
                   />
                 )}
-                <div className="text-xs text-autozap-gray-medium pl-2">
+                <div className="text-xs text-gray-500 pl-2">
                   Conecte arrastando do ponto verde à direita
                 </div>
               </div>
@@ -212,7 +212,7 @@ export default function QuestionnaireNode(props: NodeProps) {
           })}
           <button
             onClick={addOption}
-            className="nodrag w-full px-2 py-1 bg-autozap-gray-medium text-white rounded text-xs hover:bg-autozap-gray-medium/80 transition-colors"
+            className="nodrag w-full px-2 py-1 bg-gray-200 text-gray-800 rounded text-xs hover:bg-gray-300 transition-colors"
           >
             + Adicionar Opção
           </button>
@@ -233,12 +233,12 @@ export default function QuestionnaireNode(props: NodeProps) {
         </div>
       ) : (
         <div className="space-y-2">
-          <div className="text-xs text-autozap-white bg-autozap-gray-medium/20 p-2 rounded">
+          <div className="text-xs text-gray-900 bg-gray-100 p-2 rounded">
             {question || 'Clique para editar...'}
           </div>
           {options.length > 0 && options[0].label && (
             <div className="space-y-1 relative">
-              <div className="text-xs font-semibold text-autozap-white mb-2">Opções (cada uma conecta a um nó diferente):</div>
+              <div className="text-xs font-semibold text-gray-900 mb-2">Opções (cada uma conecta a um nó diferente):</div>
               {options.map((option, index) => {
                 const filteredOptions = options.filter((opt) => opt.label.trim())
                 const filteredIndex = filteredOptions.findIndex((opt) => opt.id === option.id)
@@ -246,7 +246,7 @@ export default function QuestionnaireNode(props: NodeProps) {
                 
                 return (
                   <div key={option.id} className="relative pr-8">
-                    <div className="text-xs text-autozap-white bg-autozap-gray-medium/20 p-2 rounded flex items-center gap-2">
+                    <div className="text-xs text-gray-900 bg-gray-100 p-2 rounded flex items-center gap-2">
                       <div className="w-2 h-2 rounded-full bg-autozap-primary"></div>
                       <span className="flex-1">{option.label || 'Opção sem texto'}</span>
                     </div>

@@ -108,18 +108,18 @@ export default function WhatsAppInstanceManager() {
         fetchInstances()
       } else {
         const data = await response.json()
-        alert(data.error || 'Erro ao criar instância')
+        alert(data.error || 'Erro ao criar número')
       }
     } catch (error) {
-      console.error('Erro ao criar instância:', error)
-      alert('Erro ao criar instância')
+      console.error('Erro ao criar número:', error)
+      alert('Erro ao criar número')
     } finally {
       setCreating(false)
     }
   }
 
   const disconnectInstance = async (id: string) => {
-    if (!confirm('Tem certeza que deseja desconectar esta instância?')) return
+    if (!confirm('Tem certeza que deseja desconectar este número?')) return
 
     try {
       const response = await fetch(`/api/whatsapp/instances/${id}/disconnect`, {
@@ -135,7 +135,7 @@ export default function WhatsAppInstanceManager() {
   }
 
   const deleteInstance = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta instância?')) return
+    if (!confirm('Tem certeza que deseja excluir este número?')) return
 
     try {
       const response = await fetch(`/api/whatsapp/instances/${id}`, {
@@ -158,7 +158,7 @@ export default function WhatsAppInstanceManager() {
       case 'connecting':
         return 'bg-yellow-100 text-yellow-800'
       default:
-        return 'bg-autozap-gray-medium text-white'
+        return 'bg-gray-200 text-gray-800'
     }
   }
 
@@ -180,12 +180,12 @@ export default function WhatsAppInstanceManager() {
 
   return (
     <div className="space-y-6">
-      <div className="bg-autozap-gray-medium/20 border border-autozap-gray-medium rounded-lg p-4">
-        <h3 className="font-semibold text-autozap-white mb-2">
+      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <h3 className="font-semibold text-gray-900 mb-2">
           📱 WhatsApp Cloud API - Configuração
         </h3>
         <div className="mb-3">
-          <label className="block text-sm font-medium text-autozap-white mb-1">
+          <label className="block text-sm font-medium text-gray-700 mb-1">
             URL do Localtunnel (ex: https://exemplo.loca.lt):
           </label>
           <div className="flex gap-2">
@@ -203,7 +203,7 @@ export default function WhatsAppInstanceManager() {
                 }).catch(() => {}) // Ignora erros silenciosamente
               }}
               placeholder="https://exemplo.loca.lt"
-              className="flex-1 px-4 py-2 border border-autozap-gray-medium rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent bg-autozap-gray-dark text-autozap-white placeholder-autozap-gray-medium"
+              className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent bg-white text-gray-900 placeholder-gray-400"
             />
             <button
               onClick={() => {
@@ -224,19 +224,19 @@ export default function WhatsAppInstanceManager() {
               Atualizar
             </button>
           </div>
-          <p className="text-xs text-autozap-gray-medium mt-1">
+          <p className="text-xs text-gray-500 mt-1">
             Cole aqui a URL que aparece quando você roda o localtunnel
           </p>
         </div>
-        <p className="text-sm text-autozap-gray-medium">
+        <p className="text-sm text-gray-700">
           Para usar a WhatsApp Cloud API, você precisa:
         </p>
-        <ol className="list-decimal list-inside text-sm text-autozap-gray-medium mt-2 space-y-1">
+        <ol className="list-decimal list-inside text-sm text-gray-600 mt-2 space-y-1">
           <li>Criar uma conta Meta Business</li>
           <li>Criar um app no Meta for Developers</li>
           <li>Configurar WhatsApp no app</li>
           <li>Obter Phone Number ID e Access Token</li>
-          <li>Configurar o webhook nesta instância</li>
+          <li>Configurar o webhook neste número</li>
         </ol>
         <a
           href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
@@ -253,8 +253,8 @@ export default function WhatsAppInstanceManager() {
           type="text"
           value={newInstanceName}
           onChange={(e) => setNewInstanceName(e.target.value)}
-          placeholder="Nome da instância (ex: WhatsApp Principal)"
-          className="flex-1 px-4 py-2 border border-autozap-gray-medium rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent bg-autozap-gray-dark text-autozap-white placeholder-autozap-gray-medium"
+          placeholder="Nome do número (ex: WhatsApp Principal)"
+          className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent bg-white text-gray-900 placeholder-gray-400"
           required
         />
         <button
@@ -262,23 +262,23 @@ export default function WhatsAppInstanceManager() {
           disabled={creating}
           className="px-6 py-2 bg-autozap-primary text-white rounded-md hover:bg-autozap-light disabled:opacity-50 transition-colors"
         >
-          {creating ? 'Criando...' : 'Criar Instância'}
+          {creating ? 'Criando...' : 'Criar Número'}
         </button>
       </form>
 
       <div className="space-y-4">
         {instances.length === 0 ? (
-          <p className="text-center text-autozap-gray-medium py-8">
-            Nenhuma instância criada ainda. Crie uma acima para começar.
+          <p className="text-center text-gray-500 py-8">
+            Nenhum número criado ainda. Crie um acima para começar.
           </p>
         ) : (
           instances.map((instance) => (
             <div
               key={instance.id}
-              className="border border-autozap-gray-medium rounded-lg p-4 bg-autozap-gray-dark"
+              className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm"
             >
               <div className="flex items-center justify-between mb-2">
-                <h3 className="font-semibold text-lg text-autozap-white">{instance.name}</h3>
+                <h3 className="font-semibold text-lg text-gray-900">{instance.name}</h3>
                 <span
                   className={`px-2 py-1 rounded text-xs ${getStatusColor(
                     instance.status
@@ -287,12 +287,12 @@ export default function WhatsAppInstanceManager() {
                   {getStatusLabel(instance.status)}
                 </span>
               </div>
-                <div className="text-sm text-autozap-gray-medium space-y-1">
+                <div className="text-sm text-gray-600 space-y-1">
                   <p>Telefone: {instance.phone || 'Não configurado'}</p>
                   {instance.phoneId && <p>Phone ID: {instance.phoneId}</p>}
                   <div className="flex items-center gap-2 mt-2">
                     <p className="text-xs">Instance ID:</p>
-                    <code className="text-xs bg-autozap-gray-medium/50 px-2 py-1 rounded text-autozap-white">
+                    <code className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-800 border border-gray-200">
                       {instance.id}
                     </code>
                     <button
@@ -322,7 +322,10 @@ export default function WhatsAppInstanceManager() {
                     </button>
                     <button
                       onClick={() => {
-                        const url = `${window.location.origin}/api/whatsapp/webhook?instanceId=${instance.id}`
+                        const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+                        const url = isLocalhost && localtunnelUrl
+                          ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}`
+                          : `${window.location.origin}/api/whatsapp/webhook?instanceId=${instance.id}`
                         copyToClipboard(url)
                       }}
                       className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm"
@@ -345,27 +348,30 @@ export default function WhatsAppInstanceManager() {
                 </button>
               </div>
               {instance.status === 'connected' || instance.status === 'verified' ? (
-                <div className="mt-3 bg-autozap-gray-medium/20 border border-autozap-gray-medium rounded p-3 space-y-3">
+                <div className="mt-3 bg-gray-50 border border-gray-200 rounded p-3 space-y-3">
                   <div>
-                    <p className="text-sm font-semibold text-autozap-white mb-2">📋 Configuração do Webhook:</p>
+                    <p className="text-sm font-semibold text-gray-900 mb-2">📋 Configuração do Webhook:</p>
                     
                     <div className="space-y-2">
                       <div>
-                        <p className="text-xs text-autozap-gray-medium mb-1">1️⃣ URL do Webhook:</p>
+                        <p className="text-xs text-gray-600 mb-1">1️⃣ URL do Webhook:</p>
                         <div className="flex gap-2 items-center">
-                          <code className="flex-1 text-xs text-autozap-white break-all bg-autozap-gray-dark px-2 py-1 rounded">
+                          <code className="flex-1 text-xs text-gray-800 break-all bg-white px-2 py-1 rounded border border-gray-200">
                             {typeof window !== 'undefined' 
-                              ? `${window.location.origin}/api/whatsapp/webhook?instanceId=${instance.id}`
+                              ? (window.location.hostname === 'localhost' && localtunnelUrl
+                                  ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}`
+                                  : `${window.location.origin}/api/whatsapp/webhook?instanceId=${instance.id}`)
                               : localtunnelUrl 
                                 ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}`
                                 : 'Carregando...'}
                           </code>
                           <button
                             onClick={() => {
-                              const url = typeof window !== 'undefined'
-                                ? `${window.location.origin}/api/whatsapp/webhook?instanceId=${instance.id}`
-                                : localtunnelUrl
-                                  ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}`
+                              const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+                              const url = isLocalhost && localtunnelUrl
+                                ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}`
+                                : typeof window !== 'undefined'
+                                  ? `${window.location.origin}/api/whatsapp/webhook?instanceId=${instance.id}`
                                   : ''
                               if (url) {
                                 copyToClipboard(url)
@@ -378,7 +384,7 @@ export default function WhatsAppInstanceManager() {
                             Copiar URL
                           </button>
                         </div>
-                        <p className="text-xs text-autozap-gray-medium mt-1">
+                        <p className="text-xs text-gray-500 mt-1">
                           {typeof window !== 'undefined' && window.location.hostname !== 'localhost'
                             ? '✨ URL automática da Vercel (produção)'
                             : 'Em desenvolvimento: configure o localtunnel acima ou use em produção'}
@@ -386,9 +392,9 @@ export default function WhatsAppInstanceManager() {
                       </div>
 
                       <div>
-                        <p className="text-xs text-autozap-gray-medium mb-1">2️⃣ Token de Verificação:</p>
+                        <p className="text-xs text-gray-600 mb-1">2️⃣ Token de Verificação:</p>
                         <div className="flex gap-2 items-center">
-                          <code className="flex-1 text-xs text-autozap-white break-all bg-autozap-gray-dark px-2 py-1 rounded">
+                          <code className="flex-1 text-xs text-gray-800 break-all bg-white px-2 py-1 rounded border border-gray-200">
                             {instance.webhookVerifyToken || 'Não configurado'}
                           </code>
                           <button
@@ -411,14 +417,15 @@ export default function WhatsAppInstanceManager() {
                         </div>
                       </div>
 
-                      <div className="mt-3 pt-3 border-t border-autozap-gray-medium">
+                      <div className="mt-3 pt-3 border-t border-gray-200">
                         <button
                           onClick={async () => {
                             // Copia URL primeiro
-                            const url = typeof window !== 'undefined'
-                              ? `${window.location.origin}/api/whatsapp/webhook?instanceId=${instance.id}`
-                              : localtunnelUrl
-                                ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}`
+                            const isLocalhost = typeof window !== 'undefined' && window.location.hostname === 'localhost'
+                            const url = isLocalhost && localtunnelUrl
+                              ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instance.id}`
+                              : typeof window !== 'undefined'
+                                ? `${window.location.origin}/api/whatsapp/webhook?instanceId=${instance.id}`
                                 : ''
                             if (!url) {
                               alert('Configure a URL primeiro!')
@@ -439,11 +446,11 @@ export default function WhatsAppInstanceManager() {
                               }
                             }, 500)
                           }}
-                          className="w-full px-4 py-2 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors font-semibold"
+                          className="w-full px-4 py-2 bg-autozap-primary text-white rounded text-sm hover:bg-autozap-light transition-colors font-semibold"
                         >
                           📋 Copiar Tudo (URL → Token)
                         </button>
-                        <p className="text-xs text-autozap-gray-medium mt-1 text-center">
+                        <p className="text-xs text-gray-500 mt-1 text-center">
                           Copia primeiro a URL, depois o Token automaticamente
                         </p>
                       </div>

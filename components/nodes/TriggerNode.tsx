@@ -45,21 +45,21 @@ export default function TriggerNode(props: NodeProps) {
 
   return (
     <div
-      className={`px-4 py-3 shadow-lg rounded-lg bg-autozap-gray-dark border-2 overflow-hidden ${
-        selected ? 'border-autozap-primary' : 'border-autozap-gray-medium'
-      } min-w-[200px]`}
+      className={`px-4 py-3 shadow-lg rounded-lg bg-white border-2 overflow-hidden ${
+        selected ? 'border-autozap-primary' : 'border-gray-300'
+      } min-w-[220px] w-[220px]`}
       style={{ borderRadius: '8px', overflow: 'hidden' }}
     >
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">🚀</span>
         <div className="flex-1">
-          <div className="font-semibold text-sm text-autozap-white">{nodeData.label}</div>
+          <div className="font-semibold text-sm text-gray-900">{nodeData.label}</div>
         </div>
       </div>
 
       {isEditing ? (
         <div className="space-y-2">
-          <div className="text-xs text-autozap-gray-medium bg-autozap-gray-medium/20 p-2 rounded">
+          <div className="text-xs text-gray-600 bg-gray-100 p-2 rounded">
             <strong>Variáveis disponíveis:</strong> Clique para inserir
           </div>
           <div className="flex flex-wrap gap-1">
@@ -89,7 +89,7 @@ export default function TriggerNode(props: NodeProps) {
             value={trigger}
             onChange={(e) => setTrigger(e.target.value)}
             placeholder="Palavra-chave (ex: olá, oi)"
-            className="nodrag w-full text-xs border border-autozap-gray-medium rounded p-2 bg-autozap-gray-dark text-autozap-white placeholder-autozap-gray-medium"
+            className="nodrag w-full text-xs border border-gray-300 rounded p-2 bg-white text-gray-900 placeholder-gray-400"
           />
           <div className="flex gap-2">
             <button
@@ -100,7 +100,7 @@ export default function TriggerNode(props: NodeProps) {
             </button>
             <button
               onClick={() => setIsEditing(false)}
-              className="nodrag flex-1 px-2 py-1 bg-autozap-gray-medium text-white rounded text-xs hover:bg-autozap-gray-medium/80 transition-colors"
+              className="nodrag flex-1 px-2 py-1 bg-gray-200 text-gray-800 rounded text-xs hover:bg-gray-300 transition-colors"
             >
               Cancelar
             </button>
@@ -108,7 +108,7 @@ export default function TriggerNode(props: NodeProps) {
         </div>
       ) : (
         <div className="space-y-2">
-          <div className="text-xs text-autozap-white bg-autozap-gray-medium/20 p-2 rounded">
+          <div className="text-xs text-gray-900 bg-gray-100 p-2 rounded">
             {trigger || 'Clique para editar...'}
           </div>
           <button

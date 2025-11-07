@@ -39,8 +39,9 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Cria diretório de uploads se não existir
-    const uploadsDir = join(process.cwd(), 'public', 'uploads')
+    // Cria diretório de uploads FORA da pasta public (mais seguro)
+    // Em produção, considere usar S3, Cloudinary ou Vercel Blob Storage
+    const uploadsDir = join(process.cwd(), 'uploads')
     if (!existsSync(uploadsDir)) {
       mkdirSync(uploadsDir, { recursive: true })
     }
@@ -55,8 +56,8 @@ export async function POST(request: NextRequest) {
     const buffer = Buffer.from(bytes)
     await writeFile(filePath, buffer)
 
-    // Retorna URL pública do arquivo
-    const fileUrl = `/uploads/${fileName}`
+    // Retorna URL da API que serve o arquivo (não diretamente do public)
+    const fileUrl = `/api/files/${fileName}`
 
     return NextResponse.json({
       url: fileUrl,

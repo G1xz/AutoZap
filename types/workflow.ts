@@ -1,6 +1,6 @@
 // Tipos para o sistema de fluxos
 
-export type NodeType = 'message' | 'wait' | 'questionnaire' | 'ai' | 'condition' | 'trigger'
+export type NodeType = 'message' | 'wait' | 'questionnaire' | 'ai' | 'condition' | 'trigger' | 'transfer_to_human' | 'close_chat'
 
 export interface NodeData {
   label: string

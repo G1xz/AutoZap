@@ -25,6 +25,8 @@ import QuestionnaireNode from './nodes/QuestionnaireNode'
 import AINode from './nodes/AINode'
 import ConditionNode from './nodes/ConditionNode'
 import TriggerNode from './nodes/TriggerNode'
+import TransferToHumanNode from './nodes/TransferToHumanNode'
+import CloseChatNode from './nodes/CloseChatNode'
 
 const nodeTypes: NodeTypes = {
   trigger: TriggerNode as any,
@@ -33,6 +35,8 @@ const nodeTypes: NodeTypes = {
   questionnaire: QuestionnaireNode as any,
   ai: AINode as any,
   condition: ConditionNode as any,
+  transfer_to_human: TransferToHumanNode as any,
+  close_chat: CloseChatNode as any,
 }
 
 interface WorkflowEditorProps {
@@ -105,9 +109,12 @@ function FlowCanvasWrapper({
       nodeTypes={nodeTypes}
       fitView
     >
-      <Background />
+      <Background color="#e5e7eb" gap={16} />
       <Controls />
-      <MiniMap />
+      <MiniMap 
+        nodeColor="#e5e7eb"
+        maskColor="rgba(0, 0, 0, 0.1)"
+      />
     </ReactFlow>
   )
 }
@@ -206,6 +213,10 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
         return { label: 'IA', prompt: '', systemPrompt: '' }
       case 'condition':
         return { label: 'Condição', condition: '' }
+      case 'transfer_to_human':
+        return { label: 'Transferir para Atendente', message: 'Nossa equipe entrará em contato em breve. Aguarde um momento, por favor.' }
+      case 'close_chat':
+        return { label: 'Encerrar Chat', message: 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.' }
       default:
         return { label: type }
     }
@@ -289,14 +300,14 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
   }
 
   return (
-    <div className="w-full h-screen flex flex-col">
+    <div className="w-full h-screen flex flex-col bg-gray-50">
       {/* Barra superior */}
-      <div className="bg-autozap-gray-dark border-b border-autozap-gray-medium p-4 flex items-center justify-between">
+      <div className="bg-white border-b border-gray-200 p-4 flex items-center justify-between shadow-sm">
         <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2">
             <button
               onClick={() => router.push('/dashboard')}
-              className="px-3 py-1 bg-autozap-gray-medium text-white rounded text-sm hover:bg-autozap-gray-medium/80 transition-colors"
+              className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors"
             >
               ← Voltar
             </button>
@@ -305,7 +316,7 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
               value={workflowName}
               onChange={(e) => setWorkflowName(e.target.value)}
               placeholder="Nome do Fluxo"
-              className="flex-1 text-xl font-semibold border-none outline-none bg-transparent text-autozap-white placeholder-autozap-gray-medium"
+              className="flex-1 text-xl font-semibold border-none outline-none bg-transparent text-gray-900 placeholder-gray-400"
             />
           </div>
           <input
@@ -323,7 +334,7 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
               )
             }}
             placeholder="Palavra-chave que inicia este fluxo (ex: olá, oi)"
-            className="text-sm text-autozap-gray-medium border-none outline-none w-full bg-transparent placeholder-autozap-gray-medium"
+            className="text-sm text-gray-600 border-none outline-none w-full bg-transparent placeholder-gray-400"
           />
         </div>
         <div className="flex gap-2 ml-4">
@@ -338,7 +349,7 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
       </div>
 
       {/* Canvas */}
-      <div className="flex-1 relative">
+      <div className="flex-1 relative bg-gray-50">
         <ReactFlowProvider>
           <FlowCanvasWrapper
             nodes={nodes}
@@ -356,52 +367,64 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
         {/* Menu de adicionar nó */}
         {showNodeMenu && (
           <div
-            className="fixed bg-autozap-gray-dark border border-autozap-gray-medium rounded-lg shadow-lg p-2 z-50"
+            className="fixed bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-50"
             style={{ 
               left: `${nodeMenuPosition.x}px`, 
               top: `${nodeMenuPosition.y}px`,
             }}
           >
-            <div className="text-xs font-semibold text-autozap-white mb-2 px-2">
+            <div className="text-xs font-semibold text-gray-900 mb-2 px-2">
               Adicionar Nó:
             </div>
             <button
               onClick={() => addNode('message')}
-              className="block w-full text-left px-3 py-2 hover:bg-autozap-gray-medium rounded text-sm text-autozap-white transition-colors"
+              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
             >
               💬 Mensagem
             </button>
             <button
               onClick={() => addNode('wait')}
-              className="block w-full text-left px-3 py-2 hover:bg-autozap-gray-medium rounded text-sm text-autozap-white transition-colors"
+              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
             >
               ⏱️ Aguardar
             </button>
             <button
               onClick={() => addNode('questionnaire')}
-              className="block w-full text-left px-3 py-2 hover:bg-autozap-gray-medium rounded text-sm text-autozap-white transition-colors"
+              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
             >
               ❓ Questionário
             </button>
             <button
               onClick={() => addNode('ai')}
-              className="block w-full text-left px-3 py-2 hover:bg-autozap-gray-medium rounded text-sm text-autozap-white transition-colors"
+              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
             >
               🤖 IA
             </button>
             <button
               onClick={() => addNode('condition')}
-              className="block w-full text-left px-3 py-2 hover:bg-autozap-gray-medium rounded text-sm text-autozap-white transition-colors"
+              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
             >
               🔀 Condição
+            </button>
+            <button
+              onClick={() => addNode('transfer_to_human')}
+              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
+            >
+              👤 Transferir para Atendente
+            </button>
+            <button
+              onClick={() => addNode('close_chat')}
+              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
+            >
+              ✓ Encerrar Chat
             </button>
           </div>
         )}
       </div>
 
       {/* Painel lateral */}
-      <div className="bg-autozap-gray-dark border-t border-autozap-gray-medium p-4 flex items-center justify-center">
-        <div className="text-xs text-autozap-white">
+      <div className="bg-gray-50 border-t border-gray-200 p-4 flex items-center justify-center">
+        <div className="text-xs text-gray-600">
           💡 Dica: Clique com o botão direito no canvas para adicionar nós
         </div>
       </div>
@@ -410,4 +433,4 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
 }
 
 // Tipo auxiliar
-type NodeType = 'message' | 'wait' | 'questionnaire' | 'ai' | 'condition' | 'trigger'
+type NodeType = 'message' | 'wait' | 'questionnaire' | 'ai' | 'condition' | 'trigger' | 'transfer_to_human' | 'close_chat'

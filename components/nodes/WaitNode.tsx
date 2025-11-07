@@ -30,9 +30,9 @@ export default function WaitNode(props: NodeProps) {
 
   return (
     <div
-      className={`px-4 py-3 shadow-lg rounded-lg bg-autozap-gray-dark border-2 overflow-hidden ${
-        selected ? 'border-autozap-primary' : 'border-autozap-gray-medium'
-      } min-w-[200px]`}
+      className={`px-4 py-3 shadow-lg rounded-lg bg-white border-2 overflow-hidden ${
+        selected ? 'border-autozap-primary' : 'border-gray-300'
+      } min-w-[220px] w-[220px]`}
       style={{ borderRadius: '8px', overflow: 'hidden' }}
     >
       <CustomHandle type="target" position={Position.Top} />
@@ -40,7 +40,7 @@ export default function WaitNode(props: NodeProps) {
       <div className="flex items-center gap-2 mb-2">
         <span className="text-2xl">⏱️</span>
         <div className="flex-1">
-          <div className="font-semibold text-sm text-autozap-white">{nodeData.label}</div>
+          <div className="font-semibold text-sm text-gray-900">{nodeData.label}</div>
         </div>
       </div>
 
@@ -51,13 +51,13 @@ export default function WaitNode(props: NodeProps) {
               type="number"
               value={duration}
               onChange={(e) => setDuration(Number(e.target.value))}
-              className="nodrag flex-1 text-xs border border-autozap-gray-medium rounded p-2 bg-autozap-gray-dark text-autozap-white"
+              className="nodrag flex-1 text-xs border border-gray-300 rounded p-2 bg-white text-gray-900"
               min="1"
             />
             <select
               value={unit}
               onChange={(e) => setUnit(e.target.value as 'seconds' | 'minutes' | 'hours')}
-              className="nodrag text-xs border border-autozap-gray-medium rounded p-2 bg-autozap-gray-dark text-autozap-white"
+              className="nodrag text-xs border border-gray-300 rounded p-2 bg-white text-gray-900"
             >
               <option value="seconds">Segundos</option>
               <option value="minutes">Minutos</option>
@@ -73,7 +73,7 @@ export default function WaitNode(props: NodeProps) {
             </button>
             <button
               onClick={() => setIsEditing(false)}
-              className="nodrag flex-1 px-2 py-1 bg-autozap-gray-medium text-white rounded text-xs hover:bg-autozap-gray-medium/80 transition-colors"
+              className="nodrag flex-1 px-2 py-1 bg-gray-200 text-gray-800 rounded text-xs hover:bg-gray-300 transition-colors"
             >
               Cancelar
             </button>
@@ -81,7 +81,7 @@ export default function WaitNode(props: NodeProps) {
         </div>
       ) : (
         <div className="space-y-2">
-          <div className="text-xs text-autozap-white bg-autozap-gray-medium/20 p-2 rounded">
+          <div className="text-xs text-gray-900 bg-gray-100 p-2 rounded">
             Aguardar: {getDurationText()}
           </div>
           <button

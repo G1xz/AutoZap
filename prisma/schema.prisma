@@ -17,31 +17,36 @@ model User {
   name      String
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  
+
   whatsappInstances WhatsAppInstance[]
   automationRules   AutomationRule[]
   workflows         Workflow[]
+  services          Service[]
+  appointments      Appointment[]
+  catalogs          Catalog[]
 }
 
 model WhatsAppInstance {
-  id              String   @id @default(cuid())
-  userId          String
-  name            String
-  phone           String?
-  phoneId         String?  // WhatsApp Phone Number ID
-  status          String   @default("disconnected") // disconnected, connecting, connected, verified
-  accessToken     String?  // WhatsApp Cloud API Access Token (criptografado)
-  appId           String?  // Meta App ID
-  appSecret       String?  // Meta App Secret (criptografado)
+  id                 String   @id @default(cuid())
+  userId             String
+  name               String
+  phone              String?
+  phoneId            String? // WhatsApp Phone Number ID
+  status             String   @default("disconnected") // disconnected, connecting, connected, verified
+  accessToken        String? // WhatsApp Cloud API Access Token (criptografado)
+  appId              String? // Meta App ID
+  appSecret          String? // Meta App Secret (criptografado)
   webhookVerifyToken String? // Token para verificação do webhook
-  businessAccountId String? // Meta Business Account ID
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  
-  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  messages        Message[]
-  automationRules AutomationRule[]
-  workflows       Workflow[]
+  businessAccountId  String? // Meta Business Account ID
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages             Message[]
+  automationRules      AutomationRule[]
+  workflows            Workflow[]
+  conversationStatuses ConversationStatus[]
+  appointments         Appointment[]
 }
 
 model Message {
@@ -54,25 +59,48 @@ model Message {
   isFromMe        Boolean
   isGroup         Boolean  @default(false)
   messageId       String   @unique
+  messageType     String   @default("text") // text, interactive, button
+  interactiveData String? // JSON com dados de mensagens interativas (botões, etc)
   createdAt       DateTime @default(now())
-  
-  instance        WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  instance WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  // Índices para melhorar performance das consultas
+  @@index([instanceId, timestamp])
+  @@index([instanceId, from, timestamp])
+  @@index([instanceId, to, isFromMe, timestamp])
+  @@index([timestamp])
+}
+
+model ConversationStatus {
+  id            String   @id @default(cuid())
+  instanceId    String
+  contactNumber String // Número do contato
+  status        String   @default("active") // active, waiting_human, closed
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  instance WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, contactNumber])
+  @@index([instanceId, status])
+  @@index([status])
 }
 
 model AutomationRule {
-  id          String   @id @default(cuid())
-  userId      String
-  instanceId  String?
-  name        String
-  trigger     String   // palavra-chave ou padrão
-  response    String   // resposta automática
-  isActive    Boolean  @default(true)
-  priority    Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  instance    WhatsAppInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  id         String   @id @default(cuid())
+  userId     String
+  instanceId String?
+  name       String
+  trigger    String // palavra-chave ou padrão
+  response   String // resposta automática
+  isActive   Boolean  @default(true)
+  priority   Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance WhatsAppInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 }
 
 model Workflow {
@@ -81,47 +109,134 @@ model Workflow {
   instanceId  String?
   name        String
   description String?
-  trigger     String   // palavra-chave ou padrão que inicia o fluxo
+  trigger     String // palavra-chave ou padrão que inicia o fluxo
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
-  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  instance    WhatsAppInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance    WhatsAppInstance?    @relation(fields: [instanceId], references: [id], onDelete: Cascade)
   nodes       WorkflowNode[]
   connections WorkflowConnection[]
 }
 
 model WorkflowNode {
-  id          String   @id @default(cuid())
-  workflowId  String
-  type        String   // 'message', 'wait', 'questionnaire', 'ai', 'condition'
-  positionX   Float    // Posição X no canvas
-  positionY   Float    // Posição Y no canvas
-  data        String   // JSON com configurações do nó
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
-  workflow            Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  sourceConnections   WorkflowConnection[] @relation("SourceConnections")
-  targetConnections   WorkflowConnection[] @relation("TargetConnections")
+  id         String   @id @default(cuid())
+  workflowId String
+  type       String // 'message', 'wait', 'questionnaire', 'ai', 'condition'
+  positionX  Float // Posição X no canvas
+  positionY  Float // Posição Y no canvas
+  data       String // JSON com configurações do nó
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  workflow          Workflow             @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  sourceConnections WorkflowConnection[] @relation("SourceConnections")
+  targetConnections WorkflowConnection[] @relation("TargetConnections")
 }
 
 model WorkflowConnection {
-  id          String   @id @default(cuid())
-  workflowId  String
-  sourceNodeId String  // ID do nó de origem
-  targetNodeId String  // ID do nó de destino
+  id           String   @id @default(cuid())
+  workflowId   String
+  sourceNodeId String // ID do nó de origem
+  targetNodeId String // ID do nó de destino
   sourceHandle String? // Handle de saída (para condições múltiplas)
   targetHandle String? // Handle de entrada
-  createdAt   DateTime @default(now())
-  
-  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
-  sourceNode  WorkflowNode @relation("SourceConnections", fields: [sourceNodeId], references: [id], onDelete: Cascade)
-  targetNode  WorkflowNode @relation("TargetConnections", fields: [targetNodeId], references: [id], onDelete: Cascade)
-  
+  createdAt    DateTime @default(now())
+
+  workflow   Workflow     @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  sourceNode WorkflowNode @relation("SourceConnections", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  targetNode WorkflowNode @relation("TargetConnections", fields: [targetNodeId], references: [id], onDelete: Cascade)
+
   @@index([workflowId])
   @@index([sourceNodeId])
   @@index([targetNodeId])
 }
 
+model Service {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  price       Float?
+  imageUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, isActive])
+}
+
+model Catalog {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nodes   CatalogNode[]
+  connections CatalogConnection[]
+
+  @@index([userId])
+  @@index([userId, isActive])
+}
+
+model CatalogNode {
+  id         String   @id @default(cuid())
+  catalogId  String
+  type       String // 'product', 'service', 'category'
+  positionX  Float
+  positionY  Float
+  data       String // JSON com configurações do nó
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  catalog          Catalog             @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  sourceConnections CatalogConnection[] @relation("SourceConnections")
+  targetConnections CatalogConnection[] @relation("TargetConnections")
+}
+
+model CatalogConnection {
+  id           String   @id @default(cuid())
+  catalogId    String
+  sourceNodeId String
+  targetNodeId String
+  sourceHandle String?
+  targetHandle String?
+  createdAt    DateTime @default(now())
+
+  catalog   Catalog     @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  sourceNode CatalogNode @relation("SourceConnections", fields: [sourceNodeId], references: [id], onDelete: Cascade)
+  targetNode CatalogNode @relation("TargetConnections", fields: [targetNodeId], references: [id], onDelete: Cascade)
+
+  @@index([catalogId])
+  @@index([sourceNodeId])
+  @@index([targetNodeId])
+}
+
+model Appointment {
+  id          String   @id @default(cuid())
+  userId      String
+  instanceId  String?
+  contactNumber String
+  contactName   String?
+  date        DateTime
+  description String?
+  status      String   @default("pending") // pending, confirmed, cancelled, completed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance WhatsAppInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([userId, date])
+  @@index([instanceId, date])
+  @@index([status])
+}

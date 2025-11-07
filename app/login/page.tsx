@@ -66,10 +66,12 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-autozap-light/20 to-autozap-primary/20">
-      <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md border border-autozap-gray-medium">
-        <h1 className="text-3xl font-bold text-center mb-6 text-autozap-primary">
-          WhatsApp Automation
-        </h1>
+      <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md border border-gray-200">
+        <div className="flex flex-col items-center mb-6">
+          <h1 className="text-3xl font-bold text-autozap-primary">
+            AutoZap
+          </h1>
+        </div>
         
         <div className="flex gap-4 mb-6">
           <button
@@ -77,7 +79,7 @@ export default function LoginPage() {
             className={`flex-1 py-2 px-4 rounded transition-colors ${
               !isRegister
                 ? 'bg-autozap-primary text-white hover:bg-autozap-light'
-                : 'bg-autozap-gray-medium text-white hover:bg-autozap-gray-dark'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
             Login
@@ -87,7 +89,7 @@ export default function LoginPage() {
             className={`flex-1 py-2 px-4 rounded transition-colors ${
               isRegister
                 ? 'bg-autozap-primary text-white hover:bg-autozap-light'
-                : 'bg-autozap-gray-medium text-white hover:bg-autozap-gray-dark'
+                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
             }`}
           >
             Registrar
@@ -97,7 +99,7 @@ export default function LoginPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {isRegister && (
             <div>
-              <label className="block text-sm font-medium text-autozap-gray-dark mb-1">
+              <label className="block text-sm font-medium text-gray-700 mb-1">
                 Nome
               </label>
               <input
@@ -105,14 +107,14 @@ export default function LoginPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 required
-                className="w-full px-4 py-2 border border-autozap-gray-medium rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent text-autozap-gray-dark"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent bg-white text-gray-900"
                 placeholder="Seu nome"
               />
             </div>
           )}
 
           <div>
-            <label className="block text-sm font-medium text-autozap-gray-dark mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Email
             </label>
             <input
@@ -120,13 +122,13 @@ export default function LoginPage() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
-              className="w-full px-4 py-2 border border-autozap-gray-medium rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent text-autozap-gray-dark"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent bg-white text-gray-900"
               placeholder="seu@email.com"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-autozap-gray-dark mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Senha
             </label>
             <input
@@ -135,7 +137,7 @@ export default function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
-              className="w-full px-4 py-2 border border-autozap-gray-medium rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent text-autozap-gray-dark"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent bg-white text-gray-900"
               placeholder="••••••"
             />
           </div>

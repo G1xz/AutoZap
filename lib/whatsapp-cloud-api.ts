@@ -85,6 +85,31 @@ export async function sendWhatsAppInteractiveMessage(
     const data = await response.json()
     console.log('Mensagem interativa enviada com sucesso:', data)
 
+    // Salva a mensagem no banco como enviada com dados dos botões
+    try {
+      await prisma.message.create({
+        data: {
+          instanceId,
+          from: instance.phone || instance.phoneId || '',
+          to: formattedPhone,
+          body: message, // Mensagem com botões
+          timestamp: new Date(),
+          isFromMe: true,
+          isGroup: false,
+          messageType: 'interactive',
+          interactiveData: JSON.stringify({
+            buttons: limitedButtons.map(btn => ({
+              id: btn.id,
+              title: btn.title,
+            })),
+          }),
+          messageId: data.messages?.[0]?.id || `interactive_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        },
+      })
+    } catch (dbError) {
+      console.error('Erro ao salvar mensagem interativa no banco:', dbError)
+    }
+
     return true
   } catch (error) {
     console.error('Erro ao enviar mensagem interativa WhatsApp:', error)
@@ -162,6 +187,27 @@ export async function sendWhatsAppMessage(
     const data = await response.json()
     console.log('Mensagem enviada com sucesso:', data)
 
+    // Salva a mensagem no banco como enviada
+    try {
+      const savedMessage = await prisma.message.create({
+        data: {
+          instanceId,
+          from: instance.phone || instance.phoneId || '', // Número da instância
+          to: formattedPhone,
+          body: message,
+          timestamp: new Date(),
+          isFromMe: true,
+          isGroup: false,
+          messageId: data.messages?.[0]?.id || `sent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        },
+      })
+      console.log(`✅ Mensagem enviada SALVA no banco: id=${savedMessage.id}, to=${formattedPhone}, isFromMe=${savedMessage.isFromMe}`)
+    } catch (dbError) {
+      // Loga erro mas não falha o envio se houver problema ao salvar
+      console.error('❌ Erro ao salvar mensagem no banco:', dbError)
+      console.error(`   Detalhes: instanceId=${instanceId}, to=${formattedPhone}, messageId=${data.messages?.[0]?.id}`)
+    }
+
     return true
   } catch (error) {
     console.error('Erro ao enviar mensagem WhatsApp:', error)
@@ -205,10 +251,17 @@ export async function sendWhatsAppImage(
     // Converte URL relativa para absoluta
     let absoluteUrl = imageUrl
     if (imageUrl.startsWith('/')) {
+      // Tenta garantir que o localtunnel está carregado antes de usar
+      const { ensureLocaltunnelLoaded } = await import('./localtunnel')
+      if (instance.userId) {
+        await ensureLocaltunnelLoaded(instance.userId)
+      }
+      
       // Usa URL automática (Vercel em produção, localtunnel em dev)
       const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${imageUrl}`
       console.log(`📸 Enviando imagem: ${absoluteUrl}`)
+      console.log(`🔗 Base URL usada: ${baseUrl} (userId: ${instance.userId || 'não disponível'})`)
     }
 
     const url = `${WHATSAPP_API_URL}/${phoneNumberId}/messages`
@@ -241,6 +294,24 @@ export async function sendWhatsAppImage(
 
     const data = await response.json()
     console.log('Imagem enviada com sucesso:', data)
+
+    // Salva a mensagem no banco como enviada
+    try {
+      await prisma.message.create({
+        data: {
+          instanceId,
+          from: instance.phone || instance.phoneId || '',
+          to: formattedPhone,
+          body: caption || '[Imagem]',
+          timestamp: new Date(),
+          isFromMe: true,
+          isGroup: false,
+          messageId: data.messages?.[0]?.id || `image_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        },
+      })
+    } catch (dbError) {
+      console.error('Erro ao salvar imagem no banco:', dbError)
+    }
 
     return true
   } catch (error) {
@@ -277,8 +348,16 @@ export async function sendWhatsAppVideo(
 
     let absoluteUrl = videoUrl
     if (videoUrl.startsWith('/')) {
+      // Tenta garantir que o localtunnel está carregado antes de usar
+      const { ensureLocaltunnelLoaded } = await import('./localtunnel')
+      if (instance.userId) {
+        await ensureLocaltunnelLoaded(instance.userId)
+      }
+      
       const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${videoUrl}`
+      console.log(`🎥 Enviando vídeo: ${absoluteUrl}`)
+      console.log(`🔗 Base URL usada: ${baseUrl} (userId: ${instance.userId || 'não disponível'})`)
     }
 
     const url = `${WHATSAPP_API_URL}/${phoneNumberId}/messages`
@@ -307,6 +386,26 @@ export async function sendWhatsAppVideo(
       const error = await response.json()
       console.error('Erro ao enviar vídeo WhatsApp:', error)
       throw new Error(`Erro ao enviar vídeo: ${error.error?.message || 'Erro desconhecido'}`)
+    }
+
+    const data = await response.json()
+
+    // Salva a mensagem no banco como enviada
+    try {
+      await prisma.message.create({
+        data: {
+          instanceId,
+          from: instance.phone || instance.phoneId || '',
+          to: formattedPhone,
+          body: caption || '[Vídeo]',
+          timestamp: new Date(),
+          isFromMe: true,
+          isGroup: false,
+          messageId: data.messages?.[0]?.id || `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        },
+      })
+    } catch (dbError) {
+      console.error('Erro ao salvar vídeo no banco:', dbError)
     }
 
     return true
@@ -345,8 +444,16 @@ export async function sendWhatsAppDocument(
 
     let absoluteUrl = documentUrl
     if (documentUrl.startsWith('/')) {
+      // Tenta garantir que o localtunnel está carregado antes de usar
+      const { ensureLocaltunnelLoaded } = await import('./localtunnel')
+      if (instance.userId) {
+        await ensureLocaltunnelLoaded(instance.userId)
+      }
+      
       const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${documentUrl}`
+      console.log(`📄 Enviando documento: ${absoluteUrl}`)
+      console.log(`🔗 Base URL usada: ${baseUrl} (userId: ${instance.userId || 'não disponível'})`)
     }
 
     const url = `${WHATSAPP_API_URL}/${phoneNumberId}/messages`
@@ -376,6 +483,26 @@ export async function sendWhatsAppDocument(
       const error = await response.json()
       console.error('Erro ao enviar documento WhatsApp:', error)
       throw new Error(`Erro ao enviar documento: ${error.error?.message || 'Erro desconhecido'}`)
+    }
+
+    const data = await response.json()
+
+    // Salva a mensagem no banco como enviada
+    try {
+      await prisma.message.create({
+        data: {
+          instanceId,
+          from: instance.phone || instance.phoneId || '',
+          to: formattedPhone,
+          body: caption || `[Documento: ${filename}]`,
+          timestamp: new Date(),
+          isFromMe: true,
+          isGroup: false,
+          messageId: data.messages?.[0]?.id || `doc_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        },
+      })
+    } catch (dbError) {
+      console.error('Erro ao salvar documento no banco:', dbError)
     }
 
     return true
@@ -420,6 +547,16 @@ export async function processIncomingMessage(
   message: WhatsAppMessage
 ): Promise<void> {
   try {
+    // Salva o nome do contato se disponível
+    if (message.contactName) {
+      const { setContactName } = await import('./contacts')
+      setContactName(instanceId, message.from, message.contactName)
+    }
+
+    // Garante que a conversa tem um status (padrão: active)
+    const { ensureConversationStatus } = await import('./conversation-status')
+    await ensureConversationStatus(instanceId, message.from)
+
     // Salva a mensagem no banco
     await prisma.message.create({
       data: {
@@ -430,12 +567,20 @@ export async function processIncomingMessage(
         timestamp: new Date(message.timestamp * 1000),
         isFromMe: false,
         isGroup: false, // A API Cloud não suporta grupos da mesma forma
+        messageType: message.type || 'text',
         messageId: message.messageId,
       },
     })
 
-    // Executa workflows de automação
-    await executeWorkflows(instanceId, message)
+    // Executa workflows de automação apenas se a conversa não estiver encerrada
+    const { getConversationStatus } = await import('./conversation-status')
+    const status = await getConversationStatus(instanceId, message.from)
+    
+    if (status !== 'closed') {
+      await executeWorkflows(instanceId, message)
+    } else {
+      console.log(`⚠️ Conversa encerrada, ignorando workflow para ${message.from}`)
+    }
   } catch (error) {
     console.error('Erro ao processar mensagem recebida:', error)
   }

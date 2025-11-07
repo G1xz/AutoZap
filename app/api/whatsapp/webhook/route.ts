@@ -105,10 +105,45 @@ export async function POST(request: NextRequest) {
       // Verifica se é resposta de botão interativo
       let messageBody = msg.text?.body || ''
       let messageType = msg.type || 'text'
+      let buttonTitle = null // Título do botão escolhido
 
       // Se for resposta de botão interativo
       if (msg.type === 'interactive' && msg.interactive?.type === 'button_reply') {
-        messageBody = msg.interactive.button_reply.id // O ID do botão é a resposta
+        const buttonId = msg.interactive.button_reply.id
+        buttonTitle = msg.interactive.button_reply.title // Título do botão
+        
+        // Busca a mensagem interativa original para obter o texto do botão
+        // Primeiro tenta usar o título que vem no webhook
+        if (buttonTitle) {
+          messageBody = buttonTitle // Usa o título do botão ao invés do ID
+        } else {
+          // Se não tiver título, busca na mensagem interativa mais recente
+          const recentInteractiveMessage = await prisma.message.findFirst({
+            where: {
+              instanceId: instance.id,
+              from: instance.phone || instance.phoneId || '',
+              to: msg.from,
+              messageType: 'interactive',
+            },
+            orderBy: { timestamp: 'desc' },
+          })
+          
+          if (recentInteractiveMessage?.interactiveData) {
+            try {
+              const interactiveData = JSON.parse(recentInteractiveMessage.interactiveData)
+              const button = interactiveData.buttons?.find((b: any) => b.id === buttonId)
+              if (button) {
+                messageBody = button.title
+              } else {
+                messageBody = buttonId // Fallback para o ID se não encontrar
+              }
+            } catch (e) {
+              messageBody = buttonId // Fallback para o ID se erro ao parsear
+            }
+          } else {
+            messageBody = buttonId // Fallback para o ID se não encontrar mensagem
+          }
+        }
         messageType = 'button'
       }
 

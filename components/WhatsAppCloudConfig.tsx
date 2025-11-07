@@ -24,6 +24,25 @@ export default function WhatsAppCloudConfig({
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [localtunnelUrl, setLocaltunnelUrl] = useState('')
+
+  // Carrega URL do localtunnel
+  useEffect(() => {
+    fetch('/api/config/localtunnel')
+      .then(res => res.json())
+      .then(data => {
+        if (data.url) {
+          setLocaltunnelUrl(data.url)
+        } else {
+          const savedUrl = localStorage.getItem('localtunnelUrl') || ''
+          setLocaltunnelUrl(savedUrl)
+        }
+      })
+      .catch(() => {
+        const savedUrl = localStorage.getItem('localtunnelUrl') || ''
+        setLocaltunnelUrl(savedUrl)
+      })
+  }, [])
 
   // Carrega configuração existente ao abrir
   useEffect(() => {
@@ -91,7 +110,7 @@ export default function WhatsAppCloudConfig({
               value={formData.phoneId}
               onChange={(e) => setFormData({ ...formData, phoneId: e.target.value })}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary"
               placeholder="Ex: 123456789012345"
             />
             <p className="mt-1 text-xs text-gray-500">
@@ -108,7 +127,7 @@ export default function WhatsAppCloudConfig({
               value={formData.accessToken}
               onChange={(e) => setFormData({ ...formData, accessToken: e.target.value })}
               required
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary"
               placeholder="Token de acesso temporário ou permanente"
             />
             <p className="mt-1 text-xs text-gray-500">
@@ -124,7 +143,7 @@ export default function WhatsAppCloudConfig({
               type="text"
               value={formData.phone}
               onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary"
               placeholder="Ex: 5511999999999"
             />
           </div>
@@ -138,7 +157,7 @@ export default function WhatsAppCloudConfig({
                 type="text"
                 value={formData.appId}
                 onChange={(e) => setFormData({ ...formData, appId: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary"
               />
             </div>
 
@@ -152,7 +171,7 @@ export default function WhatsAppCloudConfig({
                 onChange={(e) =>
                   setFormData({ ...formData, businessAccountId: e.target.value })
                 }
-                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500"
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary"
               />
             </div>
           </div>
@@ -167,7 +186,7 @@ export default function WhatsAppCloudConfig({
               onChange={(e) =>
                 setFormData({ ...formData, webhookVerifyToken: e.target.value })
               }
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-green-500"
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary"
               placeholder="Deixe em branco para gerar automaticamente"
             />
             <p className="mt-1 text-xs text-gray-500">
@@ -185,7 +204,9 @@ export default function WhatsAppCloudConfig({
             <h3 className="font-semibold text-blue-900 mb-2">URL do Webhook:</h3>
             <code className="text-sm text-blue-800 break-all">
               {typeof window !== 'undefined'
-                ? `${window.location.origin}/api/whatsapp/webhook?instanceId=${instanceId}`
+                ? (window.location.hostname === 'localhost' && localtunnelUrl
+                    ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instanceId}`
+                    : `${window.location.origin}/api/whatsapp/webhook?instanceId=${instanceId}`)
                 : 'Carregando...'}
             </code>
             <p className="mt-2 text-xs text-blue-700">
@@ -197,7 +218,7 @@ export default function WhatsAppCloudConfig({
             <button
               type="submit"
               disabled={loading}
-              className="flex-1 px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50"
+              className="flex-1 px-6 py-2 bg-autozap-primary text-white rounded-md hover:bg-autozap-dark disabled:opacity-50"
             >
               {loading ? 'Configurando...' : 'Salvar Configuração'}
             </button>

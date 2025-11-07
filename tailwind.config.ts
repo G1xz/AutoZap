@@ -8,13 +8,16 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', 'sans-serif'],
+      },
       colors: {
         background: 'var(--background)',
         foreground: 'var(--foreground)',
         autozap: {
-          primary: '#3BBD4E',      // Verde Principal
-          light: '#6EE07B',        // Verde Claro
-          dark: '#2B903C',         // Verde Escuro
+          primary: '#5227FF',      // Roxo Principal
+          light: '#7C5AFF',        // Roxo Claro
+          dark: '#3D1FCC',         // Roxo Escuro
           gray: {
             dark: '#212121',       // Cinza Escuro
             medium: '#616161',     // Cinza Médio

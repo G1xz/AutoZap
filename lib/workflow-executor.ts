@@ -361,6 +361,32 @@ async function executeNode(
         // Aguarda resposta do usuário
         return null // Retorna null para pausar execução
 
+    case 'transfer_to_human':
+      // Transfere conversa para atendente humano
+      const { updateConversationStatus } = await import('./conversation-status')
+      await updateConversationStatus(instanceId, contactNumber, 'waiting_human')
+      
+      // Envia mensagem informando que será atendido por humano
+      const transferMessage = data.message || 'Nossa equipe entrará em contato em breve. Aguarde um momento, por favor.'
+      await sendWhatsAppMessage(instanceId, contactNumber, transferMessage, 'service')
+      
+      // Encerra o workflow atual
+      workflowExecutions.delete(`${instanceId}-${contactNumber}`)
+      return null
+
+    case 'close_chat':
+      // Encerra a conversa
+      const { updateConversationStatus: updateStatus } = await import('./conversation-status')
+      await updateStatus(instanceId, contactNumber, 'closed')
+      
+      // Envia mensagem de encerramento
+      const closeMessage = data.message || 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
+      await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
+      
+      // Encerra o workflow atual
+      workflowExecutions.delete(`${instanceId}-${contactNumber}`)
+      return null
+
     case 'ai':
       // TODO: Implementar integração com IA
       console.log('🤖 Nó de IA não implementado ainda')
