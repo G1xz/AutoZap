@@ -13,7 +13,7 @@ interface CategoryNodeData {
 export default function CategoryNode(props: NodeProps) {
   const { data, selected } = props
   const [isEditing, setIsEditing] = useState(false)
-  const nodeData = data as CategoryNodeData
+  const nodeData = data as unknown as CategoryNodeData
 
   const [name, setName] = useState(nodeData.name || '')
   const [description, setDescription] = useState(nodeData.description || '')

@@ -14,7 +14,7 @@ export default function TransferToHumanNode(props: NodeProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [message, setMessage] = useState(data.message || 'Nossa equipe entrará em contato em breve. Aguarde um momento, por favor.')
 
-  const nodeData = data as TransferToHumanNodeData
+  const nodeData = data as unknown as TransferToHumanNodeData
 
   const handleSave = () => {
     nodeData.message = message

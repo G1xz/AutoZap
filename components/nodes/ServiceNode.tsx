@@ -15,7 +15,7 @@ interface ServiceNodeData {
 export default function ServiceNode(props: NodeProps) {
   const { data, selected } = props
   const [isEditing, setIsEditing] = useState(false)
-  const nodeData = data as ServiceNodeData
+  const nodeData = data as unknown as ServiceNodeData
 
   const [name, setName] = useState(nodeData.name || '')
   const [description, setDescription] = useState(nodeData.description || '')

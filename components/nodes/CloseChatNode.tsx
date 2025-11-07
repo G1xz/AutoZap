@@ -14,7 +14,7 @@ export default function CloseChatNode(props: NodeProps) {
   const [isEditing, setIsEditing] = useState(false)
   const [message, setMessage] = useState(data.message || 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.')
 
-  const nodeData = data as CloseChatNodeData
+  const nodeData = data as unknown as CloseChatNodeData
 
   const handleSave = () => {
     nodeData.message = message
