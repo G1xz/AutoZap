@@ -10,7 +10,7 @@ import SchedulingManager from './SchedulingManager'
 import ClientsManager from './ClientsManager'
 import ReportsManager from './ReportsManager'
 import SettingsManager from './SettingsManager'
-import StaggeredMenu from './StaggeredMenu'
+import StaggeredMenu, { StaggeredMenuSocialItem } from './StaggeredMenu'
 
 export default function DashboardContent() {
   const { data: session } = useSession()
@@ -83,7 +83,7 @@ export default function DashboardContent() {
     },
   ]
 
-  const socialItems = [
+  const socialItems: StaggeredMenuSocialItem[] = [
     // Adicione seus links sociais aqui se quiser
   ]
 
