@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
+// Força renderização dinâmica (necessário porque usamos request.url)
+export const dynamic = 'force-dynamic'
+
 /**
  * GET - Callback do Facebook OAuth para conectar WhatsApp
  * 
