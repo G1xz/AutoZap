@@ -51,6 +51,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Obtém access token do Facebook
+    console.log('🔑 Obtendo access token do Facebook...')
     const tokenResponse = await fetch(
       `https://graph.facebook.com/v18.0/oauth/access_token?` +
       `client_id=${facebookAppId}` +
@@ -61,51 +62,64 @@ export async function GET(request: NextRequest) {
     )
 
     const tokenData = await tokenResponse.json()
+    console.log('📦 Token response:', tokenData)
 
     if (!tokenData.access_token) {
-      console.error('Erro ao obter access token:', tokenData)
+      console.error('❌ Erro ao obter access token:', tokenData)
       return NextResponse.redirect(
         `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=token_failed&details=${encodeURIComponent(JSON.stringify(tokenData))}`
       )
     }
 
     const accessToken = tokenData.access_token
+    console.log('✅ Access token obtido com sucesso')
 
     // Obtém informações da conta Meta Business
+    console.log('🏢 Obtendo contas Meta Business...')
     const businessAccountsResponse = await fetch(
       `https://graph.facebook.com/v18.0/me/businesses?access_token=${accessToken}`
     )
     const businessAccounts = await businessAccountsResponse.json()
+    console.log('📦 Business accounts:', businessAccounts)
 
     if (!businessAccounts.data || businessAccounts.data.length === 0) {
+      console.error('❌ Nenhuma conta Meta Business encontrada')
       return NextResponse.redirect(
         `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=no_business_account`
       )
     }
 
     const businessAccountId = businessAccounts.data[0].id
+    console.log('✅ Business Account ID:', businessAccountId)
 
     // Obtém WhatsApp Business Accounts
+    console.log('📱 Obtendo WhatsApp Business Accounts...')
     const wabaResponse = await fetch(
       `https://graph.facebook.com/v18.0/${businessAccountId}/owned_whatsapp_business_accounts?access_token=${accessToken}`
     )
     const wabaData = await wabaResponse.json()
+    console.log('📦 WABA data:', wabaData)
 
     if (!wabaData.data || wabaData.data.length === 0) {
+      console.error('❌ Nenhuma conta WhatsApp Business encontrada')
       return NextResponse.redirect(
         `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=no_whatsapp_account`
       )
     }
 
     const whatsappBusinessAccountId = wabaData.data[0].id
+    console.log('✅ WhatsApp Business Account ID:', whatsappBusinessAccountId)
 
     // Obtém Phone Number ID
+    console.log('📞 Obtendo Phone Numbers...')
     const phoneNumbersResponse = await fetch(
       `https://graph.facebook.com/v18.0/${whatsappBusinessAccountId}/phone_numbers?access_token=${accessToken}`
     )
     const phoneNumbers = await phoneNumbersResponse.json()
+    console.log('📦 Phone numbers:', phoneNumbers)
 
     if (!phoneNumbers.data || phoneNumbers.data.length === 0) {
+      console.error('❌ Nenhum número de telefone encontrado')
       return NextResponse.redirect(
         `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=no_phone_number`
       )
@@ -113,6 +127,7 @@ export async function GET(request: NextRequest) {
 
     const phoneNumberId = phoneNumbers.data[0].id
     const phoneNumber = phoneNumbers.data[0].display_phone_number || phoneNumbers.data[0].verified_name || ''
+    console.log('✅ Phone Number ID:', phoneNumberId, 'Phone:', phoneNumber)
 
     // Obtém App ID
     const appResponse = await fetch(
@@ -122,6 +137,7 @@ export async function GET(request: NextRequest) {
     const appId = appData.id || facebookAppId
 
     // Atualiza a instância com as credenciais
+    console.log('💾 Atualizando instância no banco de dados...')
     await prisma.whatsAppInstance.update({
       where: { id: instanceId },
       data: {
@@ -133,6 +149,7 @@ export async function GET(request: NextRequest) {
         status: 'connected',
       },
     })
+    console.log('✅ Instância atualizada com sucesso!')
 
     return NextResponse.redirect(
       `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?success=whatsapp_connected&instanceId=${instanceId}`
