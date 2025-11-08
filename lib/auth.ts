@@ -1,5 +1,6 @@
 import { NextAuthOptions } from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
+import FacebookProvider from 'next-auth/providers/facebook'
 import bcrypt from 'bcryptjs'
 import { prisma } from './prisma'
 
@@ -39,7 +40,25 @@ export const authOptions: NextAuthOptions = {
           name: user.name,
         }
       }
-    })
+    }),
+    // Facebook Provider para conectar WhatsApp via OAuth
+    FacebookProvider({
+      clientId: process.env.FACEBOOK_CLIENT_ID || '',
+      clientSecret: process.env.FACEBOOK_CLIENT_SECRET || '',
+      authorization: {
+        params: {
+          scope: [
+            'email',
+            'public_profile',
+            'business_management',
+            'whatsapp_business_management',
+            'whatsapp_business_messaging',
+            'pages_read_engagement',
+            'pages_manage_metadata',
+          ].join(','),
+        },
+      },
+    }),
   ],
   pages: {
     signIn: '/login',

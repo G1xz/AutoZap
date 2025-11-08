@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import WhatsAppCloudConfig from './WhatsAppCloudConfig'
+import WhatsAppQRCodeConnection from './WhatsAppQRCodeConnection'
+import WhatsAppFacebookConnection from './WhatsAppFacebookConnection'
 
 interface WhatsAppInstance {
   id: string
@@ -21,6 +23,8 @@ export default function WhatsAppInstanceManager() {
   const [newInstanceName, setNewInstanceName] = useState('')
   const [creating, setCreating] = useState(false)
   const [configuringInstance, setConfiguringInstance] = useState<string | null>(null)
+  const [qrCodeInstance, setQrCodeInstance] = useState<string | null>(null)
+  const [facebookInstance, setFacebookInstance] = useState<string | null>(null)
   const [localtunnelUrl, setLocaltunnelUrl] = useState('')
 
   // Função helper para copiar texto de forma segura
@@ -228,24 +232,65 @@ export default function WhatsAppInstanceManager() {
             Cole aqui a URL que aparece quando você roda o localtunnel
           </p>
         </div>
+        <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-md">
+          <p className="text-sm font-semibold text-green-900 mb-1">
+            💼 Modelo de Negócio:
+          </p>
+          <p className="text-xs text-green-800">
+            Você tem <strong>UMA conta Meta Business central</strong>. Você adiciona os números dos clientes na <strong>sua conta</strong>, 
+            você paga todos os custos (seu cartão), e o cliente só precisa fornecer o número. Cliente <strong>não precisa</strong> ter conta Meta Business nem colocar cartão!
+          </p>
+        </div>
+        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
+          <p className="text-sm font-semibold text-blue-900 mb-1">
+            🔵 Novo: Conectar via Facebook OAuth
+          </p>
+          <p className="text-xs text-blue-800">
+            Agora você pode conectar números via <strong>Facebook OAuth</strong>! Cliente autoriza via Facebook e você obtém as credenciais automaticamente. 
+            Crie uma instância abaixo e clique em <strong>"🔵 Conectar via Facebook"</strong> para testar.
+          </p>
+        </div>
         <p className="text-sm text-gray-700">
-          Para usar a WhatsApp Cloud API, você precisa:
+          Para cada instância, você precisa:
         </p>
         <ol className="list-decimal list-inside text-sm text-gray-600 mt-2 space-y-1">
-          <li>Criar uma conta Meta Business</li>
-          <li>Criar um app no Meta for Developers</li>
-          <li>Configurar WhatsApp no app</li>
-          <li>Obter Phone Number ID e Access Token</li>
-          <li>Configurar o webhook neste número</li>
+          <li>Adicionar o número do cliente na <strong>sua conta Meta Business</strong> (via Gerenciador do WhatsApp)</li>
+          <li>Obter o <strong>Phone Number ID</strong> daquele número específico</li>
+          <li>Usar o <strong>Access Token permanente</strong> que você já tem (mesmo para todos os números)</li>
+          <li>Configurar no sistema com essas credenciais</li>
+          <li>Cliente recebe código SMS e te passa para verificação</li>
         </ol>
-        <a
-          href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-autozap-primary hover:text-autozap-light hover:underline text-sm mt-2 inline-block transition-colors"
-        >
-          📖 Ver guia completo de configuração
-        </a>
+        <div className="mt-3 space-y-2">
+          <a
+            href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-autozap-primary hover:text-autozap-light hover:underline text-sm inline-block transition-colors"
+          >
+            📖 Documentação oficial da Meta →
+          </a>
+          <br />
+          <a
+            href="/GUIA_CONFIGURACAO_API_META.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-autozap-primary hover:text-autozap-light hover:underline text-sm inline-block transition-colors font-semibold"
+          >
+            📘 Guia Completo: Configurar API Definitiva (Produção) →
+          </a>
+          <br />
+          <a
+            href="/GUIA_ADICIONAR_NUMEROS_CLIENTES.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-autozap-primary hover:text-autozap-light hover:underline text-sm inline-block transition-colors font-semibold"
+          >
+            📞 Guia: Como Adicionar Números dos Clientes na Sua Conta →
+          </a>
+        </div>
+        <div className="mt-3 p-2 bg-yellow-50 border border-yellow-200 rounded text-xs text-yellow-800">
+          ⚠️ <strong>Importante:</strong> Use tokens <strong>permanentes</strong> para produção. Tokens temporários expiram em 24 horas!
+        </div>
       </div>
 
       <form onSubmit={createInstance} className="flex gap-4">
@@ -305,12 +350,26 @@ export default function WhatsAppInstanceManager() {
                 </div>
               <div className="flex gap-2 mt-4">
                 {(instance.status === 'disconnected' || !instance.phoneId) && (
-                  <button
-                    onClick={() => setConfiguringInstance(instance.id)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
-                  >
-                    Configurar API
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setFacebookInstance(instance.id)}
+                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+                    >
+                      🔵 Conectar via Facebook
+                    </button>
+                    <button
+                      onClick={() => setQrCodeInstance(instance.id)}
+                      className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 text-sm"
+                    >
+                      📱 Conectar via QR Code
+                    </button>
+                    <button
+                      onClick={() => setConfiguringInstance(instance.id)}
+                      className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 text-sm"
+                    >
+                      ⚙️ Configurar API Manual
+                    </button>
+                  </>
                 )}
                 {(instance.status === 'connected' || instance.status === 'verified') && (
                   <>
@@ -470,6 +529,28 @@ export default function WhatsAppInstanceManager() {
           onSuccess={() => {
             fetchInstances()
             setConfiguringInstance(null)
+          }}
+        />
+      )}
+
+      {qrCodeInstance && (
+        <WhatsAppQRCodeConnection
+          instanceId={qrCodeInstance}
+          onClose={() => setQrCodeInstance(null)}
+          onSuccess={() => {
+            fetchInstances()
+            setQrCodeInstance(null)
+          }}
+        />
+      )}
+
+      {facebookInstance && (
+        <WhatsAppFacebookConnection
+          instanceId={facebookInstance}
+          onClose={() => setFacebookInstance(null)}
+          onSuccess={() => {
+            fetchInstances()
+            setFacebookInstance(null)
           }}
         />
       )}

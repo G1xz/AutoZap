@@ -1,0 +1,66 @@
+PERGUNTA PARA CHATGPT: Configurar Facebook Login no Meta for Developers
+
+═══════════════════════════════════════════════════════════════
+
+Olá! Preciso de ajuda para configurar Facebook Login no Meta for Developers.
+
+CONTEXTO:
+- Tenho um app existente no Meta for Developers
+- App ID: 2058451241567788
+- Nome do app: AutoZap
+- Modo: Em desenvolvimento
+- A interface do Meta for Developers mudou recentemente (2024/2025)
+- Quando clico em "Adicionar casos de uso", não vejo opção de Facebook Login
+- O link direto /fb-login/ não funciona mais (redireciona para página do app)
+
+OBJETIVO:
+Preciso adicionar/configurar Facebook Login neste app para permitir que usuários autorizem via OAuth e eu possa obter credenciais do WhatsApp Business API automaticamente (Phone Number ID, Access Token, etc.).
+
+O QUE PRECISO SABER:
+
+1. ONDE encontrar/configurar Facebook Login na nova interface do Meta for Developers?
+   - Não aparece mais "Adicionar produto" 
+   - Agora aparece "Adicionar casos de uso"
+   - O link direto /fb-login/ não funciona mais
+   - Como encontrar na interface atual?
+
+2. COMO adicionar URLs de redirecionamento OAuth?
+   - Preciso adicionar: http://localhost:3000/api/whatsapp/facebook-callback
+   - Onde exatamente fazer isso na nova interface?
+   - Em qual seção/menu?
+
+3. QUAIS permissões preciso solicitar e ONDE?
+   - business_management
+   - whatsapp_business_management
+   - whatsapp_business_messaging
+   - pages_read_engagement
+   - pages_manage_metadata
+   - Onde solicitar essas permissões na nova interface?
+
+4. PASSO A PASSO detalhado:
+   - Como navegar na nova interface
+   - Onde clicar exatamente
+   - O que configurar em cada etapa
+   - Screenshots ou descrições detalhadas se possível
+
+5. ALTERNATIVAS:
+   - Se não houver Facebook Login como produto separado, como configurar OAuth?
+   - Posso configurar URLs de redirecionamento diretamente nas Configurações Básicas?
+   - Há outra forma de fazer isso na nova interface?
+
+Por favor, me dê instruções passo a passo específicas para a interface ATUAL (2024/2025) do Meta for Developers, considerando que a interface mudou e não há mais "Adicionar produto" mas sim "Adicionar casos de uso".
+
+═══════════════════════════════════════════════════════════════
+
+INFORMAÇÕES ADICIONAIS (se o ChatGPT pedir):
+
+- App ID: 2058451241567788
+- Nome: AutoZap
+- Tipo: Negócios (Business)
+- Modo: Em desenvolvimento
+- Business ID: 898944883296416
+
+Objetivo: Permitir que clientes autorizem via Facebook OAuth para conectar seus números de WhatsApp Business, sem precisar colocar cartão de crédito. O sistema deve obter automaticamente Phone Number ID, Access Token, Business Account ID, etc.
+
+═══════════════════════════════════════════════════════════════
+

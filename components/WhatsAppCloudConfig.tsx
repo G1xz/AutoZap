@@ -99,6 +99,12 @@ export default function WhatsAppCloudConfig({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <h2 className="text-2xl font-bold mb-4">Configurar WhatsApp Cloud API</h2>
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-md">
+          <p className="text-sm text-green-800">
+            <strong>💡 Como funciona:</strong> Você já adicionou o número do cliente na <strong>sua conta Meta Business</strong> (via Gerenciador do WhatsApp). 
+            Agora você só precisa do <strong>Phone Number ID</strong> específico daquele número. Use o mesmo <strong>Access Token</strong> que você já tem (mesmo para todos os números).
+          </p>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -114,7 +120,7 @@ export default function WhatsAppCloudConfig({
               placeholder="Ex: 123456789012345"
             />
             <p className="mt-1 text-xs text-gray-500">
-              Encontre em: Meta for Developers → WhatsApp → Configuração Inicial
+              Encontre em: <strong>Meta for Developers</strong> → Seu App → <strong>WhatsApp</strong> → <strong>Configuração Inicial</strong> → <strong>ID do número de telefone</strong>
             </p>
           </div>
 
@@ -128,11 +134,29 @@ export default function WhatsAppCloudConfig({
               onChange={(e) => setFormData({ ...formData, accessToken: e.target.value })}
               required
               className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary"
-              placeholder="Token de acesso temporário ou permanente"
+              placeholder="Token de acesso permanente"
             />
-            <p className="mt-1 text-xs text-gray-500">
-              Token temporário (24h) ou permanente. Em: Meta for Developers → WhatsApp → Token
-            </p>
+            <div className="mt-2 p-3 bg-yellow-50 border border-yellow-200 rounded-md">
+              <p className="text-xs font-semibold text-yellow-900 mb-2">
+              ⚠️ Para usar em produção (definitivo):
+              </p>
+              <ol className="text-xs text-yellow-800 list-decimal list-inside space-y-1">
+                <li>Acesse: <strong>Meta for Developers</strong> → Seu App → <strong>WhatsApp</strong> → <strong>Configuração Inicial</strong></li>
+                <li>Role até a seção <strong>"Token de acesso"</strong></li>
+                <li>Clique em <strong>"Gerar token"</strong> ou <strong>"Renovar token"</strong></li>
+                <li>Selecione sua <strong>Meta Business Account</strong> e <strong>WhatsApp Business Account</strong></li>
+                <li>Copie o token gerado e cole aqui</li>
+                <li><strong>Importante:</strong> Tokens temporários expiram em 24h. Use tokens permanentes para produção!</li>
+              </ol>
+              <a
+                href="https://developers.facebook.com/docs/whatsapp/cloud-api/get-started#get-access-token"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-yellow-900 underline mt-2 inline-block"
+              >
+                📖 Ver guia oficial da Meta →
+              </a>
+            </div>
           </div>
 
           <div>
@@ -151,19 +175,23 @@ export default function WhatsAppCloudConfig({
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                App ID (opcional)
+                App ID (recomendado)
               </label>
               <input
                 type="text"
                 value={formData.appId}
                 onChange={(e) => setFormData({ ...formData, appId: e.target.value })}
                 className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary"
+                placeholder="ID do seu app Meta"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Encontre em: <strong>Meta for Developers</strong> → Seu App → <strong>Configurações</strong> → <strong>Básico</strong>
+              </p>
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Business Account ID (opcional)
+                Business Account ID (recomendado)
               </label>
               <input
                 type="text"
@@ -172,7 +200,11 @@ export default function WhatsAppCloudConfig({
                   setFormData({ ...formData, businessAccountId: e.target.value })
                 }
                 className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary"
+                placeholder="ID da conta de negócios"
               />
+              <p className="mt-1 text-xs text-gray-500">
+                Encontre em: <strong>Meta Business Suite</strong> → <strong>Configurações</strong> → <strong>Contas</strong>
+              </p>
             </div>
           </div>
 
@@ -201,17 +233,26 @@ export default function WhatsAppCloudConfig({
           )}
 
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <h3 className="font-semibold text-blue-900 mb-2">URL do Webhook:</h3>
-            <code className="text-sm text-blue-800 break-all">
+            <h3 className="font-semibold text-blue-900 mb-2">📡 URL do Webhook:</h3>
+            <code className="text-sm text-blue-800 break-all block bg-blue-100 p-2 rounded mb-2">
               {typeof window !== 'undefined'
                 ? (window.location.hostname === 'localhost' && localtunnelUrl
                     ? `${localtunnelUrl}/api/whatsapp/webhook?instanceId=${instanceId}`
                     : `${window.location.origin}/api/whatsapp/webhook?instanceId=${instanceId}`)
                 : 'Carregando...'}
             </code>
-            <p className="mt-2 text-xs text-blue-700">
-              Configure esta URL no Meta for Developers → WhatsApp → Configuração → Webhooks
-            </p>
+            <div className="mt-2 text-xs text-blue-700 space-y-1">
+              <p className="font-semibold">Como configurar o webhook na Meta:</p>
+              <ol className="list-decimal list-inside space-y-1 ml-2">
+                <li>Acesse: <strong>Meta for Developers</strong> → Seu App → <strong>WhatsApp</strong> → <strong>Configuração</strong></li>
+                <li>Role até a seção <strong>"Webhooks"</strong></li>
+                <li>Clique em <strong>"Configurar webhooks"</strong> ou <strong>"Editar"</strong></li>
+                <li>Cole a URL acima no campo <strong>"URL de retorno de chamada"</strong></li>
+                <li>Cole o <strong>Webhook Verify Token</strong> (gerado acima) no campo correspondente</li>
+                <li>Marque os eventos: <strong>messages</strong> e <strong>messaging_postbacks</strong></li>
+                <li>Clique em <strong>"Verificar e salvar"</strong></li>
+              </ol>
+            </div>
           </div>
 
           <div className="flex gap-2">
