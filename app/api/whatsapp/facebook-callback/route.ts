@@ -15,15 +15,58 @@ export async function GET(request: NextRequest) {
     const error = searchParams.get('error')
 
     if (error) {
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=facebook_auth_failed&message=${encodeURIComponent(error)}`
-      )
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Erro na autorização</title>
+            <meta charset="UTF-8">
+          </head>
+          <body>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
+              <h1 style="color: #dc2626;">❌ Erro na autorização</h1>
+              <p>${error}</p>
+              <p>Você pode fechar esta janela.</p>
+            </div>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'FACEBOOK_OAUTH_ERROR', message: '${error.replace(/'/g, "\\'")}' }, '*');
+              }
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+        </html>
+      `
+      return new NextResponse(errorHtml, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
     }
 
     if (!code || !state) {
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=missing_params`
-      )
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Parâmetros faltando</title>
+            <meta charset="UTF-8">
+          </head>
+          <body>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
+              <h1 style="color: #dc2626;">❌ Parâmetros faltando</h1>
+              <p>Você pode fechar esta janela.</p>
+            </div>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'FACEBOOK_OAUTH_ERROR', message: 'Parâmetros faltando' }, '*');
+              }
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+        </html>
+      `
+      return new NextResponse(errorHtml, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
     }
 
     const instanceId = state
@@ -34,9 +77,30 @@ export async function GET(request: NextRequest) {
     })
 
     if (!instance) {
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=instance_not_found`
-      )
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Instância não encontrada</title>
+            <meta charset="UTF-8">
+          </head>
+          <body>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
+              <h1 style="color: #dc2626;">❌ Instância não encontrada</h1>
+              <p>Você pode fechar esta janela.</p>
+            </div>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'FACEBOOK_OAUTH_ERROR', message: 'Instância não encontrada' }, '*');
+              }
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+        </html>
+      `
+      return new NextResponse(errorHtml, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
     }
 
     // Troca o código por access token
@@ -45,9 +109,30 @@ export async function GET(request: NextRequest) {
     const redirectUri = `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/api/whatsapp/facebook-callback`
 
     if (!facebookAppId || !facebookAppSecret) {
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=config_missing`
-      )
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Configuração faltando</title>
+            <meta charset="UTF-8">
+          </head>
+          <body>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
+              <h1 style="color: #dc2626;">❌ Configuração faltando</h1>
+              <p>Você pode fechar esta janela.</p>
+            </div>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'FACEBOOK_OAUTH_ERROR', message: 'Configuração faltando' }, '*');
+              }
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+        </html>
+      `
+      return new NextResponse(errorHtml, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
     }
 
     // Obtém access token do Facebook
@@ -66,9 +151,32 @@ export async function GET(request: NextRequest) {
 
     if (!tokenData.access_token) {
       console.error('❌ Erro ao obter access token:', tokenData)
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=token_failed&details=${encodeURIComponent(JSON.stringify(tokenData))}`
-      )
+      const errorMessage = tokenData.error?.message || 'Erro ao obter access token'
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Erro ao obter token</title>
+            <meta charset="UTF-8">
+          </head>
+          <body>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
+              <h1 style="color: #dc2626;">❌ Erro ao obter token</h1>
+              <p>${errorMessage}</p>
+              <p>Você pode fechar esta janela.</p>
+            </div>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'FACEBOOK_OAUTH_ERROR', message: '${errorMessage.replace(/'/g, "\\'")}' }, '*');
+              }
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+        </html>
+      `
+      return new NextResponse(errorHtml, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
     }
 
     const accessToken = tokenData.access_token
@@ -84,9 +192,31 @@ export async function GET(request: NextRequest) {
 
     if (!businessAccounts.data || businessAccounts.data.length === 0) {
       console.error('❌ Nenhuma conta Meta Business encontrada')
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=no_business_account`
-      )
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Nenhuma conta Business encontrada</title>
+            <meta charset="UTF-8">
+          </head>
+          <body>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
+              <h1 style="color: #dc2626;">❌ Nenhuma conta Meta Business encontrada</h1>
+              <p>Você precisa ter uma conta Meta Business configurada.</p>
+              <p>Você pode fechar esta janela.</p>
+            </div>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'FACEBOOK_OAUTH_ERROR', message: 'Nenhuma conta Meta Business encontrada' }, '*');
+              }
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+        </html>
+      `
+      return new NextResponse(errorHtml, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
     }
 
     const businessAccountId = businessAccounts.data[0].id
@@ -102,9 +232,31 @@ export async function GET(request: NextRequest) {
 
     if (!wabaData.data || wabaData.data.length === 0) {
       console.error('❌ Nenhuma conta WhatsApp Business encontrada')
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=no_whatsapp_account`
-      )
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Nenhuma conta WhatsApp Business encontrada</title>
+            <meta charset="UTF-8">
+          </head>
+          <body>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
+              <h1 style="color: #dc2626;">❌ Nenhuma conta WhatsApp Business encontrada</h1>
+              <p>Você precisa ter uma conta WhatsApp Business configurada.</p>
+              <p>Você pode fechar esta janela.</p>
+            </div>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'FACEBOOK_OAUTH_ERROR', message: 'Nenhuma conta WhatsApp Business encontrada' }, '*');
+              }
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+        </html>
+      `
+      return new NextResponse(errorHtml, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
     }
 
     const whatsappBusinessAccountId = wabaData.data[0].id
@@ -120,9 +272,31 @@ export async function GET(request: NextRequest) {
 
     if (!phoneNumbers.data || phoneNumbers.data.length === 0) {
       console.error('❌ Nenhum número de telefone encontrado')
-      return NextResponse.redirect(
-        `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=no_phone_number`
-      )
+      const errorHtml = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Nenhum número de telefone encontrado</title>
+            <meta charset="UTF-8">
+          </head>
+          <body>
+            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
+              <h1 style="color: #dc2626;">❌ Nenhum número de telefone encontrado</h1>
+              <p>Você precisa ter um número de telefone verificado no WhatsApp Business.</p>
+              <p>Você pode fechar esta janela.</p>
+            </div>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'FACEBOOK_OAUTH_ERROR', message: 'Nenhum número de telefone encontrado' }, '*');
+              }
+              setTimeout(() => window.close(), 3000);
+            </script>
+          </body>
+        </html>
+      `
+      return new NextResponse(errorHtml, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      })
     }
 
     const phoneNumberId = phoneNumbers.data[0].id
@@ -151,14 +325,75 @@ export async function GET(request: NextRequest) {
     })
     console.log('✅ Instância atualizada com sucesso!')
 
-    return NextResponse.redirect(
-      `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?success=whatsapp_connected&instanceId=${instanceId}`
-    )
+    // Retorna uma página HTML que fecha a janela popup e notifica a janela pai
+    const successHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Conectado com sucesso!</title>
+          <meta charset="UTF-8">
+        </head>
+        <body>
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
+            <h1 style="color: #25D366;">✅ Conectado com sucesso!</h1>
+            <p>Você pode fechar esta janela.</p>
+          </div>
+          <script>
+            // Notifica a janela pai que a conexão foi bem-sucedida
+            if (window.opener) {
+              window.opener.postMessage({ type: 'FACEBOOK_OAUTH_SUCCESS', instanceId: '${instanceId}' }, '*');
+            }
+            // Fecha a janela após 1 segundo
+            setTimeout(() => {
+              window.close();
+            }, 1000);
+          </script>
+        </body>
+      </html>
+    `
+
+    return new NextResponse(successHtml, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    })
   } catch (error) {
     console.error('Erro no callback do Facebook:', error)
-    return NextResponse.redirect(
-      `${process.env.NEXTAUTH_URL || 'http://localhost:3000'}/dashboard?error=callback_failed&message=${encodeURIComponent(error instanceof Error ? error.message : 'Erro desconhecido')}`
-    )
+    
+    const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido'
+    
+    // Retorna uma página HTML que fecha a janela popup e notifica a janela pai do erro
+    const errorHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Erro na conexão</title>
+          <meta charset="UTF-8">
+        </head>
+        <body>
+          <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
+            <h1 style="color: #dc2626;">❌ Erro na conexão</h1>
+            <p>${errorMessage}</p>
+            <p>Você pode fechar esta janela.</p>
+          </div>
+          <script>
+            // Notifica a janela pai que houve um erro
+            if (window.opener) {
+              window.opener.postMessage({ 
+                type: 'FACEBOOK_OAUTH_ERROR', 
+                message: '${errorMessage.replace(/'/g, "\\'")}' 
+              }, '*');
+            }
+            // Fecha a janela após 3 segundos
+            setTimeout(() => {
+              window.close();
+            }, 3000);
+          </script>
+        </body>
+      </html>
+    `
+
+    return new NextResponse(errorHtml, {
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    })
   }
 }
 

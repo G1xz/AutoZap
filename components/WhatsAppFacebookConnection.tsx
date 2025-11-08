@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface WhatsAppFacebookConnectionProps {
   instanceId: string
@@ -16,6 +16,51 @@ export default function WhatsAppFacebookConnection({
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [authUrl, setAuthUrl] = useState<string | null>(null)
+  const [connecting, setConnecting] = useState(false)
+  const popupRef = useRef<Window | null>(null)
+  const checkIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Limpa intervalos quando o componente desmonta
+  useEffect(() => {
+    return () => {
+      if (checkIntervalRef.current) {
+        clearInterval(checkIntervalRef.current)
+      }
+      if (popupRef.current && !popupRef.current.closed) {
+        popupRef.current.close()
+      }
+    }
+  }, [])
+
+  // Listener para mensagens da janela popup
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      // Verifica se a mensagem é do callback do Facebook
+      if (event.data && event.data.type === 'FACEBOOK_OAUTH_SUCCESS') {
+        if (popupRef.current && !popupRef.current.closed) {
+          popupRef.current.close()
+        }
+        if (checkIntervalRef.current) {
+          clearInterval(checkIntervalRef.current)
+        }
+        setConnecting(false)
+        onSuccess()
+        onClose()
+      } else if (event.data && event.data.type === 'FACEBOOK_OAUTH_ERROR') {
+        if (popupRef.current && !popupRef.current.closed) {
+          popupRef.current.close()
+        }
+        if (checkIntervalRef.current) {
+          clearInterval(checkIntervalRef.current)
+        }
+        setConnecting(false)
+        setError(event.data.message || 'Erro ao conectar')
+      }
+    }
+
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [onSuccess, onClose])
 
   const startConnection = async () => {
     try {
@@ -32,28 +77,63 @@ export default function WhatsAppFacebookConnection({
 
       if (response.ok && data.success) {
         setAuthUrl(data.authUrl)
+        setConnecting(true)
+        
         // Abre em nova janela para o cliente autorizar
-        window.open(data.authUrl, 'facebook-auth', 'width=600,height=700')
+        popupRef.current = window.open(
+          data.authUrl, 
+          'facebook-auth', 
+          'width=600,height=700,scrollbars=yes,resizable=yes'
+        )
+        
+        if (!popupRef.current) {
+          setError('Por favor, permita pop-ups para este site')
+          setConnecting(false)
+          return
+        }
         
         // Verifica se a conexão foi estabelecida (polling)
-        const checkInterval = setInterval(async () => {
+        checkIntervalRef.current = setInterval(async () => {
           try {
+            // Verifica se a janela foi fechada
+            if (popupRef.current?.closed) {
+              if (checkIntervalRef.current) {
+                clearInterval(checkIntervalRef.current)
+              }
+              setConnecting(false)
+              return
+            }
+
             const checkResponse = await fetch(`/api/whatsapp/instances`)
             const instances = await checkResponse.json()
             const instance = instances.find((i: any) => i.id === instanceId)
             
             if (instance && (instance.status === 'connected' || instance.status === 'verified')) {
-              clearInterval(checkInterval)
+              if (checkIntervalRef.current) {
+                clearInterval(checkIntervalRef.current)
+              }
+              if (popupRef.current && !popupRef.current.closed) {
+                popupRef.current.close()
+              }
+              setConnecting(false)
               onSuccess()
               onClose()
             }
           } catch (err) {
             console.error('Erro ao verificar conexão:', err)
           }
-        }, 2000)
+        }, 1500) // Verifica a cada 1.5 segundos
 
         // Para o polling após 5 minutos
-        setTimeout(() => clearInterval(checkInterval), 5 * 60 * 1000)
+        setTimeout(() => {
+          if (checkIntervalRef.current) {
+            clearInterval(checkIntervalRef.current)
+          }
+          if (popupRef.current && !popupRef.current.closed) {
+            popupRef.current.close()
+          }
+          setConnecting(false)
+        }, 5 * 60 * 1000)
       } else {
         setError(data.error || 'Erro ao iniciar conexão')
       }
@@ -110,16 +190,24 @@ export default function WhatsAppFacebookConnection({
           </div>
         )}
 
+        {connecting && (
+          <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+            <p className="text-sm text-green-800">
+              ⏳ Aguardando autorização no Facebook... Verificando conexão a cada 1.5 segundos.
+            </p>
+          </div>
+        )}
+
         <div className="flex gap-2">
           <button
             onClick={startConnection}
-            disabled={loading}
+            disabled={loading || connecting}
             className="flex-1 px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {loading ? (
+            {loading || connecting ? (
               <>
                 <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                Conectando...
+                {connecting ? 'Aguardando autorização...' : 'Conectando...'}
               </>
             ) : (
               <>
@@ -131,10 +219,20 @@ export default function WhatsAppFacebookConnection({
             )}
           </button>
           <button
-            onClick={onClose}
-            className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400"
+            onClick={() => {
+              if (popupRef.current && !popupRef.current.closed) {
+                popupRef.current.close()
+              }
+              if (checkIntervalRef.current) {
+                clearInterval(checkIntervalRef.current)
+              }
+              setConnecting(false)
+              onClose()
+            }}
+            disabled={connecting}
+            className="px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 disabled:opacity-50"
           >
-            Cancelar
+            {connecting ? 'Fechar' : 'Cancelar'}
           </button>
         </div>
       </div>
