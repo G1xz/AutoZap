@@ -209,8 +209,8 @@ export async function GET(request: NextRequest) {
       console.log('⚠️ Erro ao tentar /me/businesses:', err)
     }
 
-    // Método 2: Tenta acessar WhatsApp Business Accounts diretamente via App ID
-    if (!businessAccountId) {
+    // Método 2: Tenta acessar WhatsApp Business Accounts diretamente via App ID (sem business_management)
+    if (!whatsappBusinessAccountId) {
       console.log('🔄 Tentando método alternativo: acessar WhatsApp Business Accounts via App...')
       try {
         // Tenta obter WhatsApp Business Accounts do app diretamente
@@ -223,9 +223,39 @@ export async function GET(request: NextRequest) {
         if (wabaDirectData.data && wabaDirectData.data.length > 0) {
           whatsappBusinessAccountId = wabaDirectData.data[0].id
           console.log('✅ WhatsApp Business Account ID obtido diretamente:', whatsappBusinessAccountId)
+        } else if (wabaDirectData.error) {
+          console.log('⚠️ Erro ao obter WABA via App:', wabaDirectData.error)
         }
       } catch (err) {
         console.log('⚠️ Erro ao tentar método alternativo:', err)
+      }
+    }
+
+    // Método 3: Tenta obter via /me (pode funcionar sem business_management em alguns casos)
+    if (!whatsappBusinessAccountId) {
+      console.log('🔄 Tentando método 3: obter via /me...')
+      try {
+        const meResponse = await fetch(
+          `https://graph.facebook.com/v18.0/me?fields=id,name&access_token=${accessToken}`
+        )
+        const meData = await meResponse.json()
+        console.log('📦 Me data:', meData)
+        
+        // Tenta obter WABA usando o ID do usuário
+        if (meData.id) {
+          const wabaUserResponse = await fetch(
+            `https://graph.facebook.com/v18.0/${meData.id}/whatsapp_business_accounts?access_token=${accessToken}`
+          )
+          const wabaUserData = await wabaUserResponse.json()
+          console.log('📦 WABA via user:', wabaUserData)
+          
+          if (wabaUserData.data && wabaUserData.data.length > 0) {
+            whatsappBusinessAccountId = wabaUserData.data[0].id
+            console.log('✅ WhatsApp Business Account ID obtido via user:', whatsappBusinessAccountId)
+          }
+        }
+      } catch (err) {
+        console.log('⚠️ Erro ao tentar método 3:', err)
       }
     }
 
