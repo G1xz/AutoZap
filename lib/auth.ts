@@ -48,13 +48,10 @@ export const authOptions: NextAuthOptions = {
       authorization: {
         params: {
           scope: [
-            'email',
             'public_profile',
             'business_management',
             'whatsapp_business_management',
             'whatsapp_business_messaging',
-            'pages_read_engagement',
-            'pages_manage_metadata',
           ].join(','),
         },
       },

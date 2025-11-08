@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?` +
       `client_id=${facebookAppId}` +
       `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&scope=email,public_profile,business_management,whatsapp_business_management,whatsapp_business_messaging,pages_read_engagement,pages_manage_metadata` +
+      `&scope=public_profile,business_management,whatsapp_business_management,whatsapp_business_messaging` +
       `&state=${instanceId}` // Passa instanceId no state para recuperar depois
 
     return NextResponse.json({
