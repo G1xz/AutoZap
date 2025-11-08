@@ -182,34 +182,95 @@ export async function GET(request: NextRequest) {
     const accessToken = tokenData.access_token
     console.log('✅ Access token obtido com sucesso')
 
-    // Obtém informações da conta Meta Business
-    console.log('🏢 Obtendo contas Meta Business...')
-    const businessAccountsResponse = await fetch(
-      `https://graph.facebook.com/v18.0/me/businesses?access_token=${accessToken}`
-    )
-    const businessAccounts = await businessAccountsResponse.json()
-    console.log('📦 Business accounts:', businessAccounts)
+    // Tenta obter informações da conta Meta Business
+    console.log('🏢 Tentando obter contas Meta Business...')
+    let businessAccountId: string | null = null
+    let whatsappBusinessAccountId: string | null = null
+    
+    // Método 1: Tenta /me/businesses (requer business_management)
+    try {
+      const businessAccountsResponse = await fetch(
+        `https://graph.facebook.com/v18.0/me/businesses?access_token=${accessToken}`
+      )
+      const businessAccounts = await businessAccountsResponse.json()
+      console.log('📦 Business accounts response:', businessAccounts)
 
-    if (!businessAccounts.data || businessAccounts.data.length === 0) {
-      console.error('❌ Nenhuma conta Meta Business encontrada')
+      if (businessAccounts.data && businessAccounts.data.length > 0) {
+        businessAccountId = businessAccounts.data[0].id
+        console.log('✅ Business Account ID obtido:', businessAccountId)
+      } else if (businessAccounts.error) {
+        console.log('⚠️ Erro ao obter business accounts:', businessAccounts.error)
+        // Continua tentando método alternativo
+      }
+    } catch (err) {
+      console.log('⚠️ Erro ao tentar /me/businesses:', err)
+    }
+
+    // Método 2: Tenta acessar WhatsApp Business Accounts diretamente via App ID
+    if (!businessAccountId) {
+      console.log('🔄 Tentando método alternativo: acessar WhatsApp Business Accounts via App...')
+      try {
+        // Tenta obter WhatsApp Business Accounts do app diretamente
+        const wabaDirectResponse = await fetch(
+          `https://graph.facebook.com/v18.0/${facebookAppId}/whatsapp_business_accounts?access_token=${accessToken}`
+        )
+        const wabaDirectData = await wabaDirectResponse.json()
+        console.log('📦 WABA direct response:', wabaDirectData)
+
+        if (wabaDirectData.data && wabaDirectData.data.length > 0) {
+          whatsappBusinessAccountId = wabaDirectData.data[0].id
+          console.log('✅ WhatsApp Business Account ID obtido diretamente:', whatsappBusinessAccountId)
+        }
+      } catch (err) {
+        console.log('⚠️ Erro ao tentar método alternativo:', err)
+      }
+    }
+
+    // Se ainda não temos WhatsApp Business Account ID, tenta via Business Account
+    if (!whatsappBusinessAccountId && businessAccountId) {
+      console.log('📱 Obtendo WhatsApp Business Accounts via Business Account...')
+      try {
+        const wabaResponse = await fetch(
+          `https://graph.facebook.com/v18.0/${businessAccountId}/owned_whatsapp_business_accounts?access_token=${accessToken}`
+        )
+        const wabaData = await wabaResponse.json()
+        console.log('📦 WABA data:', wabaData)
+
+        if (wabaData.data && wabaData.data.length > 0) {
+          whatsappBusinessAccountId = wabaData.data[0].id
+          console.log('✅ WhatsApp Business Account ID:', whatsappBusinessAccountId)
+        }
+      } catch (err) {
+        console.log('⚠️ Erro ao obter WABA:', err)
+      }
+    }
+
+    if (!whatsappBusinessAccountId) {
+      console.error('❌ Não foi possível obter WhatsApp Business Account ID')
       const errorHtml = `
         <!DOCTYPE html>
         <html>
           <head>
-            <title>Nenhuma conta Business encontrada</title>
+            <title>Erro ao obter conta WhatsApp Business</title>
             <meta charset="UTF-8">
           </head>
           <body>
             <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
-              <h1 style="color: #dc2626;">❌ Nenhuma conta Meta Business encontrada</h1>
-              <p>Você precisa ter uma conta Meta Business configurada.</p>
+              <h1 style="color: #dc2626;">❌ Erro ao obter conta WhatsApp Business</h1>
+              <p>Não foi possível acessar sua conta WhatsApp Business.</p>
+              <p style="font-size: 12px; color: #666; margin-top: 20px;">
+                Possíveis causas:<br/>
+                - Permissões insuficientes (precisa de business_management)<br/>
+                - Conta WhatsApp Business não configurada<br/>
+                - App não vinculado à conta Business
+              </p>
               <p>Você pode fechar esta janela.</p>
             </div>
             <script>
               if (window.opener) {
-                window.opener.postMessage({ type: 'FACEBOOK_OAUTH_ERROR', message: 'Nenhuma conta Meta Business encontrada' }, '*');
+                window.opener.postMessage({ type: 'FACEBOOK_OAUTH_ERROR', message: 'Não foi possível obter conta WhatsApp Business. Verifique se tem business_management configurado.' }, '*');
               }
-              setTimeout(() => window.close(), 3000);
+              setTimeout(() => window.close(), 5000);
             </script>
           </body>
         </html>
@@ -218,49 +279,6 @@ export async function GET(request: NextRequest) {
         headers: { 'Content-Type': 'text/html; charset=utf-8' },
       })
     }
-
-    const businessAccountId = businessAccounts.data[0].id
-    console.log('✅ Business Account ID:', businessAccountId)
-
-    // Obtém WhatsApp Business Accounts
-    console.log('📱 Obtendo WhatsApp Business Accounts...')
-    const wabaResponse = await fetch(
-      `https://graph.facebook.com/v18.0/${businessAccountId}/owned_whatsapp_business_accounts?access_token=${accessToken}`
-    )
-    const wabaData = await wabaResponse.json()
-    console.log('📦 WABA data:', wabaData)
-
-    if (!wabaData.data || wabaData.data.length === 0) {
-      console.error('❌ Nenhuma conta WhatsApp Business encontrada')
-      const errorHtml = `
-        <!DOCTYPE html>
-        <html>
-          <head>
-            <title>Nenhuma conta WhatsApp Business encontrada</title>
-            <meta charset="UTF-8">
-          </head>
-          <body>
-            <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; font-family: Arial, sans-serif;">
-              <h1 style="color: #dc2626;">❌ Nenhuma conta WhatsApp Business encontrada</h1>
-              <p>Você precisa ter uma conta WhatsApp Business configurada.</p>
-              <p>Você pode fechar esta janela.</p>
-            </div>
-            <script>
-              if (window.opener) {
-                window.opener.postMessage({ type: 'FACEBOOK_OAUTH_ERROR', message: 'Nenhuma conta WhatsApp Business encontrada' }, '*');
-              }
-              setTimeout(() => window.close(), 3000);
-            </script>
-          </body>
-        </html>
-      `
-      return new NextResponse(errorHtml, {
-        headers: { 'Content-Type': 'text/html; charset=utf-8' },
-      })
-    }
-
-    const whatsappBusinessAccountId = wabaData.data[0].id
-    console.log('✅ WhatsApp Business Account ID:', whatsappBusinessAccountId)
 
     // Obtém Phone Number ID
     console.log('📞 Obtendo Phone Numbers...')
@@ -318,7 +336,7 @@ export async function GET(request: NextRequest) {
         phoneId: phoneNumberId,
         accessToken: accessToken, // Em produção, criptografar este token
         appId: appId,
-        businessAccountId: businessAccountId,
+        businessAccountId: businessAccountId || undefined,
         phone: phoneNumber,
         status: 'connected',
       },
