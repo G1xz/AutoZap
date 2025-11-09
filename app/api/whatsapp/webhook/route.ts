@@ -111,6 +111,12 @@ export async function POST(request: NextRequest) {
         continue
       }
 
+      // Verifica se a instância está ativa
+      if (!instance.active) {
+        console.log(`⚠️ Instância ${instance.name} (${instance.id}) está desativada. Mensagem ignorada.`)
+        return NextResponse.json({ success: true, message: 'Instância desativada' })
+      }
+
       console.log(`✅ Instância encontrada: ${instance.name} (${instance.id})`)
 
       // Processa a mensagem
