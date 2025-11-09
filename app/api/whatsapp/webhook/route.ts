@@ -30,7 +30,7 @@ export async function GET(request: NextRequest) {
         where: { webhookVerifyToken: token },
       })
 
-      if (instance && verifyWebhook(mode, token, instance.webhookVerifyToken)) {
+      if (instance && instance.webhookVerifyToken && verifyWebhook(mode, token, instance.webhookVerifyToken)) {
         return new NextResponse(challenge, { status: 200 })
       }
     }
