@@ -15,24 +15,36 @@ export async function GET(request: NextRequest) {
     const token = searchParams.get('hub.verify_token')
     const challenge = searchParams.get('hub.challenge')
 
-    // Busca o verify token de alguma instância (ou pode passar por parâmetro)
-    const instanceId = searchParams.get('instanceId')
+    // Verificação do webhook - tenta com token global ou busca em todas as instâncias
+    // Opção 1: Token global (se configurado)
+    const globalWebhookToken = process.env.WEBHOOK_VERIFY_TOKEN
     
-    if (!instanceId) {
-      return NextResponse.json({ error: 'instanceId é obrigatório' }, { status: 400 })
-    }
-
-    const instance = await prisma.whatsAppInstance.findUnique({
-      where: { id: instanceId },
-    })
-
-    if (!instance || !instance.webhookVerifyToken) {
-      return NextResponse.json({ error: 'Instância não encontrada' }, { status: 404 })
-    }
-
-    // Verifica o webhook
-    if (verifyWebhook(mode, token, instance.webhookVerifyToken)) {
+    if (globalWebhookToken && verifyWebhook(mode, token, globalWebhookToken)) {
       return new NextResponse(challenge, { status: 200 })
+    }
+
+    // Opção 2: Tenta verificar com qualquer instância que tenha o token correto
+    // (útil se cada instância tiver seu próprio token)
+    if (token) {
+      const instance = await prisma.whatsAppInstance.findFirst({
+        where: { webhookVerifyToken: token },
+      })
+
+      if (instance && verifyWebhook(mode, token, instance.webhookVerifyToken)) {
+        return new NextResponse(challenge, { status: 200 })
+      }
+    }
+
+    // Opção 3: Se passar instanceId como parâmetro (compatibilidade com versão antiga)
+    const instanceId = searchParams.get('instanceId')
+    if (instanceId) {
+      const instance = await prisma.whatsAppInstance.findUnique({
+        where: { id: instanceId },
+      })
+
+      if (instance && instance.webhookVerifyToken && verifyWebhook(mode, token, instance.webhookVerifyToken)) {
+        return new NextResponse(challenge, { status: 200 })
+      }
     }
 
     return NextResponse.json({ error: 'Token inválido' }, { status: 403 })
