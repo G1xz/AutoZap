@@ -15,23 +15,31 @@ export async function GET(request: NextRequest) {
     const token = searchParams.get('hub.verify_token')
     const challenge = searchParams.get('hub.challenge')
 
+    console.log('🔍 Verificação webhook:', { mode, token: token ? '***' : null, challenge })
+
     // Verificação do webhook - tenta com token global ou busca em todas as instâncias
     // Opção 1: Token global (se configurado)
     const globalWebhookToken = process.env.WEBHOOK_VERIFY_TOKEN
+    console.log('🔑 Token global configurado:', globalWebhookToken ? 'Sim' : 'Não')
     
     if (globalWebhookToken && verifyWebhook(mode, token, globalWebhookToken)) {
+      console.log('✅ Verificação OK com token global')
       return new NextResponse(challenge, { status: 200 })
     }
 
     // Opção 2: Tenta verificar com qualquer instância que tenha o token correto
     // (útil se cada instância tiver seu próprio token)
     if (token) {
+      console.log('🔍 Tentando verificar com token de instância...')
       const instance = await prisma.whatsAppInstance.findFirst({
         where: { webhookVerifyToken: token },
       })
 
       if (instance && instance.webhookVerifyToken && verifyWebhook(mode, token, instance.webhookVerifyToken)) {
+        console.log('✅ Verificação OK com token de instância:', instance.id)
         return new NextResponse(challenge, { status: 200 })
+      } else {
+        console.log('❌ Instância não encontrada ou token não corresponde')
       }
     }
 
@@ -47,6 +55,7 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    console.log('❌ Verificação falhou - token inválido ou não encontrado')
     return NextResponse.json({ error: 'Token inválido' }, { status: 403 })
   } catch (error) {
     console.error('Erro ao verificar webhook:', error)
