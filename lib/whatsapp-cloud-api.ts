@@ -135,8 +135,36 @@ export async function sendWhatsAppMessage(
       throw new Error('Instância não configurada ou token ausente')
     }
 
+    // 🔒 PROTEÇÃO: Verificar se instância está ativa (cliente não cancelado)
+    if (!instance.active) {
+      throw new Error('Instância desativada. Contate o suporte para reativar.')
+    }
+
     if (instance.status !== 'connected' && instance.status !== 'verified') {
       throw new Error('Instância não está conectada')
+    }
+
+    // 🔒 PROTEÇÃO: Resetar contador mensal se necessário
+    const now = new Date()
+    const lastReset = new Date(instance.lastResetDate)
+    const daysSinceReset = Math.floor((now.getTime() - lastReset.getTime()) / (1000 * 60 * 60 * 24))
+    
+    if (daysSinceReset >= 30) {
+      // Resetar contador mensal
+      await prisma.whatsAppInstance.update({
+        where: { id: instanceId },
+        data: {
+          messagesSentThisMonth: 0,
+          lastResetDate: now,
+        },
+      })
+      // Atualizar instância local
+      instance.messagesSentThisMonth = 0
+    }
+
+    // 🔒 PROTEÇÃO: Verificar limite mensal
+    if (instance.messagesSentThisMonth >= instance.monthlyLimit) {
+      throw new Error(`Limite mensal de ${instance.monthlyLimit} mensagens excedido. Entre em contato para aumentar o limite.`)
     }
 
     const phoneNumberId = instance.phoneId
@@ -186,6 +214,19 @@ export async function sendWhatsAppMessage(
 
     const data = await response.json()
     console.log('Mensagem enviada com sucesso:', data)
+
+    // 🔒 PROTEÇÃO: Incrementar contador de mensagens após envio bem-sucedido
+    try {
+      await prisma.whatsAppInstance.update({
+        where: { id: instanceId },
+        data: {
+          messagesSentThisMonth: { increment: 1 },
+        },
+      })
+    } catch (counterError) {
+      console.error('Erro ao incrementar contador de mensagens:', counterError)
+      // Não falha o envio se houver erro no contador
+    }
 
     // Salva a mensagem no banco como enviada
     try {

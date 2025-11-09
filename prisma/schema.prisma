@@ -27,19 +27,23 @@ model User {
 }
 
 model WhatsAppInstance {
-  id                 String   @id @default(cuid())
-  userId             String
-  name               String
-  phone              String?
-  phoneId            String? // WhatsApp Phone Number ID
-  status             String   @default("disconnected") // disconnected, connecting, connected, verified
-  accessToken        String? // WhatsApp Cloud API Access Token (criptografado)
-  appId              String? // Meta App ID
-  appSecret          String? // Meta App Secret (criptografado)
-  webhookVerifyToken String? // Token para verificação do webhook
-  businessAccountId  String? // Meta Business Account ID
-  createdAt          DateTime @default(now())
-  updatedAt          DateTime @updatedAt
+  id                    String   @id @default(cuid())
+  userId                String
+  name                  String
+  phone                 String?
+  phoneId               String? // WhatsApp Phone Number ID
+  status                String   @default("disconnected") // disconnected, connecting, connected, verified
+  accessToken           String? // WhatsApp Cloud API Access Token (criptografado)
+  appId                 String? // Meta App ID
+  appSecret             String? // Meta App Secret (criptografado)
+  webhookVerifyToken    String? // Token para verificação do webhook
+  businessAccountId     String? // Meta Business Account ID
+  active                Boolean  @default(true) // Se false, bloqueia uso (cliente cancelado)
+  messagesSentThisMonth Int      @default(0) // Contador de mensagens do mês
+  monthlyLimit          Int      @default(1000) // Limite mensal de mensagens
+  lastResetDate         DateTime @default(now()) // Data do último reset do contador
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   user                 User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   messages             Message[]
@@ -179,8 +183,8 @@ model Catalog {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  nodes   CatalogNode[]
+  user        User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  nodes       CatalogNode[]
   connections CatalogConnection[]
 
   @@index([userId])
@@ -188,16 +192,16 @@ model Catalog {
 }
 
 model CatalogNode {
-  id         String   @id @default(cuid())
-  catalogId  String
-  type       String // 'product', 'service', 'category'
-  positionX  Float
-  positionY  Float
-  data       String // JSON com configurações do nó
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id        String   @id @default(cuid())
+  catalogId String
+  type      String // 'product', 'service', 'category'
+  positionX Float
+  positionY Float
+  data      String // JSON com configurações do nó
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  catalog          Catalog             @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  catalog           Catalog             @relation(fields: [catalogId], references: [id], onDelete: Cascade)
   sourceConnections CatalogConnection[] @relation("SourceConnections")
   targetConnections CatalogConnection[] @relation("TargetConnections")
 }
@@ -211,7 +215,7 @@ model CatalogConnection {
   targetHandle String?
   createdAt    DateTime @default(now())
 
-  catalog   Catalog     @relation(fields: [catalogId], references: [id], onDelete: Cascade)
+  catalog    Catalog     @relation(fields: [catalogId], references: [id], onDelete: Cascade)
   sourceNode CatalogNode @relation("SourceConnections", fields: [sourceNodeId], references: [id], onDelete: Cascade)
   targetNode CatalogNode @relation("TargetConnections", fields: [targetNodeId], references: [id], onDelete: Cascade)
 
@@ -221,16 +225,16 @@ model CatalogConnection {
 }
 
 model Appointment {
-  id          String   @id @default(cuid())
-  userId      String
-  instanceId  String?
+  id            String   @id @default(cuid())
+  userId        String
+  instanceId    String?
   contactNumber String
   contactName   String?
-  date        DateTime
-  description String?
-  status      String   @default("pending") // pending, confirmed, cancelled, completed
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  date          DateTime
+  description   String?
+  status        String   @default("pending") // pending, confirmed, cancelled, completed
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   instance WhatsAppInstance? @relation(fields: [instanceId], references: [id], onDelete: Cascade)
