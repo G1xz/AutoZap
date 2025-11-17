@@ -123,3 +123,6 @@ Se não aparecer nada nos logs:
 - Verifique se a URL está correta
 - Aguarde alguns segundos (pode ter delay)
 
+
+
+

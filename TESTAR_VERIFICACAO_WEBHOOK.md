@@ -123,3 +123,6 @@ https://auto-zap-snsb.vercel.app/api/whatsapp/webhook?hub.mode=subscribe&hub.ver
 
 Aí eu te ajudo a resolver! 🎯
 
+
+
+

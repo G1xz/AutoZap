@@ -34,20 +34,17 @@ export function getMetaConfig() {
 }
 
 /**
- * Obtém o Access Token, usando o da instância se disponível, 
- * ou o token padrão do .env como fallback
+ * Obtém o Access Token fixo da conta central (modelo Chakra)
+ * 
+ * SEMPRE usa o token fixo do .env, ignorando tokens de instâncias individuais.
+ * Isso permite que você pague todas as mensagens dos seus clientes.
  */
 export function getAccessToken(instanceToken?: string | null): string {
-  // Se a instância tem token próprio, usa ele
-  if (instanceToken) {
-    return instanceToken
-  }
-  
-  // Senão, usa o token padrão do .env
+  // 🔒 MODELO CHAKRA: Sempre usa token fixo (você paga tudo)
   if (metaConfig.accessToken) {
     return metaConfig.accessToken
   }
   
-  throw new Error('Access Token não encontrado. Configure META_ACCESS_TOKEN no .env ou configure o token na instância.')
+  throw new Error('META_ACCESS_TOKEN não encontrado. Configure no .env para usar o modelo Chakra (você paga todas as mensagens).')
 }
 

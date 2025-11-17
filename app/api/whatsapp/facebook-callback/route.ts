@@ -361,6 +361,57 @@ export async function GET(request: NextRequest) {
     const appData = await appResponse.json()
     const appId = appData.id || facebookAppId
 
+    // 🔄 MODELO CHAKRA: Tenta adicionar você como admin na conta Business do cliente automaticamente
+    // Isso permite que você gerencie billing centralizado
+    let accessRequested = false
+    if (businessAccountId) {
+      try {
+        console.log('🔄 Tentando adicionar você como admin na conta Business do cliente...')
+        const adminEmail = process.env.ADMIN_EMAIL
+        
+        if (adminEmail) {
+          // Usa o token do cliente para adicionar você como admin na conta dele
+          // Isso permite que você gerencie billing e números centralizadamente
+          const addUserResponse = await fetch(
+            `https://graph.facebook.com/v18.0/${businessAccountId}/business_users`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${accessToken}`, // Token do cliente (que acabamos de obter)
+              },
+              body: JSON.stringify({
+                email: adminEmail, // Seu email para receber acesso
+                role: 'ADMIN', // ADMIN tem permissões completas (incluindo billing)
+              }),
+            }
+          )
+          
+          const addUserData = await addUserResponse.json()
+          console.log('📦 Resposta adicionar usuário:', addUserData)
+          
+          if (addUserData.success || addUserData.id) {
+            accessRequested = true
+            console.log('✅ Você foi adicionado como admin na conta do cliente!')
+            console.log('✅ Agora você pode gerenciar billing centralizado')
+          } else if (addUserData.error) {
+            // Pode ser que você já tenha acesso ou erro de permissão
+            console.log('⚠️ Erro ao adicionar usuário:', addUserData.error)
+            if (addUserData.error.code === 200 || addUserData.error.message?.includes('already')) {
+              console.log('ℹ️ Você já pode ter acesso ou precisa de aprovação manual')
+            } else {
+              console.log('⚠️ Pode ser necessário aprovação manual do cliente')
+            }
+          }
+        } else {
+          console.log('⚠️ ADMIN_EMAIL não configurado. Configure no .env para solicitar acesso automaticamente.')
+        }
+      } catch (err) {
+        console.log('⚠️ Erro ao tentar adicionar usuário (não crítico):', err)
+        // Não falha o processo se houver erro na solicitação de acesso
+      }
+    }
+
     // Atualiza a instância com as credenciais
     console.log('💾 Atualizando instância no banco de dados...')
     await prisma.whatsAppInstance.update({

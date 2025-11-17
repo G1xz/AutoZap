@@ -127,3 +127,6 @@ https://auto-zap-snsb.vercel.app/api/whatsapp/webhook?instanceId=ID_DA_INSTANCIA
 **Próximo Passo:**
 - Acesse o sistema e pegue essas informações! 🚀
 
+
+
+

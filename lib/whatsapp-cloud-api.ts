@@ -1,6 +1,7 @@
 import { prisma } from './prisma'
 import { executeWorkflows, WhatsAppMessage } from './workflow-executor'
 import { getBaseUrl } from './localtunnel'
+import { getAccessToken } from './meta-config'
 
 export type { WhatsAppMessage }
 
@@ -21,8 +22,8 @@ export async function sendWhatsAppInteractiveMessage(
       where: { id: instanceId },
     })
 
-    if (!instance || !instance.accessToken || !instance.phoneId) {
-      throw new Error('Instância não configurada ou token ausente')
+    if (!instance || !instance.phoneId) {
+      throw new Error('Instância não configurada ou phoneId ausente')
     }
 
     if (instance.status !== 'connected' && instance.status !== 'verified') {
@@ -30,7 +31,8 @@ export async function sendWhatsAppInteractiveMessage(
     }
 
     const phoneNumberId = instance.phoneId
-    const accessToken = instance.accessToken
+    // 🔒 MODELO CHAKRA: Usa token fixo (você paga tudo)
+    const accessToken = getAccessToken(instance.accessToken)
 
     // Remove caracteres não numéricos do número
     const cleanPhoneNumber = to.replace(/\D/g, '')
@@ -131,8 +133,8 @@ export async function sendWhatsAppMessage(
       where: { id: instanceId },
     })
 
-    if (!instance || !instance.accessToken || !instance.phoneId) {
-      throw new Error('Instância não configurada ou token ausente')
+    if (!instance || !instance.phoneId) {
+      throw new Error('Instância não configurada ou phoneId ausente')
     }
 
     // 🔒 PROTEÇÃO: Verificar se instância está ativa (cliente não cancelado)
@@ -168,7 +170,8 @@ export async function sendWhatsAppMessage(
     }
 
     const phoneNumberId = instance.phoneId
-    const accessToken = instance.accessToken
+    // 🔒 MODELO CHAKRA: Usa token fixo (você paga tudo)
+    const accessToken = getAccessToken(instance.accessToken)
 
     // Remove caracteres não numéricos do número
     const cleanPhoneNumber = to.replace(/\D/g, '')
@@ -270,8 +273,8 @@ export async function sendWhatsAppImage(
       where: { id: instanceId },
     })
 
-    if (!instance || !instance.accessToken || !instance.phoneId) {
-      throw new Error('Instância não configurada ou token ausente')
+    if (!instance || !instance.phoneId) {
+      throw new Error('Instância não configurada ou phoneId ausente')
     }
 
     if (instance.status !== 'connected' && instance.status !== 'verified') {
@@ -279,7 +282,8 @@ export async function sendWhatsAppImage(
     }
 
     const phoneNumberId = instance.phoneId
-    const accessToken = instance.accessToken
+    // 🔒 MODELO CHAKRA: Usa token fixo (você paga tudo)
+    const accessToken = getAccessToken(instance.accessToken)
 
     // Remove caracteres não numéricos do número
     const cleanPhoneNumber = to.replace(/\D/g, '')
@@ -375,12 +379,13 @@ export async function sendWhatsAppVideo(
       where: { id: instanceId },
     })
 
-    if (!instance || !instance.accessToken || !instance.phoneId) {
-      throw new Error('Instância não configurada ou token ausente')
+    if (!instance || !instance.phoneId) {
+      throw new Error('Instância não configurada ou phoneId ausente')
     }
 
     const phoneNumberId = instance.phoneId
-    const accessToken = instance.accessToken
+    // 🔒 MODELO CHAKRA: Usa token fixo (você paga tudo)
+    const accessToken = getAccessToken(instance.accessToken)
 
     const cleanPhoneNumber = to.replace(/\D/g, '')
     const formattedPhone = cleanPhoneNumber.startsWith('55')
@@ -471,12 +476,13 @@ export async function sendWhatsAppDocument(
       where: { id: instanceId },
     })
 
-    if (!instance || !instance.accessToken || !instance.phoneId) {
-      throw new Error('Instância não configurada ou token ausente')
+    if (!instance || !instance.phoneId) {
+      throw new Error('Instância não configurada ou phoneId ausente')
     }
 
     const phoneNumberId = instance.phoneId
-    const accessToken = instance.accessToken
+    // 🔒 MODELO CHAKRA: Usa token fixo (você paga tudo)
+    const accessToken = getAccessToken(instance.accessToken)
 
     const cleanPhoneNumber = to.replace(/\D/g, '')
     const formattedPhone = cleanPhoneNumber.startsWith('55')
