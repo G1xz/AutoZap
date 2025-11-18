@@ -139,12 +139,12 @@ export async function POST(request: NextRequest) {
         const buttonId = msg.interactive.button_reply.id
         buttonTitle = msg.interactive.button_reply.title // Título do botão
         
-        // Busca a mensagem interativa original para obter o texto do botão
-        // Primeiro tenta usar o título que vem no webhook
-        if (buttonTitle) {
-          messageBody = buttonTitle // Usa o título do botão ao invés do ID
-        } else {
-          // Se não tiver título, busca na mensagem interativa mais recente
+        // IMPORTANTE: Usa o buttonId diretamente para que o questionário identifique corretamente
+        // O buttonId já vem no formato "option-{optionId}" que é o que o processQuestionnaireResponse espera
+        messageBody = buttonId
+        
+        // Se o buttonId não começar com "option-", tenta buscar na mensagem interativa original
+        if (!buttonId.startsWith('option-')) {
           const recentInteractiveMessage = await prisma.message.findFirst({
             where: {
               instanceId: instance.id,
@@ -159,19 +159,19 @@ export async function POST(request: NextRequest) {
             try {
               const interactiveData = JSON.parse(recentInteractiveMessage.interactiveData)
               const button = interactiveData.buttons?.find((b: any) => b.id === buttonId)
-              if (button) {
-                messageBody = button.title
+              if (button && button.id && button.id.startsWith('option-')) {
+                messageBody = button.id // Usa o ID do botão que começa com "option-"
               } else {
-                messageBody = buttonId // Fallback para o ID se não encontrar
+                messageBody = buttonId // Fallback para o ID recebido
               }
             } catch (e) {
               messageBody = buttonId // Fallback para o ID se erro ao parsear
             }
-          } else {
-            messageBody = buttonId // Fallback para o ID se não encontrar mensagem
           }
         }
+        
         messageType = 'button'
+        console.log(`🔘 Botão clicado: ID=${buttonId}, Título=${buttonTitle}, messageBody=${messageBody}`)
       }
 
       // Tenta obter o nome do contato do webhook

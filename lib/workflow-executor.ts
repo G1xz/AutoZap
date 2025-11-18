@@ -506,25 +506,38 @@ export async function processQuestionnaireResponse(
     
     let optionId: string | null = null
     
-    // Se a mensagem é um ID de botão (começa com o ID da opção), usa diretamente
+    // PRIORIDADE 1: Se a mensagem é um ID de botão (começa com "option-"), usa diretamente
     // Os IDs dos botões são `option-${option.id}`, então precisamos remover o prefixo
     if (messageBody.startsWith('option-')) {
-      optionId = messageBody.replace('option-', '')
-    } else {
-      // Verifica se respondeu com número
+      const extractedId = messageBody.replace('option-', '')
+      // Verifica se o ID extraído corresponde a alguma opção
+      const foundOption = options.find((opt: any) => opt.id === extractedId)
+      if (foundOption) {
+        optionId = extractedId
+        console.log(`✅ Opção identificada pelo ID do botão: ${optionId}`)
+      }
+    }
+    
+    // PRIORIDADE 2: Se ainda não encontrou, procura pelo título do botão (caso tenha sido passado)
+    if (!optionId) {
+      const foundOptionByLabel = options.find((opt: any) => {
+        const optLabel = opt.label.toLowerCase().trim()
+        return messageLower === optLabel || messageLower.includes(optLabel) || optLabel.includes(messageLower)
+      })
+      if (foundOptionByLabel) {
+        optionId = foundOptionByLabel.id
+        console.log(`✅ Opção identificada pelo título: ${optionId}`)
+      }
+    }
+    
+    // PRIORIDADE 3: Verifica se respondeu com número (ex: "1", "2", etc)
+    if (!optionId) {
       const numberMatch = messageLower.match(/^(\d+)/)
       if (numberMatch) {
         const optionIndex = parseInt(numberMatch[1]) - 1
         if (options[optionIndex]) {
           optionId = options[optionIndex].id
-        }
-      } else {
-        // Procura por texto da opção
-        const foundOption = options.find((opt: any) => 
-          messageLower.includes(opt.label.toLowerCase())
-        )
-        if (foundOption) {
-          optionId = foundOption.id
+          console.log(`✅ Opção identificada pelo número: ${optionId} (índice ${optionIndex})`)
         }
       }
     }
