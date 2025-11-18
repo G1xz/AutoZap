@@ -84,7 +84,7 @@ export async function uploadFileToCloudinary(
         use_filename: false,
         unique_filename: true,
       },
-      (error, result) => {
+      (error: any, result: any) => {
         if (error) {
           console.error('Erro ao fazer upload para Cloudinary:', error)
           // Log mais detalhado para debug
