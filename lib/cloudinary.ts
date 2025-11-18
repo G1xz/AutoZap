@@ -1,31 +1,34 @@
 import { v2 as cloudinary } from 'cloudinary'
 
-// Configuração do Cloudinary
-// Prioriza CLOUDINARY_URL (mais confiável, evita problemas com caracteres especiais)
-// Se não tiver, usa variáveis individuais
-const cloudinaryUrl = process.env.CLOUDINARY_URL
-const cloudName = process.env.CLOUDINARY_CLOUD_NAME
-const apiKey = process.env.CLOUDINARY_API_KEY
-const apiSecret = process.env.CLOUDINARY_API_SECRET
+// Configuração lazy do Cloudinary (só configura quando necessário, em runtime)
+let cloudinaryConfigured = false
 
-if (cloudinaryUrl && cloudinaryUrl.startsWith('cloudinary://')) {
-  // Usa CLOUDINARY_URL (formato: cloudinary://api_key:api_secret@cloud_name)
-  cloudinary.config()
-  console.log('✅ Cloudinary configurado via CLOUDINARY_URL')
-} else if (cloudName && apiKey && apiSecret) {
-  // Fallback: usa variáveis individuais
-  cloudinary.config({
-    cloud_name: cloudName,
-    api_key: apiKey,
-    api_secret: apiSecret,
-  })
-  console.log('✅ Cloudinary configurado via variáveis individuais')
-} else {
-  console.error('⚠️ Cloudinary não configurado. Configure CLOUDINARY_URL ou as variáveis individuais:')
-  console.error('   CLOUDINARY_URL:', cloudinaryUrl ? '✅' : '❌')
-  console.error('   CLOUDINARY_CLOUD_NAME:', cloudName ? '✅' : '❌')
-  console.error('   CLOUDINARY_API_KEY:', apiKey ? '✅' : '❌')
-  console.error('   CLOUDINARY_API_SECRET:', apiSecret ? '✅' : '❌')
+function configureCloudinary() {
+  if (cloudinaryConfigured) return
+
+  const cloudinaryUrl = process.env.CLOUDINARY_URL
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME
+  const apiKey = process.env.CLOUDINARY_API_KEY
+  const apiSecret = process.env.CLOUDINARY_API_SECRET
+
+  if (cloudinaryUrl && cloudinaryUrl.startsWith('cloudinary://')) {
+    // Usa CLOUDINARY_URL (formato: cloudinary://api_key:api_secret@cloud_name)
+    cloudinary.config()
+    console.log('✅ Cloudinary configurado via CLOUDINARY_URL')
+    cloudinaryConfigured = true
+  } else if (cloudName && apiKey && apiSecret) {
+    // Fallback: usa variáveis individuais
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+    })
+    console.log('✅ Cloudinary configurado via variáveis individuais')
+    cloudinaryConfigured = true
+  } else {
+    // Não configura durante o build, só loga se tentar usar
+    console.warn('⚠️ Cloudinary não configurado. Configure CLOUDINARY_URL ou as variáveis individuais')
+  }
 }
 
 /**
@@ -37,7 +40,15 @@ export async function uploadFileToCloudinary(
   folder: string = 'autozap',
   resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto'
 ): Promise<{ url: string; secure_url: string; public_id: string }> {
+  // Configura Cloudinary se ainda não foi configurado (lazy initialization)
+  configureCloudinary()
+
   // Valida configuração antes de tentar upload
+  const cloudinaryUrl = process.env.CLOUDINARY_URL
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME
+  const apiKey = process.env.CLOUDINARY_API_KEY
+  const apiSecret = process.env.CLOUDINARY_API_SECRET
+  
   const hasValidCloudinaryUrl = cloudinaryUrl && cloudinaryUrl.startsWith('cloudinary://')
   const hasIndividualVars = cloudName && apiKey && apiSecret
   
@@ -67,12 +78,17 @@ export async function uploadFileToCloudinary(
           // Log mais detalhado para debug
           if (error.http_code === 401) {
             console.error('❌ Erro de autenticação. Verifique se as credenciais estão corretas.')
-            if (cloudinaryUrl && cloudinaryUrl.startsWith('cloudinary://')) {
+            const currentCloudinaryUrl = process.env.CLOUDINARY_URL
+            const currentCloudName = process.env.CLOUDINARY_CLOUD_NAME
+            const currentApiKey = process.env.CLOUDINARY_API_KEY
+            const currentApiSecret = process.env.CLOUDINARY_API_SECRET
+            
+            if (currentCloudinaryUrl && currentCloudinaryUrl.startsWith('cloudinary://')) {
               console.error('   Usando CLOUDINARY_URL')
             } else {
-              console.error('   Cloud Name:', cloudName)
-              console.error('   API Key:', apiKey)
-              console.error('   API Secret length:', apiSecret?.length || 0)
+              console.error('   Cloud Name:', currentCloudName)
+              console.error('   API Key:', currentApiKey)
+              console.error('   API Secret length:', currentApiSecret?.length || 0)
             }
           }
           reject(error)
@@ -104,6 +120,9 @@ export async function uploadUrlToCloudinary(
   folder: string = 'autozap',
   resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto'
 ): Promise<{ url: string; secure_url: string; public_id: string }> {
+  // Configura Cloudinary se ainda não foi configurado (lazy initialization)
+  configureCloudinary()
+  
   try {
     const timestamp = Date.now()
     const result = await cloudinary.uploader.upload(url, {
