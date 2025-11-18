@@ -240,14 +240,6 @@ export async function POST(request: NextRequest) {
         await setContactInfo(instance.id, msg.from, contactName)
       }
 
-      // Tenta buscar foto de perfil em background (não bloqueia o processamento)
-      // Nota: O WhatsApp Cloud API pode não ter endpoint para foto de perfil
-      // Mas deixamos a função pronta para quando houver
-      const { fetchAndSaveProfilePicture } = await import('@/lib/whatsapp-cloud-api')
-      fetchAndSaveProfilePicture(instance.id, msg.from).catch((error) => {
-        // Não é crítico se falhar - apenas loga
-        console.log('ℹ️ Não foi possível buscar foto de perfil:', error)
-      })
 
       await processIncomingMessage(instance.id, {
         from: msg.from,

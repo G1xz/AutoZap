@@ -6,7 +6,6 @@ import { useSession } from 'next-auth/react'
 interface Conversation {
   contactNumber: string
   contactName: string | null
-  profilePictureUrl?: string | null
   lastMessage: string
   lastMessageTime: string
   unreadCount: number
@@ -315,23 +314,7 @@ export default function ChatManager() {
               >
                 <div className="flex items-start gap-2 sm:gap-3">
                   {/* Avatar */}
-                  {conv.profilePictureUrl ? (
-                    <img
-                      src={conv.profilePictureUrl}
-                      alt={conv.contactName || conv.contactNumber}
-                      className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover"
-                      onError={(e) => {
-                        // Fallback para inicial se a imagem falhar
-                        const target = e.target as HTMLImageElement
-                        target.style.display = 'none'
-                        const fallback = target.nextElementSibling as HTMLElement
-                        if (fallback) fallback.style.display = 'flex'
-                      }}
-                    />
-                  ) : null}
-                  <div 
-                    className={`flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-autozap-primary flex items-center justify-center text-white font-semibold text-base sm:text-lg ${conv.profilePictureUrl ? 'hidden' : ''}`}
-                  >
+                  <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-autozap-primary flex items-center justify-center text-white font-semibold text-base sm:text-lg">
                     {(conv.contactName || conv.contactNumber).charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -383,23 +366,7 @@ export default function ChatManager() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
-              {selectedConversation.profilePictureUrl ? (
-                <img
-                  src={selectedConversation.profilePictureUrl}
-                  alt={selectedConversation.contactName || selectedConversation.contactNumber}
-                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover flex-shrink-0"
-                  onError={(e) => {
-                    // Fallback para inicial se a imagem falhar
-                    const target = e.target as HTMLImageElement
-                    target.style.display = 'none'
-                    const fallback = target.nextElementSibling as HTMLElement
-                    if (fallback) fallback.style.display = 'flex'
-                  }}
-                />
-              ) : null}
-              <div 
-                className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-autozap-primary flex items-center justify-center text-white font-semibold text-base sm:text-lg flex-shrink-0 ${selectedConversation.profilePictureUrl ? 'hidden' : ''}`}
-              >
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-autozap-primary flex items-center justify-center text-white font-semibold text-base sm:text-lg flex-shrink-0">
                 {(selectedConversation.contactName || selectedConversation.contactNumber).charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">

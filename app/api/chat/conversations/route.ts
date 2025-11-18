@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { getContactName, getContactProfilePicture } from '@/lib/contacts'
+import { getContactName } from '@/lib/contacts'
 
 /**
  * GET - Lista todas as conversas do usuário
@@ -88,9 +88,8 @@ export async function GET(request: NextRequest) {
       
       if (!conversationsMap.has(key)) {
         const instance = instances.find(i => i.id === message.instanceId)
-        // Busca nome e foto de perfil do contato se disponível
+        // Busca nome do contato se disponível
         const contactName = await getContactName(message.instanceId, contactNumber)
-        const profilePictureUrl = await getContactProfilePicture(message.instanceId, contactNumber)
         // Busca status da conversa (padrão: active)
         const status = statusMap.get(key) || 'active'
         
@@ -102,7 +101,7 @@ export async function GET(request: NextRequest) {
         conversationsMap.set(key, {
           contactNumber: contactNumber,
           contactName: contactName,
-          profilePictureUrl: profilePictureUrl,
+          profilePictureUrl: null,
           lastMessage: message.body,
           lastMessageTime: message.timestamp,
           unreadCount: unreadCounts.get(key) || 0,
