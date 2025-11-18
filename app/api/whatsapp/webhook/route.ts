@@ -233,7 +233,7 @@ export async function POST(request: NextRequest) {
         timestamp: parseInt(msg.timestamp),
         type: messageType,
         contactName: contactName,
-        mediaUrl: mediaUrl, // URL da mídia salva no Cloudinary (se houver)
+        mediaUrl: mediaUrl || undefined, // URL da mídia salva no Cloudinary (se houver)
       })
     }
 
