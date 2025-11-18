@@ -21,23 +21,46 @@ async function configureCloudinary() {
   const apiKey = process.env.CLOUDINARY_API_KEY
   const apiSecret = process.env.CLOUDINARY_API_SECRET
 
-  if (cloudinaryUrl && cloudinaryUrl.startsWith('cloudinary://')) {
-    // Usa CLOUDINARY_URL (formato: cloudinary://api_key:api_secret@cloud_name)
-    cloudinary.config()
-    console.log('✅ Cloudinary configurado via CLOUDINARY_URL')
-    cloudinaryConfigured = true
-  } else if (cloudName && apiKey && apiSecret) {
-    // Fallback: usa variáveis individuais
-    cloudinary.config({
-      cloud_name: cloudName,
-      api_key: apiKey,
-      api_secret: apiSecret,
-    })
-    console.log('✅ Cloudinary configurado via variáveis individuais')
-    cloudinaryConfigured = true
+  // Valida se CLOUDINARY_URL está no formato correto
+  const hasValidCloudinaryUrl = cloudinaryUrl && 
+    typeof cloudinaryUrl === 'string' && 
+    cloudinaryUrl.trim().startsWith('cloudinary://')
+
+  if (hasValidCloudinaryUrl) {
+    try {
+      // Usa CLOUDINARY_URL (formato: cloudinary://api_key:api_secret@cloud_name)
+      cloudinary.config()
+      console.log('✅ Cloudinary configurado via CLOUDINARY_URL')
+      cloudinaryConfigured = true
+      return
+    } catch (error) {
+      console.warn('⚠️ Erro ao configurar via CLOUDINARY_URL, tentando variáveis individuais:', error)
+      // Continua para tentar variáveis individuais
+    }
+  }
+
+  // Fallback: usa variáveis individuais (mais confiável)
+  if (cloudName && apiKey && apiSecret) {
+    try {
+      cloudinary.config({
+        cloud_name: cloudName,
+        api_key: apiKey,
+        api_secret: apiSecret,
+      })
+      console.log('✅ Cloudinary configurado via variáveis individuais')
+      cloudinaryConfigured = true
+    } catch (error) {
+      console.error('❌ Erro ao configurar Cloudinary:', error)
+      throw new Error('Falha ao configurar Cloudinary. Verifique as credenciais.')
+    }
   } else {
     // Não configura durante o build, só loga se tentar usar
-    console.warn('⚠️ Cloudinary não configurado. Configure CLOUDINARY_URL ou as variáveis individuais')
+    const missing = []
+    if (!cloudName) missing.push('CLOUDINARY_CLOUD_NAME')
+    if (!apiKey) missing.push('CLOUDINARY_API_KEY')
+    if (!apiSecret) missing.push('CLOUDINARY_API_SECRET')
+    
+    throw new Error(`Cloudinary não configurado. Configure CLOUDINARY_URL (formato: cloudinary://...) ou as variáveis: ${missing.join(', ')}`)
   }
 }
 
