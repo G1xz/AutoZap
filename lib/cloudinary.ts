@@ -1,11 +1,21 @@
-import { v2 as cloudinary } from 'cloudinary'
-
-// Configuração lazy do Cloudinary (só configura quando necessário, em runtime)
+// Import dinâmico do Cloudinary para evitar execução durante o build
+let cloudinaryInstance: any = null
 let cloudinaryConfigured = false
 
-function configureCloudinary() {
+async function getCloudinary() {
+  if (cloudinaryInstance) return cloudinaryInstance
+
+  // Import dinâmico só em runtime
+  const { v2: cloudinary } = await import('cloudinary')
+  cloudinaryInstance = cloudinary
+  return cloudinary
+}
+
+// Configuração lazy do Cloudinary (só configura quando necessário, em runtime)
+async function configureCloudinary() {
   if (cloudinaryConfigured) return
 
+  const cloudinary = await getCloudinary()
   const cloudinaryUrl = process.env.CLOUDINARY_URL
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME
   const apiKey = process.env.CLOUDINARY_API_KEY
@@ -41,7 +51,7 @@ export async function uploadFileToCloudinary(
   resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto'
 ): Promise<{ url: string; secure_url: string; public_id: string }> {
   // Configura Cloudinary se ainda não foi configurado (lazy initialization)
-  configureCloudinary()
+  await configureCloudinary()
 
   // Valida configuração antes de tentar upload
   const cloudinaryUrl = process.env.CLOUDINARY_URL
@@ -55,6 +65,8 @@ export async function uploadFileToCloudinary(
   if (!hasValidCloudinaryUrl && !hasIndividualVars) {
     throw new Error('Cloudinary não configurado. Configure CLOUDINARY_URL (formato: cloudinary://...) ou as variáveis CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET')
   }
+
+  const cloudinary = await getCloudinary()
 
   return new Promise((resolve, reject) => {
     // Gera nome único para o arquivo
@@ -121,7 +133,9 @@ export async function uploadUrlToCloudinary(
   resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto'
 ): Promise<{ url: string; secure_url: string; public_id: string }> {
   // Configura Cloudinary se ainda não foi configurado (lazy initialization)
-  configureCloudinary()
+  await configureCloudinary()
+  
+  const cloudinary = await getCloudinary()
   
   try {
     const timestamp = Date.now()
@@ -146,6 +160,9 @@ export async function uploadUrlToCloudinary(
  * Deleta um arquivo do Cloudinary
  */
 export async function deleteFromCloudinary(publicId: string): Promise<void> {
+  await configureCloudinary()
+  const cloudinary = await getCloudinary()
+  
   try {
     await cloudinary.uploader.destroy(publicId)
   } catch (error) {
@@ -157,12 +174,15 @@ export async function deleteFromCloudinary(publicId: string): Promise<void> {
 /**
  * Obtém URL otimizada de uma imagem/vídeo do Cloudinary
  */
-export function getCloudinaryUrl(publicId: string, options: {
+export async function getCloudinaryUrl(publicId: string, options: {
   width?: number
   height?: number
   quality?: number
   format?: string
-} = {}): string {
+} = {}): Promise<string> {
+  await configureCloudinary()
+  const cloudinary = await getCloudinary()
+  
   const transformations: string[] = []
 
   if (options.width) transformations.push(`w_${options.width}`)
