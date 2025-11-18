@@ -8,7 +8,7 @@ const cloudName = process.env.CLOUDINARY_CLOUD_NAME
 const apiKey = process.env.CLOUDINARY_API_KEY
 const apiSecret = process.env.CLOUDINARY_API_SECRET
 
-if (cloudinaryUrl) {
+if (cloudinaryUrl && cloudinaryUrl.startsWith('cloudinary://')) {
   // Usa CLOUDINARY_URL (formato: cloudinary://api_key:api_secret@cloud_name)
   cloudinary.config()
   console.log('✅ Cloudinary configurado via CLOUDINARY_URL')
@@ -38,8 +38,11 @@ export async function uploadFileToCloudinary(
   resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto'
 ): Promise<{ url: string; secure_url: string; public_id: string }> {
   // Valida configuração antes de tentar upload
-  if (!cloudinaryUrl && (!cloudName || !apiKey || !apiSecret)) {
-    throw new Error('Cloudinary não configurado. Configure CLOUDINARY_URL ou as variáveis CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET')
+  const hasValidCloudinaryUrl = cloudinaryUrl && cloudinaryUrl.startsWith('cloudinary://')
+  const hasIndividualVars = cloudName && apiKey && apiSecret
+  
+  if (!hasValidCloudinaryUrl && !hasIndividualVars) {
+    throw new Error('Cloudinary não configurado. Configure CLOUDINARY_URL (formato: cloudinary://...) ou as variáveis CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY e CLOUDINARY_API_SECRET')
   }
 
   return new Promise((resolve, reject) => {
@@ -64,7 +67,7 @@ export async function uploadFileToCloudinary(
           // Log mais detalhado para debug
           if (error.http_code === 401) {
             console.error('❌ Erro de autenticação. Verifique se as credenciais estão corretas.')
-            if (cloudinaryUrl) {
+            if (cloudinaryUrl && cloudinaryUrl.startsWith('cloudinary://')) {
               console.error('   Usando CLOUDINARY_URL')
             } else {
               console.error('   Cloud Name:', cloudName)
