@@ -308,10 +308,10 @@ async function executeNode(
         const messageText = replaceVariables(data.message || '', execution.variables)
         
         // Cria uma chave única para a fila deste contato
-        const contactKey = `${instanceId}-${contactNumber}`
+        const messageContactKey = `${instanceId}-${contactNumber}`
         
         // Adiciona à fila sequencial para garantir ordem de envio
-        await queueMessage(contactKey, async () => {
+        await queueMessage(messageContactKey, async () => {
           // Envia arquivo primeiro se houver (imagem, vídeo ou documento)
           if (data.fileUrl) {
             try {
@@ -372,10 +372,10 @@ async function executeNode(
       case 'questionnaire':
         // Substitui variáveis na pergunta
         const questionText = replaceVariables(data.question || '', execution.variables)
-        const contactKey = `${instanceId}-${contactNumber}`
+        const questionnaireContactKey = `${instanceId}-${contactNumber}`
         
         // Adiciona à fila sequencial para garantir ordem
-        await queueMessage(contactKey, async () => {
+        await queueMessage(questionnaireContactKey, async () => {
           // Envia a pergunta com botões interativos se houver opções
           if (data.options && data.options.length > 0 && data.options.length <= 3) {
             // Usa botões interativos (máximo 3 botões)
