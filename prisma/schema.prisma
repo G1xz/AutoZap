@@ -51,6 +51,7 @@ model WhatsAppInstance {
   workflows            Workflow[]
   conversationStatuses ConversationStatus[]
   appointments         Appointment[]
+  contacts             Contact[]
 }
 
 model Message {
@@ -90,6 +91,22 @@ model ConversationStatus {
   @@unique([instanceId, contactNumber])
   @@index([instanceId, status])
   @@index([status])
+}
+
+model Contact {
+  id              String   @id @default(cuid())
+  instanceId      String
+  phoneNumber     String
+  name            String?
+  profilePictureUrl String? // URL da foto de perfil salva no Cloudinary
+  lastSeen        DateTime? // Última vez que o contato foi visto
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  instance WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, phoneNumber])
+  @@index([instanceId, phoneNumber])
 }
 
 model AutomationRule {

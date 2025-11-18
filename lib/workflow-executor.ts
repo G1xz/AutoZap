@@ -37,6 +37,43 @@ interface WorkflowExecutionContext {
 // Armazena o estado de execução de workflows por contato
 const workflowExecutions = new Map<string, WorkflowExecutionContext>()
 
+// Fila de mensagens por contato para garantir ordem de envio
+// Evita que mensagens sejam enviadas fora de ordem (ex: imagem depois de texto)
+const messageQueues = new Map<string, Promise<void>>()
+
+/**
+ * Adiciona uma mensagem à fila sequencial do contato
+ * Garante que mensagens sejam enviadas em ordem, mesmo que uma demore mais
+ */
+async function queueMessage(
+  contactKey: string,
+  sendFunction: () => Promise<void>
+): Promise<void> {
+  // Pega a última promise da fila (ou cria uma nova se não existir)
+  const previousPromise = messageQueues.get(contactKey) || Promise.resolve()
+  
+  // Cria uma nova promise que aguarda a anterior e então executa a função
+  const newPromise = previousPromise
+    .then(() => sendFunction())
+    .catch((error) => {
+      console.error(`Erro ao enviar mensagem na fila para ${contactKey}:`, error)
+      throw error
+    })
+    .finally(() => {
+      // Limpa a fila se não houver mais mensagens pendentes
+      // (a promise atual é a última)
+      if (messageQueues.get(contactKey) === newPromise) {
+        messageQueues.delete(contactKey)
+      }
+    })
+  
+  // Atualiza a fila com a nova promise
+  messageQueues.set(contactKey, newPromise)
+  
+  // Aguarda a execução completa
+  await newPromise
+}
+
 /**
  * Substitui variáveis no texto (ex: {{nome}}, {{telefone}}, {{data}}, etc)
  */
@@ -267,52 +304,55 @@ async function executeNode(
       return getNextNode(node.id, connections, null)
 
       case 'message':
-        // Envia mensagem e vai para o próximo nó
-        const delay = Math.floor(Math.random() * 2000 + 1000) // 1-3 segundos
-        await new Promise((resolve) => setTimeout(resolve, delay))
-        
         // Substitui variáveis na mensagem
         const messageText = replaceVariables(data.message || '', execution.variables)
         
-        // Envia arquivo primeiro se houver (imagem, vídeo ou documento)
-        if (data.fileUrl) {
-          try {
-            if (data.fileType === 'image') {
-              await sendWhatsAppImage(
-                instanceId,
-                contactNumber,
-                data.fileUrl,
-                messageText // Caption com a mensagem (com variáveis substituídas)
-              )
-            } else if (data.fileType === 'video') {
-              await sendWhatsAppVideo(
-                instanceId,
-                contactNumber,
-                data.fileUrl,
-                messageText
-              )
-            } else if (data.fileType === 'document') {
-              await sendWhatsAppDocument(
-                instanceId,
-                contactNumber,
-                data.fileUrl,
-                data.fileName || 'documento',
-                messageText
-              )
+        // Cria uma chave única para a fila deste contato
+        const contactKey = `${instanceId}-${contactNumber}`
+        
+        // Adiciona à fila sequencial para garantir ordem de envio
+        await queueMessage(contactKey, async () => {
+          // Envia arquivo primeiro se houver (imagem, vídeo ou documento)
+          if (data.fileUrl) {
+            try {
+              if (data.fileType === 'image') {
+                await sendWhatsAppImage(
+                  instanceId,
+                  contactNumber,
+                  data.fileUrl,
+                  messageText // Caption com a mensagem (com variáveis substituídas)
+                )
+              } else if (data.fileType === 'video') {
+                await sendWhatsAppVideo(
+                  instanceId,
+                  contactNumber,
+                  data.fileUrl,
+                  messageText
+                )
+              } else if (data.fileType === 'document') {
+                await sendWhatsAppDocument(
+                  instanceId,
+                  contactNumber,
+                  data.fileUrl,
+                  data.fileName || 'documento',
+                  messageText
+                )
+              }
+            } catch (error) {
+              console.error('Erro ao enviar arquivo:', error)
+              // Se falhar, tenta enviar pelo menos a mensagem de texto
+              if (messageText) {
+                await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service')
+              }
+              throw error // Propaga o erro para a fila
             }
-          } catch (error) {
-            console.error('Erro ao enviar arquivo:', error)
-            // Se falhar, tenta enviar pelo menos a mensagem de texto
+          } else {
+            // Se não houver arquivo, envia apenas a mensagem de texto
             if (messageText) {
               await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service')
             }
           }
-        } else {
-          // Se não houver arquivo, envia apenas a mensagem de texto
-          if (messageText) {
-            await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service')
-          }
-        }
+        })
 
         return getNextNode(node.id, connections, null)
 
@@ -332,32 +372,36 @@ async function executeNode(
       case 'questionnaire':
         // Substitui variáveis na pergunta
         const questionText = replaceVariables(data.question || '', execution.variables)
+        const contactKey = `${instanceId}-${contactNumber}`
         
-        // Envia a pergunta com botões interativos se houver opções
-        if (data.options && data.options.length > 0 && data.options.length <= 3) {
-          // Usa botões interativos (máximo 3 botões)
-          const buttons = data.options.map((opt: any) => ({
-            id: `option-${opt.id}`, // Prefixo para identificar como resposta de botão
-            title: replaceVariables(opt.label, execution.variables).slice(0, 20), // Máximo 20 caracteres
-          }))
-          
-          await sendWhatsAppInteractiveMessage(
-            instanceId,
-            contactNumber,
-            questionText,
-            buttons
-          )
-        } else {
-          // Fallback para texto simples se tiver mais de 3 opções ou nenhuma
-          await sendWhatsAppMessage(instanceId, contactNumber, questionText, 'service')
-          
-          if (data.options && data.options.length > 0) {
-            const optionsText = data.options
-              .map((opt: any, index: number) => `${index + 1}. ${replaceVariables(opt.label, execution.variables)}`)
-              .join('\n')
-            await sendWhatsAppMessage(instanceId, contactNumber, optionsText, 'service')
+        // Adiciona à fila sequencial para garantir ordem
+        await queueMessage(contactKey, async () => {
+          // Envia a pergunta com botões interativos se houver opções
+          if (data.options && data.options.length > 0 && data.options.length <= 3) {
+            // Usa botões interativos (máximo 3 botões)
+            const buttons = data.options.map((opt: any) => ({
+              id: `option-${opt.id}`, // Prefixo para identificar como resposta de botão
+              title: replaceVariables(opt.label, execution.variables).slice(0, 20), // Máximo 20 caracteres
+            }))
+            
+            await sendWhatsAppInteractiveMessage(
+              instanceId,
+              contactNumber,
+              questionText,
+              buttons
+            )
+          } else {
+            // Fallback para texto simples se tiver mais de 3 opções ou nenhuma
+            await sendWhatsAppMessage(instanceId, contactNumber, questionText, 'service')
+            
+            if (data.options && data.options.length > 0) {
+              const optionsText = data.options
+                .map((opt: any, index: number) => `${index + 1}. ${replaceVariables(opt.label, execution.variables)}`)
+                .join('\n')
+              await sendWhatsAppMessage(instanceId, contactNumber, optionsText, 'service')
+            }
           }
-        }
+        })
 
         // Aguarda resposta do usuário
         return null // Retorna null para pausar execução
@@ -369,7 +413,10 @@ async function executeNode(
       
       // Envia mensagem informando que será atendido por humano
       const transferMessage = data.message || 'Nossa equipe entrará em contato em breve. Aguarde um momento, por favor.'
-      await sendWhatsAppMessage(instanceId, contactNumber, transferMessage, 'service')
+      const contactKeyTransfer = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKeyTransfer, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, transferMessage, 'service')
+      })
       
       // Encerra o workflow atual
       workflowExecutions.delete(`${instanceId}-${contactNumber}`)
@@ -382,7 +429,10 @@ async function executeNode(
       
       // Envia mensagem de encerramento
       const closeMessage = data.message || 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
-      await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
+      const contactKeyClose = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKeyClose, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
+      })
       
       // Encerra o workflow atual
       workflowExecutions.delete(`${instanceId}-${contactNumber}`)
@@ -558,12 +608,15 @@ export async function processQuestionnaireResponse(
       }
     } else {
       // Opção não reconhecida, envia mensagem de erro
-      await sendWhatsAppMessage(
-        instanceId, 
-        contactNumber, 
-        'Desculpe, não entendi sua resposta. Por favor, responda com o número ou texto da opção.',
-        'service'
-      )
+      const contactKeyError = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKeyError, async () => {
+        await sendWhatsAppMessage(
+          instanceId, 
+          contactNumber, 
+          'Desculpe, não entendi sua resposta. Por favor, responda com o número ou texto da opção.',
+          'service'
+        )
+      })
     }
   }
 }

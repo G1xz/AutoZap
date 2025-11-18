@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
-import { getContactName } from '@/lib/contacts'
+import { getContactName, getContactProfilePicture } from '@/lib/contacts'
 
 /**
  * GET - Lista todas as conversas do usuário
@@ -61,6 +61,7 @@ export async function GET(request: NextRequest) {
     const conversationsMap = new Map<string, {
       contactNumber: string
       contactName: string | null
+      profilePictureUrl: string | null
       lastMessage: string
       lastMessageTime: Date
       unreadCount: number
@@ -87,8 +88,9 @@ export async function GET(request: NextRequest) {
       
       if (!conversationsMap.has(key)) {
         const instance = instances.find(i => i.id === message.instanceId)
-        // Busca nome do contato se disponível
-        const contactName = getContactName(message.instanceId, contactNumber)
+        // Busca nome e foto de perfil do contato se disponível
+        const contactName = await getContactName(message.instanceId, contactNumber)
+        const profilePictureUrl = await getContactProfilePicture(message.instanceId, contactNumber)
         // Busca status da conversa (padrão: active)
         const status = statusMap.get(key) || 'active'
         
@@ -100,6 +102,7 @@ export async function GET(request: NextRequest) {
         conversationsMap.set(key, {
           contactNumber: contactNumber,
           contactName: contactName,
+          profilePictureUrl: profilePictureUrl,
           lastMessage: message.body,
           lastMessageTime: message.timestamp,
           unreadCount: unreadCounts.get(key) || 0,
@@ -111,7 +114,7 @@ export async function GET(request: NextRequest) {
         const conv = conversationsMap.get(key)!
         // Busca nome do contato se ainda não tiver
         if (!conv.contactName) {
-          const contactName = getContactName(message.instanceId, contactNumber)
+          const contactName = await getContactName(message.instanceId, contactNumber)
           if (contactName) {
             conv.contactName = contactName
           }
@@ -144,6 +147,76 @@ export async function GET(request: NextRequest) {
     console.error('Erro ao buscar conversas:', error)
     return NextResponse.json(
       { error: 'Erro ao buscar conversas' },
+      { status: 500 }
+    )
+  }
+}
+
+/**
+ * DELETE - Deleta todas as mensagens de uma conversa específica
+ * Query params: instanceId, contactNumber
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+    }
+
+    const { searchParams } = new URL(request.url)
+    const instanceId = searchParams.get('instanceId')
+    const contactNumber = searchParams.get('contactNumber')
+
+    if (!instanceId || !contactNumber) {
+      return NextResponse.json(
+        { error: 'instanceId e contactNumber são obrigatórios' },
+        { status: 400 }
+      )
+    }
+
+    // Verifica se a instância pertence ao usuário
+    const instance = await prisma.whatsAppInstance.findFirst({
+      where: {
+        id: instanceId,
+        userId: session.user.id,
+      },
+    })
+
+    if (!instance) {
+      return NextResponse.json(
+        { error: 'Instância não encontrada ou não autorizada' },
+        { status: 404 }
+      )
+    }
+
+    // Deleta todas as mensagens desta conversa (tanto enviadas quanto recebidas)
+    const result = await prisma.message.deleteMany({
+      where: {
+        instanceId,
+        OR: [
+          { from: contactNumber },
+          { to: contactNumber },
+        ],
+      },
+    })
+
+    // Também deleta o status da conversa se existir
+    await prisma.conversationStatus.deleteMany({
+      where: {
+        instanceId,
+        contactNumber,
+      },
+    })
+
+    return NextResponse.json({
+      success: true,
+      deleted: result.count,
+      message: `${result.count} mensagens foram deletadas`,
+    })
+  } catch (error) {
+    console.error('Erro ao deletar conversa:', error)
+    return NextResponse.json(
+      { error: 'Erro ao deletar conversa' },
       { status: 500 }
     )
   }

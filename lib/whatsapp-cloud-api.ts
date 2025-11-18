@@ -592,6 +592,93 @@ export async function getUserProfileName(
 }
 
 /**
+ * Busca e salva a foto de perfil de um contato
+ * Nota: O WhatsApp Cloud API não fornece endpoint direto para foto de perfil
+ * Esta função tenta buscar via API, mas pode não funcionar em todos os casos
+ */
+export async function fetchAndSaveProfilePicture(
+  instanceId: string,
+  phoneNumber: string
+): Promise<string | null> {
+  try {
+    const instance = await prisma.whatsAppInstance.findUnique({
+      where: { id: instanceId },
+    })
+
+    if (!instance || !instance.phoneId) {
+      console.log('⚠️ Instância não configurada para buscar foto de perfil')
+      return null
+    }
+
+    // 🔒 MODELO CHAKRA: Usa token fixo (você paga tudo)
+    const accessToken = getAccessToken(instance.accessToken)
+
+    // Formata o número
+    const cleanPhoneNumber = phoneNumber.replace(/\D/g, '')
+    const formattedPhone = cleanPhoneNumber.startsWith('55')
+      ? cleanPhoneNumber
+      : `55${cleanPhoneNumber}`
+
+    // Tenta buscar foto de perfil via API do WhatsApp
+    // Nota: O WhatsApp Cloud API pode não ter este endpoint disponível
+    // Vamos tentar o endpoint de perfil
+    try {
+      const profileUrl = `${WHATSAPP_API_URL}/${instance.phoneId}/contacts/${formattedPhone}`
+      const profileResponse = await fetch(profileUrl, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      })
+
+      if (profileResponse.ok) {
+        const profileData = await profileResponse.json()
+        console.log('📸 Dados do perfil:', profileData)
+        
+        // Se a API retornar URL da foto, baixa e salva no Cloudinary
+        if (profileData.profile?.picture_url) {
+          const pictureUrl = profileData.profile.picture_url
+          
+          // Baixa a imagem
+          const imageResponse = await fetch(pictureUrl, {
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+            },
+          })
+
+          if (imageResponse.ok) {
+            const imageBuffer = Buffer.from(await imageResponse.arrayBuffer())
+            
+            // Faz upload para Cloudinary
+            const { uploadFileToCloudinary } = await import('./cloudinary')
+            const uploadResult = await uploadFileToCloudinary(
+              imageBuffer,
+              `profile-${formattedPhone}.jpg`,
+              `autozap/profiles`,
+              'image'
+            )
+
+            // Salva no banco
+            const { setContactInfo } = await import('./contacts')
+            await setContactInfo(instanceId, phoneNumber, undefined, uploadResult.secure_url)
+
+            console.log(`✅ Foto de perfil salva: ${uploadResult.secure_url}`)
+            return uploadResult.secure_url
+          }
+        }
+      }
+    } catch (apiError) {
+      // API pode não ter este endpoint - não é crítico
+      console.log('ℹ️ Endpoint de foto de perfil não disponível ou erro:', apiError)
+    }
+
+    return null
+  } catch (error) {
+    console.error('Erro ao buscar foto de perfil:', error)
+    return null
+  }
+}
+
+/**
  * Baixa mídia do WhatsApp e salva no Cloudinary
  */
 export async function downloadAndSaveMedia(
@@ -685,8 +772,8 @@ export async function processIncomingMessage(
   try {
     // Salva o nome do contato se disponível
     if (message.contactName) {
-      const { setContactName } = await import('./contacts')
-      setContactName(instanceId, message.from, message.contactName)
+      const { setContactInfo } = await import('./contacts')
+      await setContactInfo(instanceId, message.from, message.contactName)
     }
 
     // Garante que a conversa tem um status (padrão: active)

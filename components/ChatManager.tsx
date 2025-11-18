@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react'
 interface Conversation {
   contactNumber: string
   contactName: string | null
+  profilePictureUrl?: string | null
   lastMessage: string
   lastMessageTime: string
   unreadCount: number
@@ -314,7 +315,23 @@ export default function ChatManager() {
               >
                 <div className="flex items-start gap-2 sm:gap-3">
                   {/* Avatar */}
-                  <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-autozap-primary flex items-center justify-center text-white font-semibold text-base sm:text-lg">
+                  {conv.profilePictureUrl ? (
+                    <img
+                      src={conv.profilePictureUrl}
+                      alt={conv.contactName || conv.contactNumber}
+                      className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover"
+                      onError={(e) => {
+                        // Fallback para inicial se a imagem falhar
+                        const target = e.target as HTMLImageElement
+                        target.style.display = 'none'
+                        const fallback = target.nextElementSibling as HTMLElement
+                        if (fallback) fallback.style.display = 'flex'
+                      }}
+                    />
+                  ) : null}
+                  <div 
+                    className={`flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 rounded-full bg-autozap-primary flex items-center justify-center text-white font-semibold text-base sm:text-lg ${conv.profilePictureUrl ? 'hidden' : ''}`}
+                  >
                     {(conv.contactName || conv.contactNumber).charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -366,7 +383,23 @@ export default function ChatManager() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
                 </svg>
               </button>
-              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-autozap-primary flex items-center justify-center text-white font-semibold text-base sm:text-lg flex-shrink-0">
+              {selectedConversation.profilePictureUrl ? (
+                <img
+                  src={selectedConversation.profilePictureUrl}
+                  alt={selectedConversation.contactName || selectedConversation.contactNumber}
+                  className="w-8 h-8 sm:w-10 sm:h-10 rounded-full object-cover flex-shrink-0"
+                  onError={(e) => {
+                    // Fallback para inicial se a imagem falhar
+                    const target = e.target as HTMLImageElement
+                    target.style.display = 'none'
+                    const fallback = target.nextElementSibling as HTMLElement
+                    if (fallback) fallback.style.display = 'flex'
+                  }}
+                />
+              ) : null}
+              <div 
+                className={`w-8 h-8 sm:w-10 sm:h-10 rounded-full bg-autozap-primary flex items-center justify-center text-white font-semibold text-base sm:text-lg flex-shrink-0 ${selectedConversation.profilePictureUrl ? 'hidden' : ''}`}
+              >
                 {(selectedConversation.contactName || selectedConversation.contactNumber).charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
@@ -377,6 +410,48 @@ export default function ChatManager() {
                   {selectedConversation.instanceName}
                 </p>
               </div>
+              {/* Botão excluir chat */}
+              <button
+                onClick={async () => {
+                  if (!selectedConversation) return
+                  
+                  const confirmDelete = window.confirm(
+                    `Tem certeza que deseja excluir todas as mensagens desta conversa com ${selectedConversation.contactName || formatPhoneNumber(selectedConversation.contactNumber)}?\n\nEsta ação não pode ser desfeita.`
+                  )
+                  
+                  if (!confirmDelete) return
+                  
+                  try {
+                    const response = await fetch(
+                      `/api/chat/conversations?instanceId=${selectedConversation.instanceId}&contactNumber=${selectedConversation.contactNumber}`,
+                      {
+                        method: 'DELETE',
+                      }
+                    )
+                    
+                    if (response.ok) {
+                      // Atualiza a lista de conversas
+                      fetchConversations(activeTab)
+                      // Fecha o chat atual
+                      setSelectedConversation(null)
+                      setMessages([])
+                    } else {
+                      const error = await response.json()
+                      alert(`Erro ao excluir conversa: ${error.error || 'Erro desconhecido'}`)
+                    }
+                  } catch (error) {
+                    console.error('Erro ao excluir conversa:', error)
+                    alert('Erro ao excluir conversa. Tente novamente.')
+                  }
+                }}
+                className="p-2 hover:bg-red-100 rounded transition-colors text-red-600"
+                aria-label="Excluir conversa"
+                title="Excluir todas as mensagens desta conversa"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
+              </button>
             </div>
 
             {/* Mensagens */}
