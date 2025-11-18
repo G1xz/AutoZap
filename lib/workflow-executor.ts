@@ -9,6 +9,7 @@ export interface WhatsAppMessage {
   timestamp: number
   type: 'text' | 'image' | 'document' | 'audio' | 'video' | 'button'
   contactName?: string // Nome do contato se disponível
+  mediaUrl?: string // URL da mídia salva no Cloudinary (se houver)
 }
 
 interface WorkflowNode {

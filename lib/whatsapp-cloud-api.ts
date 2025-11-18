@@ -293,20 +293,24 @@ export async function sendWhatsAppImage(
       ? cleanPhoneNumber
       : `55${cleanPhoneNumber}`
 
-    // Converte URL relativa para absoluta
+    // Converte URL relativa para absoluta (compatibilidade com código antigo)
+    // Se já for URL HTTPS (Cloudinary), usa diretamente
     let absoluteUrl = imageUrl
     if (imageUrl.startsWith('/')) {
-      // Tenta garantir que o localtunnel está carregado antes de usar
+      // URL relativa - converte para absoluta (fallback para código antigo)
       const { ensureLocaltunnelLoaded } = await import('./localtunnel')
       if (instance.userId) {
         await ensureLocaltunnelLoaded(instance.userId)
       }
       
-      // Usa URL automática (Vercel em produção, localtunnel em dev)
       const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${imageUrl}`
-      console.log(`📸 Enviando imagem: ${absoluteUrl}`)
-      console.log(`🔗 Base URL usada: ${baseUrl} (userId: ${instance.userId || 'não disponível'})`)
+      console.log(`📸 Enviando imagem (URL relativa): ${absoluteUrl}`)
+    } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      // URL absoluta (Cloudinary ou outra) - usa diretamente
+      console.log(`📸 Enviando imagem (URL absoluta): ${absoluteUrl}`)
+    } else {
+      throw new Error('URL de imagem inválida. Use URL completa (HTTPS) ou caminho relativo.')
     }
 
     const url = `${WHATSAPP_API_URL}/${phoneNumberId}/messages`
@@ -392,9 +396,11 @@ export async function sendWhatsAppVideo(
       ? cleanPhoneNumber
       : `55${cleanPhoneNumber}`
 
+    // Converte URL relativa para absoluta (compatibilidade com código antigo)
+    // Se já for URL HTTPS (Cloudinary), usa diretamente
     let absoluteUrl = videoUrl
     if (videoUrl.startsWith('/')) {
-      // Tenta garantir que o localtunnel está carregado antes de usar
+      // URL relativa - converte para absoluta (fallback para código antigo)
       const { ensureLocaltunnelLoaded } = await import('./localtunnel')
       if (instance.userId) {
         await ensureLocaltunnelLoaded(instance.userId)
@@ -402,8 +408,12 @@ export async function sendWhatsAppVideo(
       
       const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${videoUrl}`
-      console.log(`🎥 Enviando vídeo: ${absoluteUrl}`)
-      console.log(`🔗 Base URL usada: ${baseUrl} (userId: ${instance.userId || 'não disponível'})`)
+      console.log(`🎥 Enviando vídeo (URL relativa): ${absoluteUrl}`)
+    } else if (videoUrl.startsWith('http://') || videoUrl.startsWith('https://')) {
+      // URL absoluta (Cloudinary ou outra) - usa diretamente
+      console.log(`🎥 Enviando vídeo (URL absoluta): ${absoluteUrl}`)
+    } else {
+      throw new Error('URL de vídeo inválida. Use URL completa (HTTPS) ou caminho relativo.')
     }
 
     const url = `${WHATSAPP_API_URL}/${phoneNumberId}/messages`
@@ -489,9 +499,11 @@ export async function sendWhatsAppDocument(
       ? cleanPhoneNumber
       : `55${cleanPhoneNumber}`
 
+    // Converte URL relativa para absoluta (compatibilidade com código antigo)
+    // Se já for URL HTTPS (Cloudinary), usa diretamente
     let absoluteUrl = documentUrl
     if (documentUrl.startsWith('/')) {
-      // Tenta garantir que o localtunnel está carregado antes de usar
+      // URL relativa - converte para absoluta (fallback para código antigo)
       const { ensureLocaltunnelLoaded } = await import('./localtunnel')
       if (instance.userId) {
         await ensureLocaltunnelLoaded(instance.userId)
@@ -499,8 +511,12 @@ export async function sendWhatsAppDocument(
       
       const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${documentUrl}`
-      console.log(`📄 Enviando documento: ${absoluteUrl}`)
-      console.log(`🔗 Base URL usada: ${baseUrl} (userId: ${instance.userId || 'não disponível'})`)
+      console.log(`📄 Enviando documento (URL relativa): ${absoluteUrl}`)
+    } else if (documentUrl.startsWith('http://') || documentUrl.startsWith('https://')) {
+      // URL absoluta (Cloudinary ou outra) - usa diretamente
+      console.log(`📄 Enviando documento (URL absoluta): ${absoluteUrl}`)
+    } else {
+      throw new Error('URL de documento inválida. Use URL completa (HTTPS) ou caminho relativo.')
     }
 
     const url = `${WHATSAPP_API_URL}/${phoneNumberId}/messages`
@@ -576,6 +592,79 @@ export async function getUserProfileName(
 }
 
 /**
+ * Baixa mídia do WhatsApp e salva no Cloudinary
+ */
+export async function downloadAndSaveMedia(
+  instanceId: string,
+  mediaId: string,
+  mediaType: 'image' | 'video' | 'raw',
+  userId?: string | null
+): Promise<string> {
+  try {
+    const instance = await prisma.whatsAppInstance.findUnique({
+      where: { id: instanceId },
+    })
+
+    if (!instance || !instance.phoneId) {
+      throw new Error('Instância não configurada')
+    }
+
+    // 🔒 MODELO CHAKRA: Usa token fixo (você paga tudo)
+    const accessToken = getAccessToken(instance.accessToken)
+
+    // Obtém URL de download da mídia
+    // A API do WhatsApp requer o phoneNumberId para baixar mídia
+    const mediaUrl = `${WHATSAPP_API_URL}/${instance.phoneId}/media/${mediaId}`
+    const mediaResponse = await fetch(mediaUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
+    if (!mediaResponse.ok) {
+      const error = await mediaResponse.json()
+      throw new Error(`Erro ao obter URL de mídia: ${error.error?.message || 'Erro desconhecido'}`)
+    }
+
+    const mediaData = await mediaResponse.json()
+    const downloadUrl = mediaData.url
+
+    if (!downloadUrl) {
+      throw new Error('URL de download não encontrada na resposta')
+    }
+
+    // Baixa o arquivo (a URL já é pública, mas pode precisar do token)
+    const fileResponse = await fetch(downloadUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    })
+
+    if (!fileResponse.ok) {
+      throw new Error('Erro ao baixar arquivo da mídia')
+    }
+
+    const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
+
+    // Faz upload para Cloudinary
+    const { uploadFileToCloudinary } = await import('./cloudinary')
+    const folder = userId ? `autozap/${userId}/received` : 'autozap/received'
+    const uploadResult = await uploadFileToCloudinary(
+      fileBuffer,
+      `${mediaId}.${mediaData.mime_type?.split('/')[1] || 'bin'}`,
+      folder,
+      mediaType
+    )
+
+    console.log(`✅ Mídia salva no Cloudinary: ${uploadResult.secure_url}`)
+    return uploadResult.secure_url
+  } catch (error) {
+    console.error('Erro ao baixar e salvar mídia:', error)
+    throw error
+  }
+}
+
+/**
  * Verifica se o webhook é válido (usado na configuração inicial)
  */
 export function verifyWebhook(
@@ -616,6 +705,7 @@ export async function processIncomingMessage(
         isGroup: false, // A API Cloud não suporta grupos da mesma forma
         messageType: message.type || 'text',
         messageId: message.messageId,
+        mediaUrl: message.mediaUrl || null, // URL da mídia salva no Cloudinary (se houver)
       },
     })
 

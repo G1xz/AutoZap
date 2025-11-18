@@ -63,8 +63,9 @@ model Message {
   isFromMe        Boolean
   isGroup         Boolean  @default(false)
   messageId       String   @unique
-  messageType     String   @default("text") // text, interactive, button
+  messageType     String   @default("text") // text, interactive, button, image, video, document, audio
   interactiveData String? // JSON com dados de mensagens interativas (botões, etc)
+  mediaUrl        String? // URL da mídia salva no Cloudinary (imagens, vídeos, documentos, áudios)
   createdAt       DateTime @default(now())
 
   instance WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)

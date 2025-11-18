@@ -133,6 +133,54 @@ export async function POST(request: NextRequest) {
       let messageBody = msg.text?.body || ''
       let messageType = msg.type || 'text'
       let buttonTitle = null // Título do botão escolhido
+      let mediaUrl: string | null = null // URL da mídia (imagem, vídeo, etc)
+
+      // Processa mídia recebida (imagem, vídeo, documento, áudio)
+      if (msg.type === 'image' && msg.image?.id) {
+        messageBody = msg.image.caption || '[Imagem]'
+        messageType = 'image'
+        // Baixa e salva a imagem no Cloudinary
+        try {
+          const { downloadAndSaveMedia } = await import('@/lib/whatsapp-cloud-api')
+          mediaUrl = await downloadAndSaveMedia(instance.id, msg.image.id, 'image', instance.userId)
+          console.log(`📸 Imagem recebida e salva no Cloudinary: ${mediaUrl}`)
+        } catch (error) {
+          console.error('Erro ao processar imagem recebida:', error)
+        }
+      } else if (msg.type === 'video' && msg.video?.id) {
+        messageBody = msg.video.caption || '[Vídeo]'
+        messageType = 'video'
+        // Baixa e salva o vídeo no Cloudinary
+        try {
+          const { downloadAndSaveMedia } = await import('@/lib/whatsapp-cloud-api')
+          mediaUrl = await downloadAndSaveMedia(instance.id, msg.video.id, 'video', instance.userId)
+          console.log(`🎥 Vídeo recebido e salvo no Cloudinary: ${mediaUrl}`)
+        } catch (error) {
+          console.error('Erro ao processar vídeo recebido:', error)
+        }
+      } else if (msg.type === 'document' && msg.document?.id) {
+        messageBody = msg.document.caption || `[Documento: ${msg.document.filename || 'arquivo'}]`
+        messageType = 'document'
+        // Baixa e salva o documento no Cloudinary
+        try {
+          const { downloadAndSaveMedia } = await import('@/lib/whatsapp-cloud-api')
+          mediaUrl = await downloadAndSaveMedia(instance.id, msg.document.id, 'raw', instance.userId)
+          console.log(`📄 Documento recebido e salvo no Cloudinary: ${mediaUrl}`)
+        } catch (error) {
+          console.error('Erro ao processar documento recebido:', error)
+        }
+      } else if (msg.type === 'audio' && msg.audio?.id) {
+        messageBody = '[Áudio]'
+        messageType = 'audio'
+        // Baixa e salva o áudio no Cloudinary
+        try {
+          const { downloadAndSaveMedia } = await import('@/lib/whatsapp-cloud-api')
+          mediaUrl = await downloadAndSaveMedia(instance.id, msg.audio.id, 'raw', instance.userId)
+          console.log(`🎵 Áudio recebido e salvo no Cloudinary: ${mediaUrl}`)
+        } catch (error) {
+          console.error('Erro ao processar áudio recebido:', error)
+        }
+      }
 
       // Se for resposta de botão interativo
       if (msg.type === 'interactive' && msg.interactive?.type === 'button_reply') {
@@ -185,6 +233,7 @@ export async function POST(request: NextRequest) {
         timestamp: parseInt(msg.timestamp),
         type: messageType,
         contactName: contactName,
+        mediaUrl: mediaUrl, // URL da mídia salva no Cloudinary (se houver)
       })
     }
 

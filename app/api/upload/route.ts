@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile } from 'fs/promises'
-import { join } from 'path'
-import { existsSync, mkdirSync } from 'fs'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
+import { uploadFileToCloudinary } from '@/lib/cloudinary'
 
 export async function POST(request: NextRequest) {
   try {
@@ -39,36 +37,42 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Cria diretório de uploads FORA da pasta public (mais seguro)
-    // Em produção, considere usar S3, Cloudinary ou Vercel Blob Storage
-    const uploadsDir = join(process.cwd(), 'uploads')
-    if (!existsSync(uploadsDir)) {
-      mkdirSync(uploadsDir, { recursive: true })
-    }
-
-    // Gera nome único para o arquivo
-    const timestamp = Date.now()
-    const fileName = `${session.user.id}-${timestamp}-${file.name}`
-    const filePath = join(uploadsDir, fileName)
-
-    // Salva o arquivo
+    // Converte arquivo para Buffer
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
-    await writeFile(filePath, buffer)
 
-    // Retorna URL da API que serve o arquivo (não diretamente do public)
-    const fileUrl = `/api/files/${fileName}`
+    // Determina resource_type baseado no tipo do arquivo
+    let resourceType: 'image' | 'video' | 'raw' | 'auto' = 'auto'
+    if (file.type.startsWith('image/')) {
+      resourceType = 'image'
+    } else if (file.type.startsWith('video/')) {
+      resourceType = 'video'
+    } else {
+      resourceType = 'raw' // Para documentos PDF, DOC, etc.
+    }
+
+    // Faz upload para Cloudinary
+    const folder = `autozap/${session.user.id}`
+    const uploadResult = await uploadFileToCloudinary(
+      buffer,
+      file.name,
+      folder,
+      resourceType
+    )
+
+    console.log(`✅ Arquivo enviado para Cloudinary: ${uploadResult.secure_url}`)
 
     return NextResponse.json({
-      url: fileUrl,
+      url: uploadResult.secure_url, // URL HTTPS do Cloudinary
       fileName: file.name,
       size: file.size,
       type: file.type,
+      public_id: uploadResult.public_id,
     })
   } catch (error) {
     console.error('Erro ao fazer upload:', error)
     return NextResponse.json(
-      { error: 'Erro ao fazer upload do arquivo' },
+      { error: error instanceof Error ? error.message : 'Erro ao fazer upload do arquivo' },
       { status: 500 }
     )
   }
