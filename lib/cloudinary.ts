@@ -42,6 +42,15 @@ async function configureCloudinary() {
   // Fallback: usa variáveis individuais (mais confiável)
   if (cloudName && apiKey && apiSecret) {
     try {
+      // Log para debug (não mostra o secret completo por segurança)
+      console.log('🔧 Configurando Cloudinary:', {
+        cloud_name: cloudName,
+        api_key: apiKey,
+        api_secret_length: apiSecret.length,
+        api_secret_first_chars: apiSecret.substring(0, 10),
+        api_secret_last_chars: apiSecret.substring(apiSecret.length - 5),
+      })
+      
       cloudinary.config({
         cloud_name: cloudName,
         api_key: apiKey,
@@ -96,17 +105,20 @@ export async function uploadFileToCloudinary(
     const timestamp = Date.now()
     // Remove caracteres especiais do nome do arquivo para evitar problemas
     const cleanFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^/.]+$/, '')
-    const publicId = `${folder}/${timestamp}-${cleanFileName}`
+    
+    // IMPORTANTE: Não inclui folder no public_id se já especificamos folder separadamente
+    // Isso evita duplicação na assinatura
+    const publicId = `${timestamp}-${cleanFileName}`
+
+    // Configuração mínima para evitar problemas de assinatura
+    const uploadOptions: any = {
+      resource_type: resourceType,
+      folder: folder, // Folder separado
+      public_id: publicId, // Public ID sem folder (o Cloudinary combina automaticamente)
+    }
 
     const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder,
-        resource_type: resourceType,
-        public_id: publicId,
-        // Não usa timestamp na assinatura para evitar problemas
-        use_filename: false,
-        unique_filename: true,
-      },
+      uploadOptions,
       (error: any, result: any) => {
         if (error) {
           console.error('Erro ao fazer upload para Cloudinary:', error)
