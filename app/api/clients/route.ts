@@ -41,7 +41,8 @@ export async function GET(request: NextRequest) {
       status?: string
     }>()
 
-    instances.forEach(instance => {
+    // Processa cada instância e aguarda todas as buscas de nomes
+    for (const instance of instances) {
       // Agrupa mensagens por contato
       const contactMessages = new Map<string, any[]>()
       
@@ -54,26 +55,35 @@ export async function GET(request: NextRequest) {
       })
 
       // Cria entrada para cada contato
-      contactMessages.forEach((messages, contactNumber) => {
+      // Usa Promise.all para aguardar todas as buscas de nomes
+      const contactPromises = Array.from(contactMessages.entries()).map(async ([contactNumber, messages]) => {
         const key = `${instance.id}-${contactNumber}`
         const status = instance.conversationStatuses.find(
           cs => cs.contactNumber === contactNumber
         )
 
-        // Busca o nome do contato
-        const contactName = getContactName(instance.id, contactNumber)
+        // Busca o nome do contato (agora é async)
+        const contactName = await getContactName(instance.id, contactNumber)
 
-        clientsMap.set(key, {
-          contactNumber,
-          contactName,
-          instanceId: instance.id,
-          instanceName: instance.name,
-          lastMessageDate: messages[0]?.timestamp.toISOString() || new Date().toISOString(),
-          messageCount: messages.length,
-          status: status?.status,
-        })
+        return {
+          key,
+          data: {
+            contactNumber,
+            contactName,
+            instanceId: instance.id,
+            instanceName: instance.name,
+            lastMessageDate: messages[0]?.timestamp.toISOString() || new Date().toISOString(),
+            messageCount: messages.length,
+            status: status?.status,
+          }
+        }
       })
-    })
+
+      const contactResults = await Promise.all(contactPromises)
+      contactResults.forEach(({ key, data }) => {
+        clientsMap.set(key, data)
+      })
+    }
 
     const clients = Array.from(clientsMap.values())
       .sort((a, b) => new Date(b.lastMessageDate).getTime() - new Date(a.lastMessageDate).getTime())
