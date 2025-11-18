@@ -10,6 +10,7 @@ export interface WhatsAppMessage {
   type: 'text' | 'image' | 'document' | 'audio' | 'video' | 'button'
   contactName?: string // Nome do contato se disponível
   mediaUrl?: string // URL da mídia salva no Cloudinary (se houver)
+  interactiveData?: string | null // Dados interativos (botões, etc) em formato JSON
 }
 
 interface WorkflowNode {
@@ -521,6 +522,27 @@ export async function processQuestionnaireResponse(
     return
   }
 
+  // Busca a mensagem mais recente para obter o interactiveData (se for resposta de botão)
+  const recentMessage = await prisma.message.findFirst({
+    where: {
+      instanceId,
+      from: contactNumber,
+      messageType: 'button',
+    },
+    orderBy: { timestamp: 'desc' },
+  })
+
+  // Tenta obter o buttonId do interactiveData
+  let buttonIdFromData: string | null = null
+  if (recentMessage?.interactiveData) {
+    try {
+      const interactiveData = JSON.parse(recentMessage.interactiveData)
+      buttonIdFromData = interactiveData.buttonId || null
+    } catch (e) {
+      // Ignora erro de parsing
+    }
+  }
+
   // Busca workflow específico pelo ID da execução
   const workflows = await prisma.workflow.findMany({
     where: {
@@ -557,11 +579,19 @@ export async function processQuestionnaireResponse(
     
     let optionId: string | null = null
     
-    // PRIORIDADE 1: Se a mensagem é um ID de botão (começa com "option-"), usa diretamente
-    // Os IDs dos botões são `option-${option.id}`, então precisamos remover o prefixo
-    if (messageBody.startsWith('option-')) {
+    // PRIORIDADE 1: Se temos o buttonId do interactiveData, usa diretamente
+    if (buttonIdFromData && buttonIdFromData.startsWith('option-')) {
+      const extractedId = buttonIdFromData.replace('option-', '')
+      const foundOption = options.find((opt: any) => opt.id === extractedId)
+      if (foundOption) {
+        optionId = extractedId
+        console.log(`✅ Opção identificada pelo buttonId do interactiveData: ${optionId}`)
+      }
+    }
+    
+    // PRIORIDADE 2: Se a mensagem é um ID de botão (começa com "option-"), usa diretamente
+    if (!optionId && messageBody.startsWith('option-')) {
       const extractedId = messageBody.replace('option-', '')
-      // Verifica se o ID extraído corresponde a alguma opção
       const foundOption = options.find((opt: any) => opt.id === extractedId)
       if (foundOption) {
         optionId = extractedId
@@ -569,7 +599,7 @@ export async function processQuestionnaireResponse(
       }
     }
     
-    // PRIORIDADE 2: Se ainda não encontrou, procura pelo título do botão (caso tenha sido passado)
+    // PRIORIDADE 3: Se ainda não encontrou, procura pelo título do botão (messageBody agora tem o título)
     if (!optionId) {
       const foundOptionByLabel = options.find((opt: any) => {
         const optLabel = opt.label.toLowerCase().trim()
@@ -581,7 +611,7 @@ export async function processQuestionnaireResponse(
       }
     }
     
-    // PRIORIDADE 3: Verifica se respondeu com número (ex: "1", "2", etc)
+    // PRIORIDADE 4: Verifica se respondeu com número (ex: "1", "2", etc)
     if (!optionId) {
       const numberMatch = messageLower.match(/^(\d+)/)
       if (numberMatch) {

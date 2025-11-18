@@ -134,6 +134,7 @@ export async function POST(request: NextRequest) {
       let messageType = msg.type || 'text'
       let buttonTitle = null // Título do botão escolhido
       let mediaUrl: string | null = null // URL da mídia (imagem, vídeo, etc)
+      let interactiveData: string | null = null // Dados interativos (botões, etc)
 
       // Processa mídia recebida (imagem, vídeo, documento, áudio)
       if (msg.type === 'image' && msg.image?.id) {
@@ -187,11 +188,12 @@ export async function POST(request: NextRequest) {
         const buttonId = msg.interactive.button_reply.id
         buttonTitle = msg.interactive.button_reply.title // Título do botão
         
-        // IMPORTANTE: Usa o buttonId diretamente para que o questionário identifique corretamente
-        // O buttonId já vem no formato "option-{optionId}" que é o que o processQuestionnaireResponse espera
-        messageBody = buttonId
+        // Para exibição no chat, usa o título do botão
+        // Para processamento do questionário, salva o buttonId no interactiveData
+        messageBody = buttonTitle || buttonId // Prioriza título, fallback para ID
         
         // Se o buttonId não começar com "option-", tenta buscar na mensagem interativa original
+        let actualButtonId = buttonId
         if (!buttonId.startsWith('option-')) {
           const recentInteractiveMessage = await prisma.message.findFirst({
             where: {
@@ -208,18 +210,25 @@ export async function POST(request: NextRequest) {
               const interactiveData = JSON.parse(recentInteractiveMessage.interactiveData)
               const button = interactiveData.buttons?.find((b: any) => b.id === buttonId)
               if (button && button.id && button.id.startsWith('option-')) {
-                messageBody = button.id // Usa o ID do botão que começa com "option-"
-              } else {
-                messageBody = buttonId // Fallback para o ID recebido
+                actualButtonId = button.id // Usa o ID do botão que começa com "option-"
               }
             } catch (e) {
-              messageBody = buttonId // Fallback para o ID se erro ao parsear
+              // Mantém o buttonId original
             }
           }
+        } else {
+          actualButtonId = buttonId
         }
         
+        // Salva o buttonId no interactiveData para processamento do questionário
+        // O título já está no messageBody para exibição
+        interactiveData = JSON.stringify({
+          buttonId: actualButtonId,
+          buttonTitle: buttonTitle,
+        })
+        
         messageType = 'button'
-        console.log(`🔘 Botão clicado: ID=${buttonId}, Título=${buttonTitle}, messageBody=${messageBody}`)
+        console.log(`🔘 Botão clicado: ID=${actualButtonId}, Título=${buttonTitle}, Exibição=${messageBody}`)
       }
 
       // Tenta obter o nome do contato do webhook
@@ -249,6 +258,7 @@ export async function POST(request: NextRequest) {
         type: messageType,
         contactName: contactName,
         mediaUrl: mediaUrl || undefined, // URL da mídia salva no Cloudinary (se houver)
+        interactiveData: interactiveData || undefined, // Dados interativos (botões, etc)
       })
     }
 

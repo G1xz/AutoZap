@@ -793,6 +793,7 @@ export async function processIncomingMessage(
         messageType: message.type || 'text',
         messageId: message.messageId,
         mediaUrl: message.mediaUrl || null, // URL da mídia salva no Cloudinary (se houver)
+        interactiveData: message.interactiveData || null, // Dados interativos (botões, etc)
       },
     })
 
