@@ -21,7 +21,7 @@ async function configureCloudinary() {
   const apiKey = process.env.CLOUDINARY_API_KEY
   const apiSecret = process.env.CLOUDINARY_API_SECRET
 
-  // Valida se CLOUDINARY_URL está no formato correto
+  // PRIORIDADE: Usa CLOUDINARY_URL se disponível (mais confiável com caracteres especiais)
   const hasValidCloudinaryUrl = cloudinaryUrl && 
     typeof cloudinaryUrl === 'string' && 
     cloudinaryUrl.trim().startsWith('cloudinary://')
@@ -29,12 +29,14 @@ async function configureCloudinary() {
   if (hasValidCloudinaryUrl) {
     try {
       // Usa CLOUDINARY_URL (formato: cloudinary://api_key:api_secret@cloud_name)
+      // Isso evita problemas com caracteres especiais no API Secret
       cloudinary.config()
-      console.log('✅ Cloudinary configurado via CLOUDINARY_URL')
+      console.log('✅ Cloudinary configurado via CLOUDINARY_URL (recomendado)')
       cloudinaryConfigured = true
       return
-    } catch (error) {
-      console.warn('⚠️ Erro ao configurar via CLOUDINARY_URL, tentando variáveis individuais:', error)
+    } catch (error: any) {
+      console.warn('⚠️ Erro ao configurar via CLOUDINARY_URL:', error?.message || error)
+      console.warn('   Tentando variáveis individuais como fallback...')
       // Continua para tentar variáveis individuais
     }
   }
@@ -111,10 +113,12 @@ export async function uploadFileToCloudinary(
     const publicId = `${timestamp}-${cleanFileName}`
 
     // Configuração mínima para evitar problemas de assinatura
+    // Não passa timestamp manualmente - o Cloudinary gera automaticamente
     const uploadOptions: any = {
       resource_type: resourceType,
       folder: folder, // Folder separado
       public_id: publicId, // Public ID sem folder (o Cloudinary combina automaticamente)
+      // Não inclui timestamp - o Cloudinary adiciona automaticamente na assinatura
     }
 
     const uploadStream = cloudinary.uploader.upload_stream(
