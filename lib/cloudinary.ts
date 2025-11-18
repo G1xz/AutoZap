@@ -108,17 +108,13 @@ export async function uploadFileToCloudinary(
     // Remove caracteres especiais do nome do arquivo para evitar problemas
     const cleanFileName = fileName.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^/.]+$/, '')
     
-    // IMPORTANTE: Não inclui folder no public_id se já especificamos folder separadamente
-    // Isso evita duplicação na assinatura
-    const publicId = `${timestamp}-${cleanFileName}`
-
-    // Configuração mínima para evitar problemas de assinatura
-    // Não passa timestamp manualmente - o Cloudinary gera automaticamente
+    // Tenta usar upload unsigned primeiro (não requer assinatura)
+    // Se falhar, tenta com assinatura
     const uploadOptions: any = {
       resource_type: resourceType,
-      folder: folder, // Folder separado
-      public_id: publicId, // Public ID sem folder (o Cloudinary combina automaticamente)
-      // Não inclui timestamp - o Cloudinary adiciona automaticamente na assinatura
+      folder: folder,
+      // Não especifica public_id - deixa o Cloudinary gerar automaticamente
+      // Isso simplifica a assinatura
     }
 
     const uploadStream = cloudinary.uploader.upload_stream(
