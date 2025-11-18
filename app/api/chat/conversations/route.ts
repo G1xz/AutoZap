@@ -120,6 +120,12 @@ export async function GET(request: NextRequest) {
         const status = statusMap.get(key) || 'active'
         conv.status = status
         
+        // Se há filtro de status e o status não corresponde, remove da lista
+        if (statusFilter && status !== statusFilter) {
+          conversationsMap.delete(key)
+          continue
+        }
+        
         // Atualiza se esta mensagem é mais recente
         if (message.timestamp > conv.lastMessageTime) {
           conv.lastMessage = message.body

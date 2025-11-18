@@ -38,6 +38,53 @@ export default function ChatManager() {
   const [loading, setLoading] = useState(true)
   const [sending, setSending] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
+  const previousConversationsRef = useRef<Conversation[]>([])
+
+  // Notificação sonora quando conversa vai para "aguardando resposta"
+  useEffect(() => {
+    if (conversations.length > 0 && previousConversationsRef.current.length > 0) {
+      // Verifica se alguma conversa mudou para "waiting_human"
+      const newWaitingHuman = conversations.filter(c => c.status === 'waiting_human')
+      const previousWaitingHuman = previousConversationsRef.current.filter(c => c.status === 'waiting_human')
+      
+      // Se há uma nova conversa em "waiting_human" que não estava antes
+      const newConversations = newWaitingHuman.filter(newConv => 
+        !previousWaitingHuman.some(prevConv => 
+          prevConv.instanceId === newConv.instanceId && 
+          prevConv.contactNumber === newConv.contactNumber
+        )
+      )
+      
+      if (newConversations.length > 0) {
+        // Toca notificação sonora
+        try {
+          const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZijcIGWi77+efTRAMUKfj8LZjHAY4kdfyzHksBSR3x/DdkEAKFF606euoVRQKRp/g8r5sIQUrgc7y2Yo3CBlou+/nn00QDFCn4/C2YxwGOJHX8sx5LAUkd8fw3ZBAC')
+          audio.volume = 0.5
+          audio.play().catch(err => console.log('Erro ao tocar notificação:', err))
+        } catch (error) {
+          // Fallback: usa beep do sistema
+          if (typeof window !== 'undefined' && 'AudioContext' in window) {
+            const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)()
+            const oscillator = audioContext.createOscillator()
+            const gainNode = audioContext.createGain()
+            
+            oscillator.connect(gainNode)
+            gainNode.connect(audioContext.destination)
+            
+            oscillator.frequency.value = 800
+            oscillator.type = 'sine'
+            
+            gainNode.gain.setValueAtTime(0.3, audioContext.currentTime)
+            gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.3)
+            
+            oscillator.start(audioContext.currentTime)
+            oscillator.stop(audioContext.currentTime + 0.3)
+          }
+        }
+      }
+    }
+    previousConversationsRef.current = conversations
+  }, [conversations])
 
   // Carrega conversas quando muda a aba
   useEffect(() => {

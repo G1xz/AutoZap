@@ -619,11 +619,32 @@ export async function processIncomingMessage(
       },
     })
 
-    // Executa workflows de automação apenas se a conversa não estiver encerrada
-    const { getConversationStatus } = await import('./conversation-status')
+    // Verifica se a mensagem contém um gatilho de workflow
+    const { getConversationStatus, updateConversationStatus } = await import('./conversation-status')
+    const { executeWorkflows } = await import('./workflow-executor')
     const status = await getConversationStatus(instanceId, message.from)
     
-    if (status !== 'closed') {
+    // Busca workflows ativos para verificar se a mensagem contém algum gatilho
+    const workflows = await prisma.workflow.findMany({
+      where: {
+        isActive: true,
+        OR: [
+          { instanceId: null },
+          { instanceId },
+        ],
+      },
+      select: { trigger: true },
+    })
+    
+    const messageBody = message.body.toLowerCase().trim()
+    const hasTrigger = workflows.some(w => messageBody.includes(w.trigger.toLowerCase().trim()))
+    
+    // Se a conversa está encerrada mas a mensagem contém um gatilho, reinicia a conversa
+    if (status === 'closed' && hasTrigger) {
+      console.log(`🔄 Conversa encerrada, mas gatilho detectado. Reiniciando conversa para ${message.from}`)
+      await updateConversationStatus(instanceId, message.from, 'active')
+      await executeWorkflows(instanceId, message)
+    } else if (status !== 'closed') {
       await executeWorkflows(instanceId, message)
     } else {
       console.log(`⚠️ Conversa encerrada, ignorando workflow para ${message.from}`)
