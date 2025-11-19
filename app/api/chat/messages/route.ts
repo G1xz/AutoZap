@@ -153,23 +153,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Envia a mensagem usando a função existente
+    // A função sendWhatsAppMessage já salva a mensagem no banco automaticamente
     const { sendWhatsAppMessage } = await import('@/lib/whatsapp-cloud-api')
     const result = await sendWhatsAppMessage(instanceId, to, message, 'service')
 
-    // Salva a mensagem no banco como enviada
-    if (result) {
-      await prisma.message.create({
-        data: {
-          instanceId,
-          from: instance.phone || instance.phoneId || '', // Número da instância
-          to: to,
-          body: message,
-          timestamp: new Date(),
-          isFromMe: true,
-          isGroup: false,
-          messageId: `manual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // ID único para mensagem manual
-        },
-      })
+    if (!result) {
+      return NextResponse.json(
+        { error: 'Falha ao enviar mensagem' },
+        { status: 500 }
+      )
     }
 
     return NextResponse.json({ success: true })

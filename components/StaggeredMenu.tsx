@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { gsap } from 'gsap'
 import '../app/staggered-menu.css'
 
@@ -54,6 +55,7 @@ export const StaggeredMenu: React.FC<StaggeredMenuProps> = ({
   onMenuOpen,
   onMenuClose
 }: StaggeredMenuProps) => {
+  const router = useRouter()
   const [open, setOpen] = useState(false)
   const openRef = useRef(false)
 
@@ -418,7 +420,8 @@ export const StaggeredMenu: React.FC<StaggeredMenuProps> = ({
       item.onClick()
       toggleMenu()
     } else if (item.link) {
-      window.location.href = item.link
+      router.push(item.link)
+      toggleMenu()
     }
   }
 
