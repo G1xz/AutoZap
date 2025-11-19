@@ -3,6 +3,7 @@
 import { Position, NodeProps } from '@xyflow/react'
 import { useState, useRef } from 'react'
 import { CustomHandle } from './CustomHandle'
+import { useToast } from '@/hooks/use-toast'
 
 interface MessageNodeData {
   label: string
@@ -14,6 +15,7 @@ interface MessageNodeData {
 
 export default function MessageNode(props: NodeProps) {
   const { data, selected } = props
+  const { toast } = useToast()
   const nodeData = data as unknown as MessageNodeData
   const [isEditing, setIsEditing] = useState(false)
   const [message, setMessage] = useState(nodeData.message || '')
@@ -81,7 +83,7 @@ export default function MessageNode(props: NodeProps) {
         nodeData.fileName = file.name
         nodeData.fileType = file.type.startsWith('image/') ? 'image' : file.type.startsWith('video/') ? 'video' : 'document'
       } else {
-        alert('Erro ao fazer upload do arquivo')
+        toast.error('Erro ao fazer upload do arquivo')
       }
     } catch (error) {
       console.error('Erro ao fazer upload:', error)

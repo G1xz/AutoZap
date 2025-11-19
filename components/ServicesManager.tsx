@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useConfirmDialog } from '@/hooks/use-confirm-dialog'
 
 interface Catalog {
   id: string
@@ -13,6 +14,7 @@ interface Catalog {
 
 export default function ServicesManager() {
   const router = useRouter()
+  const { confirm, ConfirmDialog } = useConfirmDialog()
   const [catalogs, setCatalogs] = useState<Catalog[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -35,7 +37,12 @@ export default function ServicesManager() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este catálogo?')) return
+    const confirmed = await confirm({
+      title: 'Excluir catálogo',
+      description: 'Tem certeza que deseja excluir este catálogo? Esta ação não pode ser desfeita.',
+      variant: 'destructive',
+    })
+    if (!confirmed) return
 
     try {
       const response = await fetch(`/api/catalogs/${id}`, {
@@ -143,6 +150,7 @@ export default function ServicesManager() {
           ))
         )}
       </div>
+      <ConfirmDialog />
     </div>
   )
 }

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useConfirmDialog } from '@/hooks/use-confirm-dialog'
 
 interface Workflow {
   id: string
@@ -18,9 +19,10 @@ interface Workflow {
 }
 
 export default function WorkflowsManager() {
+  const router = useRouter()
+  const { confirm, ConfirmDialog } = useConfirmDialog()
   const [workflows, setWorkflows] = useState<Workflow[]>([])
   const [loading, setLoading] = useState(true)
-  const router = useRouter()
 
   useEffect(() => {
     fetchWorkflows()
@@ -41,7 +43,12 @@ export default function WorkflowsManager() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este fluxo?')) return
+    const confirmed = await confirm({
+      title: 'Excluir fluxo',
+      description: 'Tem certeza que deseja excluir este fluxo? Esta ação não pode ser desfeita.',
+      variant: 'destructive',
+    })
+    if (!confirmed) return
 
     try {
       const response = await fetch(`/api/workflows/${id}`, {
@@ -157,6 +164,7 @@ export default function WorkflowsManager() {
           ))
         )}
       </div>
+      <ConfirmDialog />
     </div>
   )
 }

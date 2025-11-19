@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
+import { useToast } from '@/hooks/use-toast'
+import { useConfirmDialog } from '@/hooks/use-confirm-dialog'
 import WhatsAppCloudConfig from './WhatsAppCloudConfig'
 import WhatsAppQRCodeConnection from './WhatsAppQRCodeConnection'
 import WhatsAppFacebookConnection from './WhatsAppFacebookConnection'
@@ -18,6 +20,8 @@ interface WhatsAppInstance {
 
 export default function WhatsAppInstanceManager() {
   const { data: session } = useSession()
+  const { toast } = useToast()
+  const { confirm, ConfirmDialog } = useConfirmDialog()
   const [instances, setInstances] = useState<WhatsAppInstance[]>([])
   const [loading, setLoading] = useState(true)
   const [newInstanceName, setNewInstanceName] = useState('')
@@ -112,18 +116,23 @@ export default function WhatsAppInstanceManager() {
         fetchInstances()
       } else {
         const data = await response.json()
-        alert(data.error || 'Erro ao criar número')
+        toast.error(data.error || 'Erro ao criar número')
       }
     } catch (error) {
       console.error('Erro ao criar número:', error)
-      alert('Erro ao criar número')
+      toast.error('Erro ao criar número')
     } finally {
       setCreating(false)
     }
   }
 
   const disconnectInstance = async (id: string) => {
-    if (!confirm('Tem certeza que deseja desconectar este número?')) return
+    const confirmed = await confirm({
+      title: 'Desconectar número',
+      description: 'Tem certeza que deseja desconectar este número?',
+      variant: 'default',
+    })
+    if (!confirmed) return
 
     try {
       const response = await fetch(`/api/whatsapp/instances/${id}/disconnect`, {
@@ -139,7 +148,12 @@ export default function WhatsAppInstanceManager() {
   }
 
   const deleteInstance = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este número?')) return
+    const confirmed = await confirm({
+      title: 'Excluir número',
+      description: 'Tem certeza que deseja excluir este número? Esta ação não pode ser desfeita.',
+      variant: 'destructive',
+    })
+    if (!confirmed) return
 
     try {
       const response = await fetch(`/api/whatsapp/instances/${id}`, {
@@ -435,7 +449,7 @@ export default function WhatsAppInstanceManager() {
                               if (url) {
                                 copyToClipboard(url)
                               } else {
-                                alert('Configure a URL primeiro!')
+                                toast.error('Configure a URL primeiro!')
                               }
                             }}
                             className="px-3 py-1 bg-autozap-primary text-white rounded text-xs hover:bg-autozap-light transition-colors whitespace-nowrap"
@@ -554,6 +568,7 @@ export default function WhatsAppInstanceManager() {
           }}
         />
       )}
+      <ConfirmDialog />
     </div>
   )
 }

@@ -19,6 +19,8 @@ interface WhatsAppInstance {
 }
 
 export default function AutomationRulesManager() {
+  const { toast } = useToast()
+  const { confirm, ConfirmDialog } = useConfirmDialog()
   const [rules, setRules] = useState<AutomationRule[]>([])
   const [instances, setInstances] = useState<WhatsAppInstance[]>([])
   const [loading, setLoading] = useState(true)
@@ -96,11 +98,11 @@ export default function AutomationRulesManager() {
         fetchRules()
       } else {
         const data = await response.json()
-        alert(data.error || 'Erro ao salvar regra')
+        toast.error(data.error || 'Erro ao salvar regra')
       }
     } catch (error) {
       console.error('Erro ao salvar regra:', error)
-      alert('Erro ao salvar regra')
+      toast.error('Erro ao salvar regra')
     }
   }
 
@@ -118,7 +120,12 @@ export default function AutomationRulesManager() {
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir esta regra?')) return
+    const confirmed = await confirm({
+      title: 'Excluir regra',
+      description: 'Tem certeza que deseja excluir esta regra?',
+      variant: 'destructive',
+    })
+    if (!confirmed) return
 
     try {
       const response = await fetch(`/api/automation/rules/${id}`, {
@@ -378,6 +385,7 @@ export default function AutomationRulesManager() {
           ))
         )}
       </div>
+      <ConfirmDialog />
     </div>
   )
 }

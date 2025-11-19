@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useToast } from '@/hooks/use-toast'
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -111,6 +112,7 @@ function FlowCanvasWrapper({
 
 export default function CatalogEditor({ catalogId, onSave }: CatalogEditorProps) {
   const router = useRouter()
+  const { toast } = useToast()
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [catalogName, setCatalogName] = useState('')
@@ -205,7 +207,7 @@ export default function CatalogEditor({ catalogId, onSave }: CatalogEditorProps)
 
   const handleSave = async () => {
     if (!catalogName.trim()) {
-      alert('Preencha o nome do catálogo')
+      toast.error('Preencha o nome do catálogo')
       return
     }
 
@@ -242,19 +244,19 @@ export default function CatalogEditor({ catalogId, onSave }: CatalogEditorProps)
 
       if (response.ok) {
         const saved = await response.json()
-        alert('Catálogo salvo com sucesso!')
+        toast.success('Catálogo salvo com sucesso!')
         if (onSave) {
           onSave(saved)
         } else {
-          router.push('/dashboard')
+          router.push('/dashboard/catalogo')
         }
       } else {
         const errorData = await response.json()
-        alert(errorData.error || 'Erro ao salvar catálogo')
+        toast.error(errorData.error || 'Erro ao salvar catálogo')
       }
     } catch (error) {
       console.error('Erro ao salvar catálogo:', error)
-      alert('Erro ao salvar catálogo')
+      toast.error('Erro ao salvar catálogo')
     } finally {
       setIsSaving(false)
     }
@@ -267,7 +269,7 @@ export default function CatalogEditor({ catalogId, onSave }: CatalogEditorProps)
         <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push('/dashboard/catalogo')}
               className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors"
             >
               ← Voltar

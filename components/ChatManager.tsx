@@ -2,6 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useSession } from 'next-auth/react'
+import { useToast } from '@/hooks/use-toast'
+import { useConfirmDialog } from '@/hooks/use-confirm-dialog'
 
 interface Conversation {
   contactNumber: string
@@ -30,6 +32,8 @@ type ChatTab = 'active' | 'waiting_human' | 'closed'
 
 export default function ChatManager() {
   const { data: session } = useSession()
+  const { toast } = useToast()
+  const { confirm, ConfirmDialog } = useConfirmDialog()
   const [activeTab, setActiveTab] = useState<ChatTab>('active')
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
@@ -195,11 +199,11 @@ export default function ChatManager() {
         await fetchConversations(activeTab)
       } else {
         const error = await response.json()
-        alert(error.error || 'Erro ao enviar mensagem')
+        toast.error(error.error || 'Erro ao enviar mensagem')
       }
     } catch (error) {
       console.error('Erro ao enviar mensagem:', error)
-      alert('Erro ao enviar mensagem')
+      toast.error('Erro ao enviar mensagem')
     } finally {
       setSending(false)
     }
@@ -382,11 +386,15 @@ export default function ChatManager() {
                 onClick={async () => {
                   if (!selectedConversation) return
                   
-                  const confirmDelete = window.confirm(
-                    `Tem certeza que deseja excluir todas as mensagens desta conversa com ${selectedConversation.contactName || formatPhoneNumber(selectedConversation.contactNumber)}?\n\nEsta ação não pode ser desfeita.`
-                  )
+                  const confirmed = await confirm({
+                    title: 'Excluir conversa',
+                    description: `Tem certeza que deseja excluir todas as mensagens desta conversa com ${selectedConversation.contactName || formatPhoneNumber(selectedConversation.contactNumber)}? Esta ação não pode ser desfeita.`,
+                    confirmText: 'Excluir',
+                    cancelText: 'Cancelar',
+                    variant: 'destructive',
+                  })
                   
-                  if (!confirmDelete) return
+                  if (!confirmed) return
                   
                   try {
                     const response = await fetch(
@@ -402,13 +410,14 @@ export default function ChatManager() {
                       // Fecha o chat atual
                       setSelectedConversation(null)
                       setMessages([])
+                      toast.success('Conversa excluída com sucesso')
                     } else {
                       const error = await response.json()
-                      alert(`Erro ao excluir conversa: ${error.error || 'Erro desconhecido'}`)
+                      toast.error(`Erro ao excluir conversa: ${error.error || 'Erro desconhecido'}`)
                     }
                   } catch (error) {
                     console.error('Erro ao excluir conversa:', error)
-                    alert('Erro ao excluir conversa. Tente novamente.')
+                    toast.error('Erro ao excluir conversa. Tente novamente.')
                   }
                 }}
                 className="p-2 hover:bg-red-100 rounded transition-colors text-red-600"
@@ -522,6 +531,7 @@ export default function ChatManager() {
           </div>
         )}
       </div>
+      <ConfirmDialog />
     </div>
   )
 }

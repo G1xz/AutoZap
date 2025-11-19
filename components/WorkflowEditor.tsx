@@ -2,6 +2,7 @@
 
 import { useCallback, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { useToast } from '@/hooks/use-toast'
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -121,6 +122,7 @@ function FlowCanvasWrapper({
 
 export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorProps) {
   const router = useRouter()
+  const { toast } = useToast()
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([])
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([])
   const [workflowName, setWorkflowName] = useState('')
@@ -238,7 +240,7 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
 
   const handleSave = async () => {
     if (!workflowName.trim() || !workflowTrigger.trim()) {
-      alert('Preencha o nome e o trigger do fluxo')
+      toast.error('Preencha o nome e o trigger do fluxo')
       return
     }
 
@@ -276,12 +278,12 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
 
       if (response.ok) {
         const saved = await response.json()
-        alert('Fluxo salvo com sucesso!')
+        toast.success('Fluxo salvo com sucesso!')
         if (onSave) {
           onSave(saved)
         } else {
-          // Navegar para o dashboard se não houver callback
-          router.push('/dashboard')
+          // Navegar para a página de fluxos se não houver callback
+          router.push('/dashboard/fluxos')
         }
       } else {
         const errorData = await response.json()
@@ -289,11 +291,11 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
           ? `${errorData.error}: ${errorData.details}` 
           : errorData.error || 'Erro ao salvar fluxo'
         console.error('Erro ao salvar workflow:', errorData)
-        alert(errorMessage)
+        toast.error(errorMessage)
       }
     } catch (error) {
       console.error('Erro ao salvar workflow:', error)
-      alert('Erro ao salvar fluxo')
+      toast.error('Erro ao salvar fluxo')
     } finally {
       setIsSaving(false)
     }
@@ -306,7 +308,7 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
         <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => router.push('/dashboard')}
+              onClick={() => router.push('/dashboard/fluxos')}
               className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors"
             >
               ← Voltar
