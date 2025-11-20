@@ -126,20 +126,65 @@ export async function POST(request: NextRequest) {
           }
         })
 
-    // Cria o workflow
-    const workflow = await prisma.workflow.create({
-      data: {
-        userId: session.user.id,
-        name: data.name,
-        description: data.description || null,
-        trigger: data.trigger,
-        isActive: data.isActive ?? true,
-        instanceId: data.instanceId || null,
-        usesAI,
-        isAIOnly,
-        aiBusinessDetails: isAIOnly ? (data.aiBusinessDetails || null) : null,
-      },
-    })
+    // Tenta criar o workflow, se falhar por falta de colunas, tenta criar as colunas
+    let workflow
+    try {
+      workflow = await prisma.workflow.create({
+        data: {
+          userId: session.user.id,
+          name: data.name,
+          description: data.description || null,
+          trigger: data.trigger,
+          isActive: data.isActive ?? true,
+          instanceId: data.instanceId || null,
+          usesAI,
+          isAIOnly,
+          aiBusinessDetails: isAIOnly ? (data.aiBusinessDetails || null) : null,
+        },
+      })
+    } catch (error: any) {
+      // Se o erro for por coluna não existir, tenta criar as colunas
+      if (error.message?.includes('isAIOnly') || error.message?.includes('isAlOnly')) {
+        console.log('⚠️ Colunas não existem, tentando criar...')
+        try {
+          await prisma.$executeRawUnsafe(`
+            ALTER TABLE "Workflow" 
+            ADD COLUMN IF NOT EXISTS "isAIOnly" BOOLEAN NOT NULL DEFAULT false;
+          `)
+          await prisma.$executeRawUnsafe(`
+            ALTER TABLE "Workflow" 
+            ADD COLUMN IF NOT EXISTS "aiBusinessDetails" TEXT;
+          `)
+          console.log('✅ Colunas criadas, tentando novamente...')
+          
+          // Tenta criar novamente
+          workflow = await prisma.workflow.create({
+            data: {
+              userId: session.user.id,
+              name: data.name,
+              description: data.description || null,
+              trigger: data.trigger,
+              isActive: data.isActive ?? true,
+              instanceId: data.instanceId || null,
+              usesAI,
+              isAIOnly,
+              aiBusinessDetails: isAIOnly ? (data.aiBusinessDetails || null) : null,
+            },
+          })
+        } catch (migrationError: any) {
+          console.error('Erro ao criar colunas:', migrationError)
+          return NextResponse.json(
+            {
+              error: 'Erro ao aplicar migration. Acesse /api/migrate/apply para aplicar manualmente.',
+              details: migrationError.message,
+            },
+            { status: 500 }
+          )
+        }
+      } else {
+        throw error
+      }
+    }
 
     // Cria os nós apenas se não for IA-only
     const nodeIdMap = new Map<string, string>() // Mapeia ID temporário -> ID do banco
