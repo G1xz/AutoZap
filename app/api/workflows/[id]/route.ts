@@ -9,6 +9,8 @@ const workflowUpdateSchema = z.object({
   description: z.string().optional(),
   trigger: z.string().min(1).optional(),
   isActive: z.boolean().optional(),
+  isAIOnly: z.boolean().optional(),
+  aiBusinessDetails: z.string().nullable().optional(),
   nodes: z
     .array(
       z.object({
@@ -124,9 +126,13 @@ export async function PUT(
     const body = await request.json()
     const data = workflowUpdateSchema.parse(body)
 
+    const isAIOnly = data.isAIOnly !== undefined ? data.isAIOnly : existingWorkflow.isAIOnly
+    
     // Detecta se o workflow usa nós de IA (se nós foram fornecidos)
     let usesAI = existingWorkflow.usesAI
-    if (data.nodes) {
+    if (isAIOnly) {
+      usesAI = true
+    } else if (data.nodes) {
       usesAI = data.nodes.some((node) => {
         try {
           const nodeData = typeof node.data === 'string' ? JSON.parse(node.data) : node.data
@@ -143,6 +149,8 @@ export async function PUT(
     if (data.description !== undefined) updateData.description = data.description
     if (data.trigger) updateData.trigger = data.trigger
     if (data.isActive !== undefined) updateData.isActive = data.isActive
+    if (data.isAIOnly !== undefined) updateData.isAIOnly = data.isAIOnly
+    if (data.aiBusinessDetails !== undefined) updateData.aiBusinessDetails = data.aiBusinessDetails
     if (data.nodes) updateData.usesAI = usesAI
 
     const workflow = await prisma.workflow.update({

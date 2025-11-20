@@ -28,6 +28,7 @@ import ConditionNode from './nodes/ConditionNode'
 import TriggerNode from './nodes/TriggerNode'
 import TransferToHumanNode from './nodes/TransferToHumanNode'
 import CloseChatNode from './nodes/CloseChatNode'
+import AIWorkflowConfig from './AIWorkflowConfig'
 
 const nodeTypes: NodeTypes = {
   trigger: TriggerNode as any,
@@ -133,21 +134,15 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
   const [nodeMenuPosition, setNodeMenuPosition] = useState({ x: 0, y: 0 })
   const [canvasNodePosition, setCanvasNodePosition] = useState({ x: 0, y: 0 })
   const [getCenterPosition, setGetCenterPosition] = useState<(() => { x: number; y: number }) | null>(null)
+  const [isAIOnly, setIsAIOnly] = useState<boolean | null>(null) // null = não escolhido ainda, true = IA-only, false = manual
+  const [aiBusinessDetails, setAiBusinessDetails] = useState<any>(null)
 
   // Carregar workflow existente
   useEffect(() => {
     if (workflowId) {
       loadWorkflow(workflowId)
-    } else {
-      // Criar nó inicial (trigger)
-      const initialNode: Node = {
-        id: 'trigger-1',
-        type: 'trigger',
-        position: { x: 250, y: 100 },
-        data: { label: 'Início', trigger: '' },
-      }
-      setNodes([initialNode])
     }
+    // Se não há workflowId, não criar nó inicial ainda - aguardar escolha do tipo
   }, [workflowId])
 
   const loadWorkflow = async (id: string) => {
@@ -158,26 +153,38 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
         setWorkflowName(workflow.name)
         setWorkflowTrigger(workflow.trigger)
         setWorkflowDescription(workflow.description || '')
+        setIsAIOnly(workflow.isAIOnly ?? false)
         
-        // Converter nós do banco para formato ReactFlow
-        const flowNodes: Node[] = workflow.nodes.map((node: any) => ({
-          id: node.id,
-          type: node.type,
-          position: { x: node.positionX, y: node.positionY },
-          data: JSON.parse(node.data),
-        }))
+        if (workflow.isAIOnly && workflow.aiBusinessDetails) {
+          try {
+            setAiBusinessDetails(JSON.parse(workflow.aiBusinessDetails))
+          } catch {
+            setAiBusinessDetails(null)
+          }
+        }
         
-        // Converter conexões do banco para formato ReactFlow
-        const flowEdges: Edge[] = workflow.connections.map((conn: any) => ({
-          id: conn.id,
-          source: conn.sourceNodeId,
-          target: conn.targetNodeId,
-          sourceHandle: conn.sourceHandle || undefined,
-          targetHandle: conn.targetHandle || undefined,
-        }))
+        // Se não for IA-only, carregar nós normalmente
+        if (!workflow.isAIOnly) {
+          // Converter nós do banco para formato ReactFlow
+          const flowNodes: Node[] = workflow.nodes.map((node: any) => ({
+            id: node.id,
+            type: node.type,
+            position: { x: node.positionX, y: node.positionY },
+            data: JSON.parse(node.data),
+          }))
         
-        setNodes(flowNodes)
-        setEdges(flowEdges)
+          // Converter conexões do banco para formato ReactFlow
+          const flowEdges: Edge[] = workflow.connections.map((conn: any) => ({
+            id: conn.id,
+            source: conn.sourceNodeId,
+            target: conn.targetNodeId,
+            sourceHandle: conn.sourceHandle || undefined,
+            targetHandle: conn.targetHandle || undefined,
+          }))
+        
+          setNodes(flowNodes)
+          setEdges(flowEdges)
+        }
       }
     } catch (error) {
       console.error('Erro ao carregar workflow:', error)
@@ -244,27 +251,48 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
       return
     }
 
+    if (isAIOnly === null) {
+      toast.error('Escolha o tipo de fluxo primeiro')
+      return
+    }
+
+    if (isAIOnly && !aiBusinessDetails) {
+      toast.error('Configure os detalhes do negócio para o fluxo de IA')
+      return
+    }
+
     setIsSaving(true)
     try {
-      const workflowData = {
+      const workflowData: any = {
         id: workflowId,
         name: workflowName,
         description: workflowDescription,
         trigger: workflowTrigger,
         isActive: true,
-        nodes: nodes.map((node) => ({
+        isAIOnly: isAIOnly ?? false,
+        usesAI: isAIOnly ?? false,
+      }
+
+      if (isAIOnly) {
+        // Para fluxos IA-only, não precisa de nós e edges
+        workflowData.nodes = []
+        workflowData.edges = []
+        workflowData.aiBusinessDetails = JSON.stringify(aiBusinessDetails)
+      } else {
+        // Para fluxos manuais, incluir nós e edges normalmente
+        workflowData.nodes = nodes.map((node) => ({
           id: node.id,
           type: node.type,
           positionX: node.position.x,
           positionY: node.position.y,
           data: JSON.stringify(node.data),
-        })),
-        edges: edges.map((edge) => ({
+        }))
+        workflowData.edges = edges.map((edge) => ({
           sourceNodeId: edge.source,
           targetNodeId: edge.target,
           sourceHandle: edge.sourceHandle || null,
           targetHandle: edge.targetHandle || null,
-        })),
+        }))
       }
 
       const url = workflowId ? `/api/workflows/${workflowId}` : '/api/workflows'
@@ -299,6 +327,78 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
     } finally {
       setIsSaving(false)
     }
+  }
+
+  // Tela de escolha do tipo de workflow (apenas para novos workflows)
+  if (!workflowId && isAIOnly === null) {
+    return (
+      <div className="fixed inset-0 w-full h-full flex flex-col bg-gray-50 z-10">
+        <div className="flex-1 flex items-center justify-center p-6">
+          <div className="max-w-2xl w-full space-y-6">
+            <div className="text-center mb-8">
+              <h1 className="text-3xl font-bold text-gray-900 mb-2">
+                Escolha o Tipo de Fluxo
+              </h1>
+              <p className="text-gray-600">
+                Selecione como você quer que seu fluxo funcione
+              </p>
+            </div>
+
+            <div className="grid md:grid-cols-2 gap-6">
+              {/* Fluxo Manual */}
+              <button
+                onClick={() => {
+                  setIsAIOnly(false)
+                  // Criar nó inicial (trigger) para fluxo manual
+                  const initialNode: Node = {
+                    id: 'trigger-1',
+                    type: 'trigger',
+                    position: { x: 250, y: 100 },
+                    data: { label: 'Início', trigger: '' },
+                  }
+                  setNodes([initialNode])
+                }}
+                className="p-6 bg-white border-2 border-gray-200 rounded-lg hover:border-autozap-primary hover:shadow-lg transition-all text-left"
+              >
+                <div className="text-4xl mb-4">⚙️</div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  Fluxo Manual
+                </h3>
+                <p className="text-gray-600 text-sm mb-4">
+                  Crie fluxos personalizados com nós de mensagens, questionários, condições e mais. Controle total sobre cada etapa.
+                </p>
+                <ul className="text-xs text-gray-500 space-y-1">
+                  <li>✓ Mensagens personalizadas</li>
+                  <li>✓ Questionários e botões</li>
+                  <li>✓ Condições e lógica</li>
+                  <li>✓ Controle total</li>
+                </ul>
+              </button>
+
+              {/* Fluxo com IA */}
+              <button
+                onClick={() => setIsAIOnly(true)}
+                className="p-6 bg-white border-2 border-purple-200 rounded-lg hover:border-purple-400 hover:shadow-lg transition-all text-left"
+              >
+                <div className="text-4xl mb-4">🤖</div>
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">
+                  Fluxo com Inteligência Artificial
+                </h3>
+                <p className="text-gray-600 text-sm mb-4">
+                  Configure os detalhes do seu negócio e deixe a IA conversar de forma inteligente e natural com seus clientes.
+                </p>
+                <ul className="text-xs text-gray-500 space-y-1">
+                  <li>✓ Conversação natural</li>
+                  <li>✓ Respostas inteligentes</li>
+                  <li>✓ Contexto automático</li>
+                  <li>✓ Configuração simples</li>
+                </ul>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
   }
 
   return (
@@ -350,21 +450,35 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
         </div>
       </div>
 
-      {/* Canvas */}
-      <div className="flex-1 relative bg-gray-50">
-        <ReactFlowProvider>
-          <FlowCanvasWrapper
-            nodes={nodes}
-            edges={edges}
-            onNodesChange={onNodesChange}
-            onEdgesChange={onEdgesChange}
-            onConnect={onConnect}
-            onPaneClick={handlePaneClick}
-            onPaneContextMenu={handlePaneContextMenu}
-            nodeTypes={nodeTypes}
-            onGetCenterPosition={setGetCenterPosition}
-          />
-        </ReactFlowProvider>
+      {/* Canvas ou Configuração de IA */}
+      <div className="flex-1 relative bg-gray-50 overflow-auto">
+        {isAIOnly ? (
+          // Mostrar configuração de IA para fluxos IA-only
+          <div className="h-full overflow-auto">
+            <AIWorkflowConfig
+              businessDetails={aiBusinessDetails}
+              onSave={(details) => {
+                setAiBusinessDetails(details)
+                toast.success('Detalhes do negócio salvos! Agora salve o fluxo.')
+              }}
+            />
+          </div>
+        ) : (
+          // Mostrar canvas para fluxos manuais
+          <ReactFlowProvider>
+            <FlowCanvasWrapper
+              nodes={nodes}
+              edges={edges}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onPaneClick={handlePaneClick}
+              onPaneContextMenu={handlePaneContextMenu}
+              nodeTypes={nodeTypes}
+              onGetCenterPosition={setGetCenterPosition}
+            />
+          </ReactFlowProvider>
+        )}
 
         {/* Menu de adicionar nó */}
         {showNodeMenu && (
@@ -396,12 +510,15 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
             >
               ❓ Questionário
             </button>
-            <button
-              onClick={() => addNode('ai')}
-              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
-            >
-              🤖 IA
-            </button>
+            {/* Não permitir nó de IA em fluxos manuais */}
+            {isAIOnly === false && (
+              <button
+                onClick={() => addNode('ai')}
+                className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
+              >
+                🤖 IA
+              </button>
+            )}
             <button
               onClick={() => addNode('condition')}
               className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"

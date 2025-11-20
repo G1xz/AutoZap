@@ -11,6 +11,7 @@ interface Workflow {
   trigger: string
   isActive: boolean
   usesAI: boolean
+  isAIOnly?: boolean
   createdAt: string
   instance?: {
     id: string
@@ -86,8 +87,8 @@ export default function WorkflowsManager() {
   }
 
   // Separa workflows manuais dos que usam IA
-  const manualWorkflows = workflows.filter((w) => !(w.usesAI ?? false))
-  const aiWorkflows = workflows.filter((w) => w.usesAI ?? false)
+  const manualWorkflows = workflows.filter((w) => !(w.isAIOnly ?? false) && !(w.usesAI ?? false))
+  const aiWorkflows = workflows.filter((w) => (w.isAIOnly ?? false) || (w.usesAI ?? false))
 
   if (loading) {
     return <div className="text-center py-8">Carregando...</div>
@@ -125,8 +126,12 @@ export default function WorkflowsManager() {
                   <div className="flex-1 w-full">
                     <div className="flex flex-wrap items-center gap-2">
                       <h3 className="font-semibold text-base sm:text-lg text-gray-900">{workflow.name}</h3>
-                      <span className="px-2 py-1 rounded text-xs bg-purple-100 text-purple-700 font-medium">
-                        🤖 Com IA
+                      <span className={`px-2 py-1 rounded text-xs font-medium ${
+                        workflow.isAIOnly 
+                          ? 'bg-purple-200 text-purple-800' 
+                          : 'bg-purple-100 text-purple-700'
+                      }`}>
+                        {workflow.isAIOnly ? '🤖 IA Autônoma' : '🤖 Com IA'}
                       </span>
                       <span
                         className={`px-2 py-1 rounded text-xs ${

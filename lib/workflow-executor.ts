@@ -1,5 +1,6 @@
 import { prisma } from './prisma'
 import { sendWhatsAppMessage, sendWhatsAppInteractiveMessage, sendWhatsAppImage, sendWhatsAppVideo, sendWhatsAppDocument, getUserProfileName } from './whatsapp-cloud-api'
+import { generateAIResponse } from './openai'
 
 export interface WhatsAppMessage {
   from: string
@@ -145,6 +146,13 @@ export async function executeWorkflows(
       if (messageBody.includes(trigger)) {
         console.log(`🔄 Workflow "${workflow.name}" acionado para ${contactNumber}`)
         
+        // Se for fluxo IA-only, executar de forma autônoma
+        if (workflow.isAIOnly) {
+          await executeAIOnlyWorkflow(workflow, instanceId, contactNumber, messageBody, message.contactName)
+          return
+        }
+        
+        // Para fluxos manuais, executar normalmente
         // Cria novo contexto de execução
         const triggerNode = workflow.nodes.find((n) => n.type === 'trigger')
         if (!triggerNode) {
@@ -707,5 +715,139 @@ export async function processQuestionnaireResponse(
       })
     }
   }
+}
+
+/**
+ * Executa um workflow IA-only de forma autônoma
+ * A IA conversa diretamente com o cliente usando os detalhes do negócio
+ */
+async function executeAIOnlyWorkflow(
+  workflow: any,
+  instanceId: string,
+  contactNumber: string,
+  userMessage: string,
+  contactName?: string
+): Promise<void> {
+  try {
+    // Busca informações do contato
+    let contactNameFinal = contactName || undefined
+    if (!contactNameFinal) {
+      const profileName = await getUserProfileName(instanceId, contactNumber)
+      contactNameFinal = profileName || undefined
+    }
+    
+    const formattedPhone = contactNumber.replace(/\D/g, '')
+    const formattedPhoneFormatted = formattedPhone.startsWith('55')
+      ? formattedPhone.replace(/^55(\d{2})(\d{4,5})(\d{4})$/, '+55 ($1) $2-$3')
+      : formattedPhone.replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3')
+
+    // Busca histórico recente da conversa
+    const recentMessages = await prisma.message.findMany({
+      where: {
+        instanceId,
+        OR: [
+          { from: contactNumber },
+          { to: contactNumber },
+        ],
+      },
+      orderBy: { timestamp: 'desc' },
+      take: 20, // Últimas 20 mensagens para contexto
+    })
+
+    // Converte mensagens para formato de histórico
+    const conversationHistory = recentMessages
+      .reverse() // Inverte para ordem cronológica
+      .map((msg) => ({
+        role: msg.isFromMe ? 'assistant' : 'user' as 'user' | 'assistant',
+        content: msg.body,
+      }))
+
+    // Parse dos detalhes do negócio
+    let businessDetails: any = {}
+    if (workflow.aiBusinessDetails) {
+      try {
+        businessDetails = JSON.parse(workflow.aiBusinessDetails)
+      } catch {
+        console.error('Erro ao parsear detalhes do negócio')
+      }
+    }
+
+    // Monta o prompt do sistema com os detalhes do negócio
+    const systemPrompt = buildAISystemPrompt(businessDetails, contactNameFinal || formattedPhoneFormatted)
+
+    // Gera resposta usando IA
+    const { generateAIResponse } = await import('./openai')
+    const aiResponse = await generateAIResponse(userMessage, {
+      systemPrompt,
+      conversationHistory,
+      variables: {
+        nome: contactNameFinal || formattedPhoneFormatted || 'Usuário',
+        telefone: formattedPhoneFormatted || contactNumber,
+        telefoneNumero: formattedPhone || contactNumber,
+      },
+      temperature: 0.7,
+      maxTokens: 500,
+    })
+
+    // Envia a resposta gerada pela IA
+    const contactKey = `${instanceId}-${contactNumber}`
+    await queueMessage(contactKey, async () => {
+      await sendWhatsAppMessage(instanceId, contactNumber, aiResponse, 'service')
+    })
+
+    console.log(`🤖 Resposta de IA autônoma gerada para ${contactNumber}`)
+  } catch (error) {
+    console.error('Erro ao executar workflow IA-only:', error)
+    
+    // Envia mensagem de erro amigável
+    const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Nossa equipe foi notificada.'
+    const contactKey = `${instanceId}-${contactNumber}`
+    await queueMessage(contactKey, async () => {
+      await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+    })
+  }
+}
+
+/**
+ * Constrói o prompt do sistema para a IA baseado nos detalhes do negócio
+ */
+function buildAISystemPrompt(businessDetails: any, contactName: string): string {
+  const businessName = businessDetails.businessName || 'este negócio'
+  const businessDescription = businessDetails.businessDescription || ''
+  const products = businessDetails.products || []
+  const services = businessDetails.services || []
+  const tone = businessDetails.tone || 'friendly'
+  const additionalInfo = businessDetails.additionalInfo || ''
+
+  const toneDescription = {
+    friendly: 'amigável, descontraído e prestativo',
+    professional: 'profissional, educado e eficiente',
+    casual: 'casual, descontraído e próximo',
+    formal: 'formal, respeitoso e polido',
+  }[tone] || 'amigável e prestativo'
+
+  let prompt = `Você é um assistente virtual de ${businessName}. `
+
+  if (businessDescription) {
+    prompt += `${businessDescription} `
+  }
+
+  prompt += `Seu papel é conversar com clientes de forma ${toneDescription} e ajudá-los da melhor forma possível. `
+
+  if (products.length > 0) {
+    prompt += `\n\nProdutos oferecidos:\n${products.map((p: string, i: number) => `${i + 1}. ${p}`).join('\n')}`
+  }
+
+  if (services.length > 0) {
+    prompt += `\n\nServiços oferecidos:\n${services.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}`
+  }
+
+  if (additionalInfo) {
+    prompt += `\n\nInformações adicionais:\n${additionalInfo}`
+  }
+
+  prompt += `\n\nVocê está conversando com ${contactName}. Seja natural, útil e sempre mantenha o tom ${toneDescription}. Se não souber algo, seja honesto e ofereça ajuda de outras formas.`
+
+  return prompt
 }
 

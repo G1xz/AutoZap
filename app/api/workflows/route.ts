@@ -10,6 +10,8 @@ const workflowSchema = z.object({
   trigger: z.string().min(1),
   isActive: z.boolean().optional(),
   instanceId: z.string().nullable().optional(),
+  isAIOnly: z.boolean().optional(),
+  aiBusinessDetails: z.string().nullable().optional(),
   nodes: z.array(
     z.object({
       id: z.string(),
@@ -18,7 +20,7 @@ const workflowSchema = z.object({
       positionY: z.number(),
       data: z.string(), // JSON stringificado
     })
-  ),
+  ).optional(),
   edges: z.array(
     z.object({
       sourceNodeId: z.string(),
@@ -26,7 +28,7 @@ const workflowSchema = z.object({
       sourceHandle: z.string().nullable().optional(),
       targetHandle: z.string().nullable().optional(),
     })
-  ),
+  ).optional(),
 })
 
 export async function GET(request: NextRequest) {
@@ -110,15 +112,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Detecta se o workflow usa nós de IA
-    const usesAI = data.nodes.some((node) => {
-      try {
-        const nodeData = typeof node.data === 'string' ? JSON.parse(node.data) : node.data
-        return node.type === 'ai'
-      } catch {
-        return false
-      }
-    })
+    const isAIOnly = data.isAIOnly ?? false
+    
+    // Detecta se o workflow usa nós de IA (apenas para fluxos manuais)
+    const usesAI = isAIOnly 
+      ? true 
+      : (data.nodes || []).some((node) => {
+          try {
+            const nodeData = typeof node.data === 'string' ? JSON.parse(node.data) : node.data
+            return node.type === 'ai'
+          } catch {
+            return false
+          }
+        })
 
     // Cria o workflow
     const workflow = await prisma.workflow.create({
@@ -130,13 +136,17 @@ export async function POST(request: NextRequest) {
         isActive: data.isActive ?? true,
         instanceId: data.instanceId || null,
         usesAI,
+        isAIOnly,
+        aiBusinessDetails: isAIOnly ? (data.aiBusinessDetails || null) : null,
       },
     })
 
-    // Cria os nós e mapeia IDs antigos para novos IDs do banco
+    // Cria os nós apenas se não for IA-only
     const nodeIdMap = new Map<string, string>() // Mapeia ID temporário -> ID do banco
-    const nodes = await Promise.all(
-      data.nodes.map(async (nodeData) => {
+    const nodes = isAIOnly 
+      ? [] 
+      : await Promise.all(
+          (data.nodes || []).map(async (nodeData) => {
         const createdNode = await prisma.workflowNode.create({
           data: {
             workflowId: workflow.id,
@@ -150,11 +160,12 @@ export async function POST(request: NextRequest) {
         nodeIdMap.set(nodeData.id, createdNode.id)
         return createdNode
       })
-    )
+        )
 
-    // Cria as conexões usando os IDs mapeados do banco
-    const connections = data.edges && data.edges.length > 0
-      ? await Promise.all(
+    // Cria as conexões apenas se não for IA-only
+    const connections = isAIOnly || !data.edges || data.edges.length === 0
+      ? []
+      : await Promise.all(
           data.edges.map((edgeData) => {
             const sourceNodeId = nodeIdMap.get(edgeData.sourceNodeId)
             const targetNodeId = nodeIdMap.get(edgeData.targetNodeId)
