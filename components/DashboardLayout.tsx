@@ -9,6 +9,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { data: session } = useSession()
   const pathname = usePathname()
 
+  // Verifica se está em uma página de editor (fluxos ou catálogos)
+  const isEditorPage = pathname?.includes('/workflows/') || pathname?.includes('/catalogs/')
+
   // Mapeia o pathname para o label do menu
   const getActiveLabel = () => {
     if (pathname?.startsWith('/dashboard/chat')) return 'Chat'
@@ -72,46 +75,56 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-gray-50 relative">
-      <StaggeredMenu
-        position="left"
-        items={menuItems}
-        socialItems={socialItems}
-        displaySocials={false}
-        displayItemNumbering={false}
-        menuButtonColor="#1a1a1a"
-        openMenuButtonColor="#000"
-        changeMenuColorOnOpen={true}
-        colors={['#f9fafb', '#f3f4f6', '#e5e7eb']}
-        accentColor="#5227FF"
-        isFixed={true}
-        activeItemLabel={getActiveLabel()}
-        onMenuOpen={() => console.log('Menu opened')}
-        onMenuClose={() => console.log('Menu closed')}
-      />
+      {!isEditorPage && (
+        <StaggeredMenu
+          position="left"
+          items={menuItems}
+          socialItems={socialItems}
+          displaySocials={false}
+          displayItemNumbering={false}
+          menuButtonColor="#1a1a1a"
+          openMenuButtonColor="#000"
+          changeMenuColorOnOpen={true}
+          colors={['#f9fafb', '#f3f4f6', '#e5e7eb']}
+          accentColor="#5227FF"
+          isFixed={true}
+          activeItemLabel={getActiveLabel()}
+          onMenuOpen={() => console.log('Menu opened')}
+          onMenuClose={() => console.log('Menu closed')}
+        />
+      )}
 
       {/* Conteúdo principal */}
-      <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8 pt-20 sm:pt-24 relative z-10">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-          <div className="p-3 sm:p-6">
-            {children}
+      {isEditorPage ? (
+        <div className="fixed inset-0 top-0 left-0 right-0 bottom-0 pt-0 z-10">
+          {children}
+        </div>
+      ) : (
+        <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8 pt-20 sm:pt-24 relative z-10">
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+            <div className="p-3 sm:p-6">
+              {children}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Botão de logout fixo no canto inferior direito */}
-      <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-30">
-        <div className="flex flex-col items-end gap-2">
-          <span className="text-xs sm:text-sm text-gray-700 bg-white border border-gray-200 px-2 sm:px-3 py-1 rounded shadow-sm hidden sm:block">
-            {session?.user?.name}
-          </span>
-          <button
-            onClick={() => signOut()}
-            className="px-3 sm:px-4 py-1.5 sm:py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors shadow-lg text-sm sm:text-base"
-          >
-            Sair
-          </button>
+      {!isEditorPage && (
+        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-30">
+          <div className="flex flex-col items-end gap-2">
+            <span className="text-xs sm:text-sm text-gray-700 bg-white border border-gray-200 px-2 sm:px-3 py-1 rounded shadow-sm hidden sm:block">
+              {session?.user?.name}
+            </span>
+            <button
+              onClick={() => signOut()}
+              className="px-3 sm:px-4 py-1.5 sm:py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors shadow-lg text-sm sm:text-base"
+            >
+              Sair
+            </button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }
