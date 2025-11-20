@@ -819,12 +819,14 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   const tone = businessDetails.tone || 'friendly'
   const additionalInfo = businessDetails.additionalInfo || ''
 
-  const toneDescription = {
+  const toneDescriptions: Record<string, string> = {
     friendly: 'amigável, descontraído e prestativo',
     professional: 'profissional, educado e eficiente',
     casual: 'casual, descontraído e próximo',
     formal: 'formal, respeitoso e polido',
-  }[tone] || 'amigável e prestativo'
+  }
+  
+  const toneDescription = toneDescriptions[tone] || 'amigável e prestativo'
 
   let prompt = `Você é um assistente virtual de ${businessName}. `
 
