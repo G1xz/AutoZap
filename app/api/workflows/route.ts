@@ -110,6 +110,16 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Detecta se o workflow usa nós de IA
+    const usesAI = data.nodes.some((node) => {
+      try {
+        const nodeData = typeof node.data === 'string' ? JSON.parse(node.data) : node.data
+        return node.type === 'ai'
+      } catch {
+        return false
+      }
+    })
+
     // Cria o workflow
     const workflow = await prisma.workflow.create({
       data: {
@@ -119,6 +129,7 @@ export async function POST(request: NextRequest) {
         trigger: data.trigger,
         isActive: data.isActive ?? true,
         instanceId: data.instanceId || null,
+        usesAI,
       },
     })
 

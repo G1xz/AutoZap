@@ -10,6 +10,7 @@ interface Workflow {
   description?: string
   trigger: string
   isActive: boolean
+  usesAI: boolean
   createdAt: string
   instance?: {
     id: string
@@ -83,6 +84,10 @@ export default function WorkflowsManager() {
     return <div className="text-center py-8">Carregando...</div>
   }
 
+  // Separa workflows manuais dos que usam IA
+  const manualWorkflows = workflows.filter((w) => !w.usesAI)
+  const aiWorkflows = workflows.filter((w) => w.usesAI)
+
   return (
     <div className="space-y-4 sm:space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
@@ -95,13 +100,105 @@ export default function WorkflowsManager() {
         </button>
       </div>
 
-      <div className="space-y-4">
-        {workflows.length === 0 ? (
-          <p className="text-center text-gray-500 py-8">
-            Nenhum fluxo criado ainda. Crie um fluxo para começar a automação visual.
-          </p>
-        ) : (
-          workflows.map((workflow) => (
+      {/* Fluxos com IA */}
+      {aiWorkflows.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-xl">🤖</span>
+            <h3 className="text-lg font-semibold text-gray-900">Fluxos com Inteligência Artificial</h3>
+            <span className="px-2 py-1 bg-purple-100 text-purple-700 rounded text-xs font-medium">
+              {aiWorkflows.length}
+            </span>
+          </div>
+          <div className="space-y-4">
+            {aiWorkflows.map((workflow) => (
+              <div
+                key={workflow.id}
+                className="border-2 border-purple-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-white shadow-sm"
+              >
+                <div className="flex flex-col sm:flex-row items-start justify-between gap-3 sm:gap-0">
+                  <div className="flex-1 w-full">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="font-semibold text-base sm:text-lg text-gray-900">{workflow.name}</h3>
+                      <span className="px-2 py-1 rounded text-xs bg-purple-100 text-purple-700 font-medium">
+                        🤖 Com IA
+                      </span>
+                      <span
+                        className={`px-2 py-1 rounded text-xs ${
+                          workflow.isActive
+                            ? 'bg-autozap-light text-autozap-dark'
+                            : 'bg-gray-200 text-gray-800'
+                        }`}
+                      >
+                        {workflow.isActive ? 'Ativo' : 'Inativo'}
+                      </span>
+                    </div>
+                    {workflow.description && (
+                      <p className="text-sm text-gray-600 mt-1">{workflow.description}</p>
+                    )}
+                    <p className="text-sm text-gray-500 mt-1">
+                      <strong>Trigger:</strong> {workflow.trigger}
+                    </p>
+                    {workflow.instance && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Conta: {workflow.instance.name}
+                      </p>
+                    )}
+                    <p className="text-xs text-gray-500 mt-2">
+                      Criado em: {new Date(workflow.createdAt).toLocaleDateString('pt-BR')}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 w-full sm:w-auto">
+                    <button
+                      onClick={() => router.push(`/dashboard/workflows/${workflow.id}`)}
+                      className="flex-1 sm:flex-none px-3 py-1.5 bg-autozap-primary text-white rounded text-sm hover:bg-autozap-light transition-colors"
+                    >
+                      Editar
+                    </button>
+                    <button
+                      onClick={() => toggleWorkflowStatus(workflow.id, workflow.isActive)}
+                      className={`flex-1 sm:flex-none px-3 py-1.5 rounded text-sm transition-colors ${
+                        workflow.isActive
+                          ? 'bg-yellow-600 text-white hover:bg-yellow-700'
+                          : 'bg-autozap-primary text-white hover:bg-autozap-light'
+                      }`}
+                    >
+                      {workflow.isActive ? 'Desativar' : 'Ativar'}
+                    </button>
+                    <button
+                      onClick={() => handleDelete(workflow.id)}
+                      className="flex-1 sm:flex-none px-3 py-1.5 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors"
+                    >
+                      Excluir
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Fluxos Manuais */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">⚙️</span>
+          <h3 className="text-lg font-semibold text-gray-900">Fluxos Manuais</h3>
+          <span className="px-2 py-1 bg-gray-100 text-gray-700 rounded text-xs font-medium">
+            {manualWorkflows.length}
+          </span>
+        </div>
+        <div className="space-y-4">
+          {manualWorkflows.length === 0 && aiWorkflows.length === 0 ? (
+            <p className="text-center text-gray-500 py-8">
+              Nenhum fluxo criado ainda. Crie um fluxo para começar a automação visual.
+            </p>
+          ) : manualWorkflows.length === 0 ? (
+            <p className="text-center text-gray-500 py-4">
+              Nenhum fluxo manual criado ainda.
+            </p>
+          ) : (
+            manualWorkflows.map((workflow) => (
             <div
               key={workflow.id}
               className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow bg-white shadow-sm"
@@ -161,8 +258,9 @@ export default function WorkflowsManager() {
                 </div>
               </div>
             </div>
-          ))
-        )}
+            ))}
+          )}
+        </div>
       </div>
       <ConfirmDialog />
     </div>

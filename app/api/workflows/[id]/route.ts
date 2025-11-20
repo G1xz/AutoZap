@@ -124,12 +124,26 @@ export async function PUT(
     const body = await request.json()
     const data = workflowUpdateSchema.parse(body)
 
+    // Detecta se o workflow usa nós de IA (se nós foram fornecidos)
+    let usesAI = existingWorkflow.usesAI
+    if (data.nodes) {
+      usesAI = data.nodes.some((node) => {
+        try {
+          const nodeData = typeof node.data === 'string' ? JSON.parse(node.data) : node.data
+          return node.type === 'ai'
+        } catch {
+          return false
+        }
+      })
+    }
+
     // Atualiza o workflow
     const updateData: any = {}
     if (data.name) updateData.name = data.name
     if (data.description !== undefined) updateData.description = data.description
     if (data.trigger) updateData.trigger = data.trigger
     if (data.isActive !== undefined) updateData.isActive = data.isActive
+    if (data.nodes) updateData.usesAI = usesAI
 
     const workflow = await prisma.workflow.update({
       where: { id },

@@ -440,8 +440,66 @@ async function executeNode(
       return null
 
     case 'ai':
-      // TODO: Implementar integração com IA
-      console.log('🤖 Nó de IA não implementado ainda')
+      // Implementação de integração com IA usando ChatGPT
+      try {
+        const { generateAIResponse } = await import('./openai')
+        
+        const prompt = data.prompt || 'Responda à mensagem do usuário de forma amigável e útil.'
+        const systemPrompt = data.systemPrompt
+        const temperature = data.temperature ?? 0.7
+        const maxTokens = data.maxTokens ?? 500
+        
+        // Busca histórico recente da conversa para contexto
+        const recentMessages = await prisma.message.findMany({
+          where: {
+            instanceId,
+            OR: [
+              { from: contactNumber },
+              { to: contactNumber },
+            ],
+          },
+          orderBy: { timestamp: 'desc' },
+          take: 10, // Últimas 10 mensagens
+        })
+        
+        // Converte mensagens para formato de histórico
+        const conversationHistory = recentMessages
+          .reverse() // Inverte para ordem cronológica
+          .map((msg) => ({
+            role: msg.isFromMe ? 'assistant' : 'user' as 'user' | 'assistant',
+            content: msg.body,
+          }))
+        
+        // Gera resposta usando IA
+        const aiResponse = await generateAIResponse(prompt, {
+          systemPrompt,
+          conversationHistory,
+          variables: execution.variables,
+          temperature,
+          maxTokens,
+        })
+        
+        // Substitui variáveis na resposta gerada
+        const finalResponse = replaceVariables(aiResponse, execution.variables)
+        
+        // Envia a resposta gerada pela IA
+        const aiContactKey = `${instanceId}-${contactNumber}`
+        await queueMessage(aiContactKey, async () => {
+          await sendWhatsAppMessage(instanceId, contactNumber, finalResponse, 'service')
+        })
+        
+        console.log(`🤖 Resposta de IA gerada para ${contactNumber}`)
+      } catch (error) {
+        console.error('Erro ao gerar resposta de IA:', error)
+        
+        // Envia mensagem de erro amigável
+        const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Nossa equipe foi notificada.'
+        const errorContactKey = `${instanceId}-${contactNumber}`
+        await queueMessage(errorContactKey, async () => {
+          await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+        })
+      }
+      
       return getNextNode(node.id, connections, null)
 
     case 'condition':

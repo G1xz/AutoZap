@@ -133,6 +133,7 @@ model Workflow {
   description String?
   trigger     String // palavra-chave ou padrão que inicia o fluxo
   isActive    Boolean  @default(true)
+  usesAI      Boolean  @default(false) // Indica se o workflow usa nós de IA
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
