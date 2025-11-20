@@ -147,19 +147,19 @@ export async function POST(request: NextRequest) {
       ? [] 
       : await Promise.all(
           (data.nodes || []).map(async (nodeData) => {
-        const createdNode = await prisma.workflowNode.create({
-          data: {
-            workflowId: workflow.id,
-            type: nodeData.type,
-            positionX: nodeData.positionX,
-            positionY: nodeData.positionY,
-            data: nodeData.data,
-          },
-        })
-        // Mapeia o ID temporário para o ID real do banco
-        nodeIdMap.set(nodeData.id, createdNode.id)
-        return createdNode
-      })
+            const createdNode = await prisma.workflowNode.create({
+              data: {
+                workflowId: workflow.id,
+                type: nodeData.type,
+                positionX: nodeData.positionX,
+                positionY: nodeData.positionY,
+                data: nodeData.data,
+              },
+            })
+            // Mapeia o ID temporário para o ID real do banco
+            nodeIdMap.set(nodeData.id, createdNode.id)
+            return createdNode
+          })
         )
 
     // Cria as conexões apenas se não for IA-only
@@ -186,7 +186,6 @@ export async function POST(request: NextRequest) {
             })
           })
         )
-      : []
 
     return NextResponse.json(
       {
