@@ -833,9 +833,18 @@ async function executeAIOnlyWorkflow(
     // Monta o prompt do sistema com os detalhes do negócio
     const systemPrompt = buildAISystemPrompt(businessDetails, contactNameFinal || formattedPhoneFormatted)
 
+    // Verifica se é a primeira interação (poucas mensagens na conversa)
+    const isFirstInteraction = conversationHistory.length <= 2
+    
+    // Se for primeira interação, adiciona contexto extra no prompt
+    let userMessageWithContext = userMessage
+    if (isFirstInteraction && businessDetails.businessName) {
+      userMessageWithContext = `[Primeira interação - se apresente mencionando ${businessDetails.businessName} e o que oferece] ${userMessage}`
+    }
+
     // Gera resposta usando IA
     const { generateAIResponse } = await import('./openai')
-    const aiResponse = await generateAIResponse(userMessage, {
+    const aiResponse = await generateAIResponse(userMessageWithContext, {
       systemPrompt,
       conversationHistory,
       variables: {
@@ -896,9 +905,11 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
 
   let prompt = `Você é um assistente virtual especializado da ${businessName}. `
 
-  // Descrição detalhada do negócio
+  // Descrição detalhada do negócio - CRÍTICO para explicar o negócio
   if (businessDescription) {
-    prompt += `\n\nSOBRE O NEGÓCIO:\n${businessDescription}\n`
+    prompt += `\n\nSOBRE O NEGÓCIO (SEMPRE mencione isso nas suas respostas):\n${businessDescription}\n`
+  } else {
+    prompt += `\n\nIMPORTANTE: Você representa ${businessName}. Sempre mencione o nome do negócio e explique o que faz.\n`
   }
 
   // Tipo de negócio
@@ -946,21 +957,56 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
     prompt += `\n\nINSTRUÇÕES ESPECÍFICAS DE COMPORTAMENTO:\n${aiInstructions}`
   }
 
-  // Instruções gerais
-  prompt += `\n\nREGRAS GERAIS:\n`
+  // Instruções gerais - MUITO IMPORTANTES
+  prompt += `\n\nREGRAS GERAIS CRÍTICAS (SIGA SEMPRE):\n`
   prompt += `- Seja ${toneDescription} em todas as interações\n`
-  prompt += `- Sempre explique claramente o que é ${businessName} e o que oferece\n`
+  prompt += `- ⚠️ OBRIGATÓRIO: SEMPRE mencione "${businessName}" nas suas respostas, especialmente na primeira interação\n`
+  prompt += `- ⚠️ OBRIGATÓRIO: Na primeira mensagem, SEMPRE se apresente dizendo algo como "Olá! Sou assistente da ${businessName}"\n`
+  prompt += `- ⚠️ OBRIGATÓRIO: SEMPRE explique o que ${businessName} faz e oferece quando se apresentar\n`
+  prompt += `- ⚠️ NUNCA seja genérico como "Como posso ajudar?" sem mencionar o negócio\n`
+  prompt += `- ⚠️ NUNCA responda apenas "Como posso te ajudar hoje?" - sempre mencione ${businessName} e o que oferece\n`
   
-  if (sellsProducts) {
-    prompt += `- Quando perguntarem sobre produtos, liste os produtos disponíveis\n`
+  // Mensagem de boas-vindas personalizada se configurada
+  if (howToBuy && howToBuy.trim().length > 10) {
+    prompt += `\n- Na primeira interação, use esta mensagem de boas-vindas: "${howToBuy}"\n`
   }
-  if (sellsServices) {
-    prompt += `- Quando perguntarem sobre serviços, liste os serviços disponíveis\n`
+  
+  if (sellsProducts && products.length > 0) {
+    prompt += `- Quando perguntarem sobre produtos OU na primeira interação, mencione os produtos: ${products.join(', ')}\n`
+  }
+  if (sellsServices && services.length > 0) {
+    prompt += `- Quando perguntarem sobre serviços OU na primeira interação, mencione os serviços: ${services.join(', ')}\n`
+  }
+  
+  if (pricingInfo) {
+    prompt += `- Quando perguntarem sobre preços, mencione: ${pricingInfo}\n`
+  }
+  
+  if (howToBuy && howToBuy.trim().length > 10) {
+    prompt += `- Quando perguntarem como comprar/contratar, explique: ${howToBuy}\n`
   }
   
   prompt += `- Se não souber algo específico, seja honesto mas ofereça ajudar de outras formas\n`
-  prompt += `- Mantenha o foco em ajudar o cliente e apresentar o negócio de forma positiva\n`
+  prompt += `- Mantenha o foco em ajudar o cliente e apresentar ${businessName} de forma positiva\n`
   prompt += `- Você está conversando com ${contactName}\n`
+  
+  // Exemplo de primeira resposta
+  prompt += `\n\nEXEMPLO DE PRIMEIRA RESPOSTA (use como referência):\n`
+  if (howToBuy && howToBuy.trim().length > 10) {
+    prompt += `${howToBuy} `
+  } else {
+    prompt += `"Olá! Sou assistente da ${businessName}. `
+  }
+  if (businessDescription) {
+    prompt += `${businessDescription.substring(0, 100)}... `
+  }
+  if (services.length > 0) {
+    prompt += `Oferecemos: ${services.join(', ')}. `
+  }
+  if (products.length > 0) {
+    prompt += `Temos os produtos: ${products.join(', ')}. `
+  }
+  prompt += `Como posso te ajudar?"\n`
 
   return prompt
 }
