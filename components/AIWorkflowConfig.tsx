@@ -5,15 +5,21 @@ import { useState } from 'react'
 interface BusinessDetails {
   businessName: string
   businessDescription: string
+  businessType?: 'products' | 'services' | 'both' // Se vende produtos, serviços ou ambos
   products?: string[]
   services?: string[]
+  pricingInfo?: string // Informações sobre preços
+  howToBuy?: string // Como comprar/contratar
   contactInfo?: {
     phone?: string
     email?: string
     address?: string
   }
   tone?: 'formal' | 'casual' | 'friendly' | 'professional'
+  greetingMessage?: string // Mensagem de boas-vindas personalizada
+  closingMessage?: string // Mensagem de encerramento
   additionalInfo?: string
+  aiInstructions?: string // Instruções específicas para a IA sobre como se comportar
 }
 
 interface AIWorkflowConfigProps {
@@ -31,11 +37,17 @@ export default function AIWorkflowConfig({
     businessDetails || {
       businessName: '',
       businessDescription: '',
+      businessType: 'services',
       products: [],
       services: [],
+      pricingInfo: '',
+      howToBuy: '',
       contactInfo: {},
       tone: 'friendly',
+      greetingMessage: '',
+      closingMessage: '',
       additionalInfo: '',
+      aiInstructions: '',
     }
   )
 
@@ -121,10 +133,34 @@ export default function AIWorkflowConfig({
               onChange={(e) =>
                 setDetails({ ...details, businessDescription: e.target.value })
               }
-              placeholder="Descreva seu negócio, o que você oferece, seus diferenciais..."
+              placeholder="Descreva seu negócio em detalhes: o que faz, qual o propósito, principais características, diferenciais..."
               rows={4}
               className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Seja específico! A IA usará isso para explicar seu negócio aos clientes.
+            </p>
+          </div>
+
+          {/* Tipo de Negócio */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Tipo de Negócio *
+            </label>
+            <select
+              value={details.businessType || 'services'}
+              onChange={(e) =>
+                setDetails({ ...details, businessType: e.target.value as 'products' | 'services' | 'both' })
+              }
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+            >
+              <option value="services">Apenas Serviços</option>
+              <option value="products">Apenas Produtos</option>
+              <option value="both">Produtos e Serviços</option>
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              Isso ajuda a IA a entender se você vende produtos, serviços ou ambos.
+            </p>
           </div>
 
           {/* Produtos */}
@@ -229,6 +265,63 @@ export default function AIWorkflowConfig({
               <option value="casual">Casual</option>
               <option value="formal">Formal</option>
             </select>
+          </div>
+
+          {/* Informações de Preço */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Informações de Preço (opcional)
+            </label>
+            <textarea
+              value={details.pricingInfo || ''}
+              onChange={(e) =>
+                setDetails({ ...details, pricingInfo: e.target.value })
+              }
+              placeholder="Ex: Preços a partir de R$ 50,00. Pacotes disponíveis. Descontos para compras em quantidade..."
+              rows={2}
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Como a IA deve falar sobre preços quando perguntado.
+            </p>
+          </div>
+
+          {/* Como Comprar/Contratar */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Como Comprar/Contratar (opcional)
+            </label>
+            <textarea
+              value={details.howToBuy || ''}
+              onChange={(e) =>
+                setDetails({ ...details, howToBuy: e.target.value })
+              }
+              placeholder="Ex: Entre em contato pelo WhatsApp, envie uma mensagem com seu pedido, aguarde nosso retorno..."
+              rows={2}
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Instruções sobre como o cliente pode comprar ou contratar seus produtos/serviços.
+            </p>
+          </div>
+
+          {/* Instruções Específicas para a IA */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Instruções Específicas para a IA (opcional)
+            </label>
+            <textarea
+              value={details.aiInstructions || ''}
+              onChange={(e) =>
+                setDetails({ ...details, aiInstructions: e.target.value })
+              }
+              placeholder="Ex: Sempre mencione que somos especialistas em... Não mencione preços exatos, apenas faixas. Seja entusiasmado sobre nossos diferenciais..."
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Comportamentos específicos que você quer que a IA tenha durante as conversas.
+            </p>
           </div>
 
           {/* Informações Adicionais */}

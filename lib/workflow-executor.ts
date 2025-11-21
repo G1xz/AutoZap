@@ -872,10 +872,14 @@ async function executeAIOnlyWorkflow(
 function buildAISystemPrompt(businessDetails: any, contactName: string): string {
   const businessName = businessDetails.businessName || 'este negócio'
   const businessDescription = businessDetails.businessDescription || ''
+  const businessType = businessDetails.businessType || 'services'
   const products = businessDetails.products || []
   const services = businessDetails.services || []
+  const pricingInfo = businessDetails.pricingInfo || ''
+  const howToBuy = businessDetails.howToBuy || ''
   const tone = businessDetails.tone || 'friendly'
   const additionalInfo = businessDetails.additionalInfo || ''
+  const aiInstructions = businessDetails.aiInstructions || ''
 
   const toneDescriptions: Record<string, string> = {
     friendly: 'amigável, descontraído e prestativo',
@@ -886,27 +890,77 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   
   const toneDescription = toneDescriptions[tone] || 'amigável e prestativo'
 
-  let prompt = `Você é um assistente virtual de ${businessName}. `
+  // Determina o que o negócio oferece
+  const sellsProducts = businessType === 'products' || businessType === 'both'
+  const sellsServices = businessType === 'services' || businessType === 'both'
 
+  let prompt = `Você é um assistente virtual especializado da ${businessName}. `
+
+  // Descrição detalhada do negócio
   if (businessDescription) {
-    prompt += `${businessDescription} `
+    prompt += `\n\nSOBRE O NEGÓCIO:\n${businessDescription}\n`
   }
 
-  prompt += `Seu papel é conversar com clientes de forma ${toneDescription} e ajudá-los da melhor forma possível. `
+  // Tipo de negócio
+  if (sellsProducts && sellsServices) {
+    prompt += `\nEste negócio oferece TANTO PRODUTOS QUANTO SERVIÇOS. `
+  } else if (sellsProducts) {
+    prompt += `\nEste negócio VENDE PRODUTOS. `
+  } else {
+    prompt += `\nEste negócio OFERECE SERVIÇOS. `
+  }
 
+  // Produtos
   if (products.length > 0) {
-    prompt += `\n\nProdutos oferecidos:\n${products.map((p: string, i: number) => `${i + 1}. ${p}`).join('\n')}`
+    prompt += `\n\nPRODUTOS DISPONÍVEIS:\n${products.map((p: string, i: number) => `${i + 1}. ${p}`).join('\n')}`
+    prompt += `\n\nQuando perguntarem sobre produtos, mencione especificamente os produtos listados acima.`
   }
 
+  // Serviços
   if (services.length > 0) {
-    prompt += `\n\nServiços oferecidos:\n${services.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}`
+    prompt += `\n\nSERVIÇOS DISPONÍVEIS:\n${services.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}`
+    prompt += `\n\nQuando perguntarem sobre serviços, mencione especificamente os serviços listados acima.`
   }
 
+  // Informações de preço
+  if (pricingInfo) {
+    prompt += `\n\nINFORMAÇÕES DE PREÇO:\n${pricingInfo}`
+    prompt += `\n\nQuando perguntarem sobre preços, use essas informações.`
+  } else {
+    prompt += `\n\nIMPORTANTE: Se perguntarem sobre preços e você não tiver informações específicas, seja honesto e diga que pode fornecer mais detalhes sobre valores ao entrar em contato.`
+  }
+
+  // Como comprar/contratar
+  if (howToBuy) {
+    prompt += `\n\nCOMO COMPRAR/CONTRATAR:\n${howToBuy}`
+    prompt += `\n\nQuando perguntarem como comprar ou contratar, explique claramente usando essas instruções.`
+  }
+
+  // Informações adicionais
   if (additionalInfo) {
-    prompt += `\n\nInformações adicionais:\n${additionalInfo}`
+    prompt += `\n\nINFORMAÇÕES ADICIONAIS:\n${additionalInfo}`
   }
 
-  prompt += `\n\nVocê está conversando com ${contactName}. Seja natural, útil e sempre mantenha o tom ${toneDescription}. Se não souber algo, seja honesto e ofereça ajuda de outras formas.`
+  // Instruções específicas da IA
+  if (aiInstructions) {
+    prompt += `\n\nINSTRUÇÕES ESPECÍFICAS DE COMPORTAMENTO:\n${aiInstructions}`
+  }
+
+  // Instruções gerais
+  prompt += `\n\nREGRAS GERAIS:\n`
+  prompt += `- Seja ${toneDescription} em todas as interações\n`
+  prompt += `- Sempre explique claramente o que é ${businessName} e o que oferece\n`
+  
+  if (sellsProducts) {
+    prompt += `- Quando perguntarem sobre produtos, liste os produtos disponíveis\n`
+  }
+  if (sellsServices) {
+    prompt += `- Quando perguntarem sobre serviços, liste os serviços disponíveis\n`
+  }
+  
+  prompt += `- Se não souber algo específico, seja honesto mas ofereça ajudar de outras formas\n`
+  prompt += `- Mantenha o foco em ajudar o cliente e apresentar o negócio de forma positiva\n`
+  prompt += `- Você está conversando com ${contactName}\n`
 
   return prompt
 }

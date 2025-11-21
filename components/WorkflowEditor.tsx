@@ -165,25 +165,25 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
         
         // Se não for IA-only, carregar nós normalmente
         if (!workflow.isAIOnly) {
-          // Converter nós do banco para formato ReactFlow
-          const flowNodes: Node[] = workflow.nodes.map((node: any) => ({
-            id: node.id,
-            type: node.type,
-            position: { x: node.positionX, y: node.positionY },
-            data: JSON.parse(node.data),
-          }))
+        // Converter nós do banco para formato ReactFlow
+        const flowNodes: Node[] = workflow.nodes.map((node: any) => ({
+          id: node.id,
+          type: node.type,
+          position: { x: node.positionX, y: node.positionY },
+          data: JSON.parse(node.data),
+        }))
         
-          // Converter conexões do banco para formato ReactFlow
-          const flowEdges: Edge[] = workflow.connections.map((conn: any) => ({
-            id: conn.id,
-            source: conn.sourceNodeId,
-            target: conn.targetNodeId,
-            sourceHandle: conn.sourceHandle || undefined,
-            targetHandle: conn.targetHandle || undefined,
-          }))
+        // Converter conexões do banco para formato ReactFlow
+        const flowEdges: Edge[] = workflow.connections.map((conn: any) => ({
+          id: conn.id,
+          source: conn.sourceNodeId,
+          target: conn.targetNodeId,
+          sourceHandle: conn.sourceHandle || undefined,
+          targetHandle: conn.targetHandle || undefined,
+        }))
         
-          setNodes(flowNodes)
-          setEdges(flowEdges)
+        setNodes(flowNodes)
+        setEdges(flowEdges)
         }
       }
     } catch (error) {
@@ -465,19 +465,19 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
           </div>
         ) : (
           // Mostrar canvas para fluxos manuais
-          <ReactFlowProvider>
-            <FlowCanvasWrapper
-              nodes={nodes}
-              edges={edges}
-              onNodesChange={onNodesChange}
-              onEdgesChange={onEdgesChange}
-              onConnect={onConnect}
-              onPaneClick={handlePaneClick}
-              onPaneContextMenu={handlePaneContextMenu}
-              nodeTypes={nodeTypes}
-              onGetCenterPosition={setGetCenterPosition}
-            />
-          </ReactFlowProvider>
+        <ReactFlowProvider>
+          <FlowCanvasWrapper
+            nodes={nodes}
+            edges={edges}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onPaneClick={handlePaneClick}
+            onPaneContextMenu={handlePaneContextMenu}
+            nodeTypes={nodeTypes}
+            onGetCenterPosition={setGetCenterPosition}
+          />
+        </ReactFlowProvider>
         )}
 
         {/* Menu de adicionar nó */}
@@ -512,12 +512,12 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
             </button>
             {/* Não permitir nó de IA em fluxos manuais */}
             {isAIOnly === false && (
-              <button
-                onClick={() => addNode('ai')}
-                className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
-              >
-                🤖 IA
-              </button>
+            <button
+              onClick={() => addNode('ai')}
+              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
+            >
+              🤖 IA
+            </button>
             )}
             <button
               onClick={() => addNode('condition')}

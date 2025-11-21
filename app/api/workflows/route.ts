@@ -130,18 +130,18 @@ export async function POST(request: NextRequest) {
     let workflow
     try {
       workflow = await prisma.workflow.create({
-        data: {
-          userId: session.user.id,
-          name: data.name,
-          description: data.description || null,
-          trigger: data.trigger,
-          isActive: data.isActive ?? true,
-          instanceId: data.instanceId || null,
+      data: {
+        userId: session.user.id,
+        name: data.name,
+        description: data.description || null,
+        trigger: data.trigger,
+        isActive: data.isActive ?? true,
+        instanceId: data.instanceId || null,
           usesAI,
           isAIOnly,
           aiBusinessDetails: isAIOnly ? (data.aiBusinessDetails || null) : null,
-        },
-      })
+      },
+    })
     } catch (error: any) {
       // Se o erro for por coluna não existir, tenta criar as colunas
       if (error.message?.includes('isAIOnly') || error.message?.includes('isAlOnly')) {
@@ -192,20 +192,20 @@ export async function POST(request: NextRequest) {
       ? [] 
       : await Promise.all(
           (data.nodes || []).map(async (nodeData) => {
-            const createdNode = await prisma.workflowNode.create({
-              data: {
-                workflowId: workflow.id,
-                type: nodeData.type,
-                positionX: nodeData.positionX,
-                positionY: nodeData.positionY,
-                data: nodeData.data,
-              },
-            })
-            // Mapeia o ID temporário para o ID real do banco
-            nodeIdMap.set(nodeData.id, createdNode.id)
-            return createdNode
-          })
-        )
+        const createdNode = await prisma.workflowNode.create({
+          data: {
+            workflowId: workflow.id,
+            type: nodeData.type,
+            positionX: nodeData.positionX,
+            positionY: nodeData.positionY,
+            data: nodeData.data,
+          },
+        })
+        // Mapeia o ID temporário para o ID real do banco
+        nodeIdMap.set(nodeData.id, createdNode.id)
+        return createdNode
+      })
+    )
 
     // Cria as conexões apenas se não for IA-only
     const connections = isAIOnly || !data.edges || data.edges.length === 0
