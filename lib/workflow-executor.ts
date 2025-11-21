@@ -134,9 +134,57 @@ export async function executeWorkflows(
     const currentExecution = workflowExecutions.get(executionKey)
 
     if (currentExecution) {
+      // Se há execução IA-only em andamento, sempre responde
+      if (currentExecution.workflowId) {
+        const workflow = workflows.find(w => w.id === currentExecution.workflowId)
+        if (workflow?.isAIOnly) {
+          await executeAIOnlyWorkflow(workflow, instanceId, contactNumber, messageBody, message.contactName)
+          return
+        }
+      }
       // Continua execução existente (ex: resposta de questionário)
       await processQuestionnaireResponse(instanceId, contactNumber, messageBody)
       return
+    }
+
+    // Para fluxos IA-only: verifica se há algum ativo e responde sempre
+    const aiOnlyWorkflows = workflows.filter(w => w.isAIOnly && w.isActive)
+    if (aiOnlyWorkflows.length > 0) {
+      const workflow = aiOnlyWorkflows[0] // Usa o primeiro workflow IA-only encontrado
+      
+      // Verifica se já houve interação anterior com este workflow
+      const recentMessages = await prisma.message.findMany({
+        where: {
+          instanceId,
+          OR: [
+            { from: contactNumber },
+            { to: contactNumber },
+          ],
+        },
+        orderBy: { timestamp: 'desc' },
+        take: 10,
+      })
+      
+      // Se há mensagens recentes OU se a mensagem atual contém o trigger, responde sempre
+      const hasRecentInteraction = recentMessages.length > 0
+      const matchesTrigger = messageBody.includes(workflow.trigger.toLowerCase().trim())
+      
+      if (hasRecentInteraction || matchesTrigger) {
+        console.log(`🤖 Workflow IA-only "${workflow.name}" respondendo para ${contactNumber} (interação: ${hasRecentInteraction}, trigger: ${matchesTrigger})`)
+        
+        // Cria execução contínua para manter a IA ativa
+        const execution: WorkflowExecutionContext = {
+          instanceId,
+          workflowId: workflow.id,
+          contactNumber,
+          currentNodeId: 'ai-only-continuous',
+          variables: {},
+        }
+        workflowExecutions.set(executionKey, execution)
+        
+        await executeAIOnlyWorkflow(workflow, instanceId, contactNumber, messageBody, message.contactName)
+        return
+      }
     }
 
     // Procura workflow que corresponde ao trigger
@@ -146,8 +194,18 @@ export async function executeWorkflows(
       if (messageBody.includes(trigger)) {
         console.log(`🔄 Workflow "${workflow.name}" acionado para ${contactNumber}`)
         
-        // Se for fluxo IA-only, executar de forma autônoma
+        // Se for fluxo IA-only, executar de forma autônoma e criar execução contínua
         if (workflow.isAIOnly) {
+          // Cria execução contínua para manter a IA ativa
+          const execution: WorkflowExecutionContext = {
+            instanceId,
+            workflowId: workflow.id,
+            contactNumber,
+            currentNodeId: 'ai-only-continuous',
+            variables: {},
+          }
+          workflowExecutions.set(executionKey, execution)
+          
           await executeAIOnlyWorkflow(workflow, instanceId, contactNumber, messageBody, message.contactName)
           return
         }
