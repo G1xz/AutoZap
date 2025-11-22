@@ -4,12 +4,13 @@
  */
 
 interface ChatMessage {
-  role: 'system' | 'user' | 'assistant'
+  role: 'system' | 'user' | 'assistant' | 'function'
   content: string
   function_call?: {
     name: string
     arguments: string
   }
+  name?: string // Nome da função quando role é 'function'
 }
 
 interface FunctionDefinition {
