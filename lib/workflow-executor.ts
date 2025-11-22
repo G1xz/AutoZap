@@ -836,10 +836,31 @@ async function executeAIOnlyWorkflow(
     // Verifica se é a primeira interação (poucas mensagens na conversa)
     const isFirstInteraction = conversationHistory.length <= 2
     
-    // Se for primeira interação, adiciona contexto extra no prompt
+    // Se for primeira interação, adiciona contexto FORTE e DIRETO para evitar respostas genéricas
     let userMessageWithContext = userMessage
     if (isFirstInteraction && businessDetails.businessName) {
-      userMessageWithContext = `[Primeira interação - se apresente mencionando ${businessDetails.businessName} e o que oferece] ${userMessage}`
+      const servicesList = businessDetails.services?.join(', ') || ''
+      const productsList = businessDetails.products?.join(', ') || ''
+      const howToBuyText = businessDetails.howToBuy || ''
+      const pricingText = businessDetails.pricingInfo || ''
+      
+      // Instrução MUITO clara e direta para evitar respostas genéricas como "teste de eco"
+      userMessageWithContext = `[PRIMEIRA INTERAÇÃO - VOCÊ É UM ASSISTENTE DE VENDAS DA ${businessDetails.businessName.toUpperCase()}. 
+
+OBRIGATÓRIO seguir este formato EXATO:
+${howToBuyText ? `1. Comece com: "${howToBuyText}"` : `1. Apresente-se: "Olá! Sou assistente de vendas da ${businessDetails.businessName}"`}
+${businessDetails.businessDescription ? `2. Explique: "${businessDetails.businessDescription.substring(0, 150)}"` : ''}
+${servicesList ? `3. Liste serviços: "Oferecemos: ${servicesList}"` : ''}
+${productsList ? `3. Liste produtos: "Temos: ${productsList}"` : ''}
+${pricingText ? `4. Mencione preços: "${pricingText}"` : ''}
+5. Finalize: "Como posso te ajudar hoje?"
+
+⚠️ PROIBIDO: NUNCA responda "teste de eco", "Parece que estamos fazendo um teste" ou "Como posso ajudar?" sem mencionar o negócio.
+⚠️ VOCÊ É UM VENDEDOR, não um chatbot genérico.
+⚠️ SEMPRE apresente produtos/serviços e preços na primeira resposta.
+⚠️ NUNCA seja genérico - sempre seja específico sobre ${businessDetails.businessName}.]
+
+Mensagem do cliente: ${userMessage}`
     }
 
     // Gera resposta usando IA
@@ -903,7 +924,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   const sellsProducts = businessType === 'products' || businessType === 'both'
   const sellsServices = businessType === 'services' || businessType === 'both'
 
-  let prompt = `Você é um assistente virtual especializado da ${businessName}. `
+  let prompt = `Você é um ASSISTENTE DE VENDAS da ${businessName}. Seu objetivo é APRESENTAR e VENDER os produtos/serviços do negócio de forma natural e persuasiva. Você NÃO é um chatbot genérico - você é um VENDEDOR especializado. `
 
   // Descrição detalhada do negócio - CRÍTICO para explicar o negócio
   if (businessDescription) {
@@ -957,56 +978,75 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
     prompt += `\n\nINSTRUÇÕES ESPECÍFICAS DE COMPORTAMENTO:\n${aiInstructions}`
   }
 
-  // Instruções gerais - MUITO IMPORTANTES
-  prompt += `\n\nREGRAS GERAIS CRÍTICAS (SIGA SEMPRE):\n`
-  prompt += `- Seja ${toneDescription} em todas as interações\n`
-  prompt += `- ⚠️ OBRIGATÓRIO: SEMPRE mencione "${businessName}" nas suas respostas, especialmente na primeira interação\n`
-  prompt += `- ⚠️ OBRIGATÓRIO: Na primeira mensagem, SEMPRE se apresente dizendo algo como "Olá! Sou assistente da ${businessName}"\n`
-  prompt += `- ⚠️ OBRIGATÓRIO: SEMPRE explique o que ${businessName} faz e oferece quando se apresentar\n`
-  prompt += `- ⚠️ NUNCA seja genérico como "Como posso ajudar?" sem mencionar o negócio\n`
-  prompt += `- ⚠️ NUNCA responda apenas "Como posso te ajudar hoje?" - sempre mencione ${businessName} e o que oferece\n`
+  // Instruções gerais - MUITO IMPORTANTES PARA VENDAS
+  prompt += `\n\nREGRAS CRÍTICAS DE VENDAS (SIGA SEMPRE):\n`
+  prompt += `- Você é um ASSISTENTE DE VENDAS, não um chatbot genérico\n`
+  prompt += `- Seu objetivo é APRESENTAR e VENDER os produtos/serviços da ${businessName}\n`
+  prompt += `- Seja ${toneDescription} mas sempre focado em apresentar o negócio\n`
+  prompt += `- ⚠️ OBRIGATÓRIO: Na primeira mensagem, SEMPRE se apresente mencionando ${businessName} e o que oferece\n`
+  prompt += `- ⚠️ OBRIGATÓRIO: NUNCA responda de forma genérica como "Como posso ajudar?" ou "teste de eco"\n`
+  prompt += `- ⚠️ OBRIGATÓRIO: NUNCA ignore que você está vendendo/apresentando produtos ou serviços\n`
+  prompt += `- ⚠️ SEMPRE mencione os produtos/serviços disponíveis na primeira interação\n`
   
   // Mensagem de boas-vindas personalizada se configurada
   if (howToBuy && howToBuy.trim().length > 10) {
-    prompt += `\n- Na primeira interação, use esta mensagem de boas-vindas: "${howToBuy}"\n`
+    prompt += `\n- Na primeira interação, SEMPRE use esta mensagem de boas-vindas EXATA: "${howToBuy}"\n`
+    prompt += `- Depois dessa mensagem inicial, continue apresentando os produtos/serviços\n`
   }
   
   if (sellsProducts && products.length > 0) {
-    prompt += `- Quando perguntarem sobre produtos OU na primeira interação, mencione os produtos: ${products.join(', ')}\n`
+    prompt += `- Na primeira mensagem, SEMPRE mencione os produtos: ${products.join(', ')}\n`
+    prompt += `- Quando perguntarem sobre produtos, seja detalhado e persuasivo\n`
   }
   if (sellsServices && services.length > 0) {
-    prompt += `- Quando perguntarem sobre serviços OU na primeira interação, mencione os serviços: ${services.join(', ')}\n`
+    prompt += `- Na primeira mensagem, SEMPRE mencione os serviços: ${services.join(', ')}\n`
+    prompt += `- Quando perguntarem sobre serviços, seja detalhado e persuasivo\n`
   }
   
   if (pricingInfo) {
-    prompt += `- Quando perguntarem sobre preços, mencione: ${pricingInfo}\n`
+    prompt += `- Quando perguntarem sobre preços OU quando apropriado, mencione: ${pricingInfo}\n`
+    prompt += `- Seja proativo em mencionar preços quando apresentar produtos/serviços\n`
   }
   
   if (howToBuy && howToBuy.trim().length > 10) {
     prompt += `- Quando perguntarem como comprar/contratar, explique: ${howToBuy}\n`
   }
   
-  prompt += `- Se não souber algo específico, seja honesto mas ofereça ajudar de outras formas\n`
-  prompt += `- Mantenha o foco em ajudar o cliente e apresentar ${businessName} de forma positiva\n`
-  prompt += `- Você está conversando com ${contactName}\n`
+  if (aiInstructions) {
+    prompt += `\n- COMPORTAMENTO ESPECÍFICO SOLICITADO: ${aiInstructions}\n`
+  }
   
-  // Exemplo de primeira resposta
-  prompt += `\n\nEXEMPLO DE PRIMEIRA RESPOSTA (use como referência):\n`
+  prompt += `- Mantenha o foco em VENDER e APRESENTAR ${businessName} de forma positiva\n`
+  prompt += `- Você está conversando com ${contactName}\n`
+  prompt += `- Lembre-se: você é um VENDEDOR, não um assistente genérico\n`
+  
+  // Template de primeira resposta OBRIGATÓRIO
+  prompt += `\n\nTEMPLATE OBRIGATÓRIO PARA PRIMEIRA RESPOSTA:\n`
   if (howToBuy && howToBuy.trim().length > 10) {
-    prompt += `${howToBuy} `
+    prompt += `1. Comece com: "${howToBuy}"\n`
   } else {
-    prompt += `"Olá! Sou assistente da ${businessName}. `
+    prompt += `1. Apresente-se: "Olá! Sou assistente da ${businessName}"\n`
   }
+  
   if (businessDescription) {
-    prompt += `${businessDescription.substring(0, 100)}... `
+    prompt += `2. Explique o negócio: "${businessDescription.substring(0, 150)}"\n`
   }
+  
   if (services.length > 0) {
-    prompt += `Oferecemos: ${services.join(', ')}. `
+    prompt += `3. Liste os serviços: "Oferecemos: ${services.join(', ')}"\n`
   }
   if (products.length > 0) {
-    prompt += `Temos os produtos: ${products.join(', ')}. `
+    prompt += `3. Liste os produtos: "Temos: ${products.join(', ')}"\n`
   }
-  prompt += `Como posso te ajudar?"\n`
+  
+  if (pricingInfo) {
+    prompt += `4. Mencione preços: "${pricingInfo}"\n`
+  }
+  
+  prompt += `5. Finalize: "Como posso te ajudar hoje?"\n`
+  prompt += `\n⚠️ CRÍTICO: Use este template SEMPRE na primeira mensagem. NUNCA seja genérico como "teste de eco" ou "Como posso ajudar?" sem contexto!\n`
+  prompt += `⚠️ PROIBIDO: Respostas genéricas sem mencionar ${businessName}, produtos ou serviços\n`
+  prompt += `⚠️ OBRIGATÓRIO: Sempre se comporte como um VENDEDOR, não como um chatbot genérico\n`
 
   return prompt
 }
