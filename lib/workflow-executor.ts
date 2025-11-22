@@ -1125,7 +1125,8 @@ async function executeAIOnlyWorkflow(
         const tomorrow = new Date(now)
         tomorrow.setDate(tomorrow.getDate() + 1)
         tomorrow.setHours(targetHour, targetMinute, 0, 0)
-        console.log(`📅 Parseado "amanhã" para: ${tomorrow.toISOString()}`)
+        console.log(`📅 Parseado "amanhã" para: ${tomorrow.toISOString()} (hoje é ${now.toISOString()})`)
+        console.log(`📅 Data calculada: ${tomorrow.getDate()}/${tomorrow.getMonth() + 1}/${tomorrow.getFullYear()} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
         return tomorrow
       }
       if (lower.includes('hoje')) {
@@ -1209,19 +1210,28 @@ async function executeAIOnlyWorkflow(
           
           if (args.date) {
             console.log(`🔍 Tentando parsear data: "${args.date}"`)
+            console.log(`📅 Data/hora atual do servidor: ${new Date().toISOString()}`)
+            
+            // Primeiro tenta parsear com a função que entende português
             appointmentDate = parsePortugueseDate(args.date)
             
             // Se não conseguiu parsear, tenta criar diretamente
             if (!appointmentDate || isNaN(appointmentDate.getTime())) {
-              console.log(`⚠️ Parse falhou, tentando Date() direto`)
+              console.log(`⚠️ Parse português falhou, tentando Date() direto`)
               appointmentDate = new Date(args.date)
               
               // Se ainda assim tem ano errado, corrige
               const now = new Date()
               if (appointmentDate.getFullYear() < now.getFullYear()) {
+                console.log(`⚠️ Corrigindo ano de ${appointmentDate.getFullYear()} para ${now.getFullYear()}`)
                 appointmentDate.setFullYear(now.getFullYear())
-                console.log(`⚠️ Corrigindo ano para ${now.getFullYear()}`)
               }
+            }
+            
+            // Log detalhado da data parseada
+            if (appointmentDate && !isNaN(appointmentDate.getTime())) {
+              console.log(`✅ Data parseada: ${appointmentDate.toISOString()}`)
+              console.log(`📅 Data formatada: ${appointmentDate.getDate()}/${appointmentDate.getMonth() + 1}/${appointmentDate.getFullYear()} às ${appointmentDate.getHours()}:${appointmentDate.getMinutes().toString().padStart(2, '0')}`)
             }
           }
           
@@ -1512,11 +1522,18 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- Você está conversando com ${contactName}\n`
   prompt += `- Lembre-se: você é um VENDEDOR, não um assistente genérico\n`
   prompt += `\n\n📅 FUNCIONALIDADE DE AGENDAMENTO:\n`
-  prompt += `- Quando o cliente quiser agendar algo, marcar uma consulta, ou definir um horário, use a função create_appointment\n`
-  prompt += `- Pergunte ao cliente a data e hora desejada, e o motivo/descrição do agendamento\n`
-  prompt += `- Se o cliente não especificar a hora, sugira um horário padrão (ex: 14:00)\n`
-  prompt += `- Após criar o agendamento, confirme os detalhes para o cliente de forma clara e amigável\n`
-  prompt += `- Se houver erro ao criar o agendamento, informe o cliente e peça para tentar novamente\n`
+  prompt += `- Quando o cliente quiser agendar algo, marcar uma consulta, ou definir um horário, use a função create_appointment IMEDIATAMENTE\n`
+  prompt += `- ⚠️ CRÍTICO: NUNCA seja repetitivo ou genérico ao responder sobre agendamento\n`
+  prompt += `- ⚠️ CRÍTICO: NÃO diga sempre "Para agendar um horário, basta me informar a data e hora desejados" - seja NATURAL e DIRETO\n`
+  prompt += `- Se o cliente já mencionou a data/hora (ex: "amanhã às 7 da noite"), crie o agendamento IMEDIATAMENTE sem perguntar novamente\n`
+  prompt += `- Se o cliente só disse "quero agendar", seja PERSUASIVO e NATURAL: "Perfeito! Qual dia e horário seria melhor para você?" ou "Claro! Que dia você prefere?"\n`
+  prompt += `- Varie suas respostas: às vezes pergunte "Que dia funciona melhor?", outras vezes "Qual horário você prefere?", seja CONVERSACIONAL\n`
+  prompt += `- IMPORTANTE: Se o cliente mencionar "amanhã", "hoje", "depois de amanhã" ou outras datas relativas, você DEVE converter para formato ISO 8601 antes de chamar a função\n`
+  prompt += `- Exemplo: Se hoje é 22/11/2025 e o cliente diz "amanhã às 7 da noite", converta para "2025-11-23T19:00:00"\n`
+  prompt += `- Se o cliente não especificar a hora, você pode usar 14:00 como padrão ou perguntar qual horário prefere\n`
+  prompt += `- Após criar o agendamento com sucesso, confirme de forma NATURAL e ENTHUSIASTIC: "Perfeito! Agendei para [data/hora]. Está tudo certo!" ou "Pronto! Seu agendamento está confirmado para [data/hora]"\n`
+  prompt += `- Se houver erro ao criar o agendamento, informe o cliente de forma amigável e peça para tentar novamente com mais detalhes\n`
+  prompt += `- Lembre-se: você é um VENDEDOR, não um robô. Seja NATURAL, PERSUASIVO e VARIE suas respostas\n`
   prompt += `- Seja NATURAL e CONVERSACIONAL - evite ser muito formal ou repetitivo\n`
   prompt += `- Varie suas respostas - não termine sempre com "Como posso te ajudar?"\n`
   prompt += `- Use linguagem natural, como se estivesse conversando com um amigo\n`
