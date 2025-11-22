@@ -256,9 +256,12 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
       return
     }
 
-    if (isAIOnly && !aiBusinessDetails) {
-      toast.error('Configure os detalhes do negócio para o fluxo de IA')
-      return
+    if (isAIOnly) {
+      // Validação dos detalhes do negócio
+      if (!aiBusinessDetails || !aiBusinessDetails.businessName?.trim() || !aiBusinessDetails.businessDescription?.trim()) {
+        toast.error('Preencha pelo menos o nome e a descrição do negócio')
+        return
+      }
     }
 
     setIsSaving(true)
@@ -457,9 +460,9 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
           <div className="h-full overflow-auto">
             <AIWorkflowConfig
               businessDetails={aiBusinessDetails}
-              onSave={(details) => {
+              onChange={(details) => {
+                // Atualiza automaticamente quando houver mudanças
                 setAiBusinessDetails(details)
-                toast.success('Detalhes do negócio salvos! Agora salve o fluxo.')
               }}
             />
           </div>

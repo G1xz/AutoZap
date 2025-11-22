@@ -25,14 +25,16 @@ interface BusinessDetails {
 
 interface AIWorkflowConfigProps {
   businessDetails: BusinessDetails | null
-  onSave: (details: BusinessDetails) => void
+  onSave?: (details: BusinessDetails) => void // Opcional agora
   onCancel?: () => void
+  onChange?: (details: BusinessDetails) => void // Novo: callback para mudanças em tempo real
 }
 
 export default function AIWorkflowConfig({
   businessDetails,
   onSave,
   onCancel,
+  onChange,
 }: AIWorkflowConfigProps) {
   const [details, setDetails] = useState<BusinessDetails>(
     businessDetails || {
@@ -57,6 +59,20 @@ export default function AIWorkflowConfig({
   const [newService, setNewService] = useState('')
   const [catalogs, setCatalogs] = useState<any[]>([])
   const [isLoadingCatalogs, setIsLoadingCatalogs] = useState(false)
+
+  // Atualiza o estado quando businessDetails mudar externamente
+  useEffect(() => {
+    if (businessDetails) {
+      setDetails(businessDetails)
+    }
+  }, [businessDetails])
+
+  // Notifica mudanças em tempo real para o componente pai
+  useEffect(() => {
+    if (onChange) {
+      onChange(details)
+    }
+  }, [details, onChange])
 
   const handleAddProduct = () => {
     if (newProduct.trim()) {
@@ -112,12 +128,19 @@ export default function AIWorkflowConfig({
   }, [])
 
 
+  // Validação dos dados (usado pelo WorkflowEditor ao salvar)
+  const validateDetails = (): boolean => {
+    return !!(details.businessName?.trim() && details.businessDescription?.trim())
+  }
+
   const handleSave = () => {
-    if (!details.businessName.trim() || !details.businessDescription.trim()) {
+    if (!validateDetails()) {
       alert('Por favor, preencha pelo menos o nome e a descrição do negócio.')
       return
     }
-    onSave(details)
+    if (onSave) {
+      onSave(details)
+    }
   }
 
   return (
@@ -398,22 +421,11 @@ export default function AIWorkflowConfig({
           </div>
         </div>
 
-        {/* Botões */}
-        <div className="flex gap-3 mt-6 pt-6 border-t border-gray-200">
-          <button
-            onClick={handleSave}
-            className="flex-1 px-4 py-2 bg-autozap-primary text-white rounded-md hover:bg-autozap-light transition-colors font-medium"
-          >
-            Salvar Configuração
-          </button>
-          {onCancel && (
-            <button
-              onClick={onCancel}
-              className="px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors"
-            >
-              Cancelar
-            </button>
-          )}
+        {/* Nota informativa */}
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <p className="text-sm text-gray-600 bg-blue-50 p-3 rounded-md">
+            💡 <strong>Dica:</strong> As alterações são salvas automaticamente. Clique em "Salvar Fluxo" no topo da página para finalizar.
+          </p>
         </div>
       </div>
     </div>

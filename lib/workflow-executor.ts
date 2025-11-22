@@ -1,6 +1,7 @@
 import { prisma } from './prisma'
 import { sendWhatsAppMessage, sendWhatsAppInteractiveMessage, sendWhatsAppImage, sendWhatsAppVideo, sendWhatsAppDocument, getUserProfileName } from './whatsapp-cloud-api'
 import { generateAIResponse } from './openai'
+import { createAppointment, checkAvailability } from './appointments'
 
 export interface WhatsAppMessage {
   from: string
@@ -839,12 +840,6 @@ async function executeAIOnlyWorkflow(
     // Se houver um catalogId, buscar produtos/serviços do catálogo e SUBSTITUIR os manuais
     if (businessDetails.catalogId) {
       try {
-        // Buscar o workflow completo para obter o userId
-        const fullWorkflow = await prisma.workflow.findUnique({
-          where: { id: workflow.id },
-          select: { userId: true },
-        })
-
         const catalog = await prisma.catalog.findFirst({
           where: {
             id: businessDetails.catalogId,
@@ -1061,6 +1056,91 @@ async function executeAIOnlyWorkflow(
     
     console.log(`🤖 Gerando resposta IA-only. Primeira interação: ${isFirstInteraction}, Histórico: ${finalConversationHistory.length} mensagens`)
     
+    // Define função de agendamento para a IA usar quando necessário
+    const appointmentFunction = {
+      name: 'create_appointment',
+      description: 'Cria um agendamento na agenda quando o cliente quer marcar um horário. Use esta função quando o cliente expressar interesse em agendar algo, marcar uma consulta, ou definir um horário.',
+      parameters: {
+        type: 'object',
+        properties: {
+          date: {
+            type: 'string',
+            description: 'Data e hora do agendamento no formato ISO 8601 (ex: 2024-12-25T14:30:00). Se o cliente não especificar hora, use um horário padrão como 14:00.',
+          },
+          description: {
+            type: 'string',
+            description: 'Descrição do agendamento, incluindo o que será feito, serviço solicitado, ou motivo do agendamento.',
+          },
+        },
+        required: ['date', 'description'],
+      },
+    }
+
+    // Handler para quando a IA chamar a função de agendamento
+    const handleFunctionCall = async (functionName: string, args: any) => {
+      if (functionName === 'create_appointment' && userId) {
+        try {
+          const appointmentDate = new Date(args.date)
+          
+          // Valida se a data é válida e não é no passado
+          if (isNaN(appointmentDate.getTime())) {
+            return {
+              success: false,
+              error: 'Data inválida. Por favor, forneça uma data válida.',
+            }
+          }
+
+          if (appointmentDate < new Date()) {
+            return {
+              success: false,
+              error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
+            }
+          }
+
+          const result = await createAppointment({
+            userId,
+            instanceId,
+            contactNumber,
+            contactName: contactNameFinal,
+            date: appointmentDate,
+            description: args.description || `Agendamento solicitado via WhatsApp`,
+          })
+
+          if (result.success) {
+            const formattedDate = appointmentDate.toLocaleString('pt-BR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+
+            return {
+              success: true,
+              message: `Agendamento criado com sucesso para ${formattedDate}.`,
+              appointment: result.appointment,
+            }
+          } else {
+            return {
+              success: false,
+              error: result.error || 'Erro ao criar agendamento.',
+            }
+          }
+        } catch (error) {
+          console.error('Erro ao criar agendamento:', error)
+          return {
+            success: false,
+            error: 'Ocorreu um erro ao criar o agendamento. Por favor, tente novamente.',
+          }
+        }
+      }
+
+      return {
+        success: false,
+        error: 'Função não reconhecida.',
+      }
+    }
+    
     const aiResponse = await generateAIResponse(userMessageWithContext, {
       systemPrompt,
       conversationHistory: finalConversationHistory,
@@ -1070,7 +1150,9 @@ async function executeAIOnlyWorkflow(
         telefoneNumero: formattedPhone || contactNumber,
       },
       temperature,
-      maxTokens: 600, // Aumenta para garantir que cabe tudo
+      maxTokens: 600,
+      functions: [appointmentFunction],
+      onFunctionCall: handleFunctionCall,
     })
     
     // Validação CRÍTICA: Se a resposta não mencionar o negócio, força mencionar
@@ -1252,6 +1334,12 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- Mantenha o foco em VENDER e APRESENTAR ${businessName} de forma positiva\n`
   prompt += `- Você está conversando com ${contactName}\n`
   prompt += `- Lembre-se: você é um VENDEDOR, não um assistente genérico\n`
+  prompt += `\n\n📅 FUNCIONALIDADE DE AGENDAMENTO:\n`
+  prompt += `- Quando o cliente quiser agendar algo, marcar uma consulta, ou definir um horário, use a função create_appointment\n`
+  prompt += `- Pergunte ao cliente a data e hora desejada, e o motivo/descrição do agendamento\n`
+  prompt += `- Se o cliente não especificar a hora, sugira um horário padrão (ex: 14:00)\n`
+  prompt += `- Após criar o agendamento, confirme os detalhes para o cliente de forma clara e amigável\n`
+  prompt += `- Se houver erro ao criar o agendamento, informe o cliente e peça para tentar novamente\n`
   prompt += `- Seja NATURAL e CONVERSACIONAL - evite ser muito formal ou repetitivo\n`
   prompt += `- Varie suas respostas - não termine sempre com "Como posso te ajudar?"\n`
   prompt += `- Use linguagem natural, como se estivesse conversando com um amigo\n`

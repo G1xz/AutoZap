@@ -6,10 +6,28 @@
 interface ChatMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
+  function_call?: {
+    name: string
+    arguments: string
+  }
+}
+
+interface FunctionDefinition {
+  name: string
+  description: string
+  parameters: {
+    type: string
+    properties: Record<string, any>
+    required?: string[]
+  }
 }
 
 interface OpenAIResponse {
   content: string
+  functionCall?: {
+    name: string
+    arguments: any
+  }
   usage?: {
     promptTokens: number
     completionTokens: number
@@ -19,6 +37,7 @@ interface OpenAIResponse {
 
 /**
  * Chama a API da OpenAI para gerar uma resposta usando ChatGPT
+ * Suporta function calling para permitir que a IA execute ações
  */
 export async function callChatGPT(
   messages: ChatMessage[],
@@ -26,6 +45,7 @@ export async function callChatGPT(
     model?: string
     temperature?: number
     maxTokens?: number
+    functions?: FunctionDefinition[]
   }
 ): Promise<OpenAIResponse> {
   const apiKey = process.env.OPENAI_API_KEY
@@ -38,6 +58,19 @@ export async function callChatGPT(
   const temperature = options?.temperature ?? 0.7
   const maxTokens = options?.maxTokens ?? 500
 
+  const requestBody: any = {
+    model,
+    messages,
+    temperature,
+    max_tokens: maxTokens,
+  }
+
+  // Adiciona functions se fornecidas
+  if (options?.functions && options.functions.length > 0) {
+    requestBody.functions = options.functions
+    requestBody.function_call = 'auto' // Permite que a IA escolha quando usar as funções
+  }
+
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
       method: 'POST',
@@ -45,12 +78,7 @@ export async function callChatGPT(
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-      }),
+      body: JSON.stringify(requestBody),
     })
 
     if (!response.ok) {
@@ -61,9 +89,35 @@ export async function callChatGPT(
     }
 
     const data = await response.json()
+    const message = data.choices[0]?.message
+
+    // Verifica se a IA quer chamar uma função
+    if (message.function_call) {
+      let functionArgs: any = {}
+      try {
+        functionArgs = JSON.parse(message.function_call.arguments)
+      } catch (e) {
+        console.error('Erro ao parsear argumentos da função:', e)
+      }
+
+      return {
+        content: message.content || '',
+        functionCall: {
+          name: message.function_call.name,
+          arguments: functionArgs,
+        },
+        usage: data.usage
+          ? {
+              promptTokens: data.usage.prompt_tokens,
+              completionTokens: data.usage.completion_tokens,
+              totalTokens: data.usage.total_tokens,
+            }
+          : undefined,
+      }
+    }
 
     return {
-      content: data.choices[0]?.message?.content || 'Desculpe, não consegui gerar uma resposta.',
+      content: message?.content || 'Desculpe, não consegui gerar uma resposta.',
       usage: data.usage
         ? {
             promptTokens: data.usage.prompt_tokens,
@@ -81,6 +135,7 @@ export async function callChatGPT(
 /**
  * Gera uma resposta de IA para uma mensagem do usuário
  * Usa o contexto da conversa e um prompt do sistema opcional
+ * Suporta function calling para permitir ações automáticas
  */
 export async function generateAIResponse(
   userMessage: string,
@@ -90,6 +145,8 @@ export async function generateAIResponse(
     variables?: Record<string, any>
     temperature?: number
     maxTokens?: number
+    functions?: FunctionDefinition[]
+    onFunctionCall?: (functionName: string, args: any) => Promise<any>
   }
 ): Promise<string> {
   const messages: ChatMessage[] = []
@@ -125,11 +182,49 @@ export async function generateAIResponse(
     content: replaceVariables(userMessage, context?.variables || {}),
   })
 
-  // Chama a API
+  // Chama a API com function calling se disponível
   const response = await callChatGPT(messages, {
     temperature: context?.temperature,
     maxTokens: context?.maxTokens,
+    functions: context?.functions,
   })
+
+  // Se a IA quer chamar uma função, executa e continua a conversa
+  if (response.functionCall && context?.onFunctionCall) {
+    try {
+      const functionResult = await context.onFunctionCall(
+        response.functionCall.name,
+        response.functionCall.arguments
+      )
+
+      // Adiciona a resposta da função e pede para a IA continuar
+      messages.push({
+        role: 'assistant',
+        content: '',
+        function_call: {
+          name: response.functionCall.name,
+          arguments: JSON.stringify(response.functionCall.arguments),
+        },
+      })
+
+      messages.push({
+        role: 'function',
+        content: JSON.stringify(functionResult),
+      })
+
+      // Chama novamente para obter a resposta final
+      const finalResponse = await callChatGPT(messages, {
+        temperature: context?.temperature,
+        maxTokens: context?.maxTokens,
+        functions: context?.functions,
+      })
+
+      return finalResponse.content
+    } catch (error) {
+      console.error('Erro ao executar função:', error)
+      return 'Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente.'
+    }
+  }
 
   return response.content
 }
