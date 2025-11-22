@@ -1071,13 +1071,13 @@ async function executeAIOnlyWorkflow(
     // Define função de agendamento para a IA usar quando necessário
     const appointmentFunction = {
       name: 'create_appointment',
-      description: 'Cria um agendamento na agenda quando o cliente quer marcar um horário. Use esta função quando o cliente expressar interesse em agendar algo, marcar uma consulta, ou definir um horário.',
+      description: 'Cria um agendamento na agenda quando o cliente quer marcar um horário. Use esta função quando o cliente expressar interesse em agendar algo, marcar uma consulta, ou definir um horário. IMPORTANTE: Se o cliente mencionar "amanhã", "hoje", "depois de amanhã" ou outras datas relativas, converta para uma data ISO válida. Se não especificar hora, use 14:00 como padrão.',
       parameters: {
         type: 'object',
         properties: {
           date: {
             type: 'string',
-            description: 'Data e hora do agendamento no formato ISO 8601 (ex: 2024-12-25T14:30:00). Se o cliente não especificar hora, use um horário padrão como 14:00.',
+            description: 'Data e hora do agendamento. Aceita: formato ISO 8601 (ex: 2024-12-25T14:30:00), datas relativas em português como "amanhã", "hoje", "depois de amanhã", ou formato DD/MM/YYYY. Se o cliente não especificar hora, você pode omitir e o sistema usará 14:00 como padrão. IMPORTANTE: Se o cliente disser "amanhã", converta para uma data ISO válida (ex: se hoje é 22/11/2024, amanhã seria 2024-11-23T14:00:00).',
           },
           description: {
             type: 'string',
@@ -1088,21 +1088,109 @@ async function executeAIOnlyWorkflow(
       },
     }
 
+    // Função auxiliar para converter datas relativas em português
+    const parsePortugueseDate = (dateStr: string): Date | null => {
+      const lower = dateStr.toLowerCase().trim()
+      const now = new Date()
+      const tomorrow = new Date(now)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      const dayAfterTomorrow = new Date(now)
+      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2)
+      
+      // Tenta parsear como ISO primeiro
+      const isoDate = new Date(dateStr)
+      if (!isNaN(isoDate.getTime())) {
+        return isoDate
+      }
+      
+      // Datas relativas em português
+      if (lower.includes('amanhã') || lower.includes('amanha')) {
+        return tomorrow
+      }
+      if (lower.includes('hoje')) {
+        return now
+      }
+      if (lower.includes('depois de amanhã') || lower.includes('depois de amanha')) {
+        return dayAfterTomorrow
+      }
+      
+      // Tenta parsear formatos comuns
+      const formats = [
+        /(\d{1,2})\/(\d{1,2})\/(\d{4})/, // DD/MM/YYYY
+        /(\d{4})-(\d{1,2})-(\d{1,2})/, // YYYY-MM-DD
+      ]
+      
+      for (const format of formats) {
+        const match = dateStr.match(format)
+        if (match) {
+          if (format === formats[0]) {
+            // DD/MM/YYYY
+            const day = parseInt(match[1])
+            const month = parseInt(match[2]) - 1
+            const year = parseInt(match[3])
+            return new Date(year, month, day)
+          } else {
+            // YYYY-MM-DD
+            return new Date(dateStr)
+          }
+        }
+      }
+      
+      return null
+    }
+
     // Handler para quando a IA chamar a função de agendamento
     const handleFunctionCall = async (functionName: string, args: any) => {
       if (functionName === 'create_appointment' && userId) {
         try {
-          const appointmentDate = new Date(args.date)
+          console.log(`📅 Tentando criar agendamento com args:`, args)
           
-          // Valida se a data é válida e não é no passado
-          if (isNaN(appointmentDate.getTime())) {
-            return {
-              success: false,
-              error: 'Data inválida. Por favor, forneça uma data válida.',
+          // Tenta parsear a data
+          let appointmentDate: Date | null = null
+          
+          if (args.date) {
+            appointmentDate = parsePortugueseDate(args.date)
+            
+            // Se não conseguiu parsear, tenta criar diretamente
+            if (!appointmentDate) {
+              appointmentDate = new Date(args.date)
             }
           }
-
-          if (appointmentDate < new Date()) {
+          
+          // Se ainda não tem data válida, usa amanhã como padrão
+          if (!appointmentDate || isNaN(appointmentDate.getTime())) {
+            const tomorrow = new Date()
+            tomorrow.setDate(tomorrow.getDate() + 1)
+            tomorrow.setHours(14, 0, 0, 0) // Horário padrão: 14:00
+            appointmentDate = tomorrow
+            console.log(`⚠️ Data não parseada, usando amanhã às 14:00 como padrão`)
+          }
+          
+          // Se não tem hora especificada, adiciona horário padrão (14:00)
+          if (appointmentDate.getHours() === 0 && appointmentDate.getMinutes() === 0) {
+            appointmentDate.setHours(14, 0, 0, 0)
+          }
+          
+          console.log(`📅 Data parseada: ${appointmentDate.toISOString()}`)
+          
+          // Valida se a data é válida e não é no passado
+          // Compara apenas a data (sem hora) para evitar rejeitar datas válidas
+          const now = new Date()
+          const appointmentDateOnly = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate())
+          const todayOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+          
+          // Se a data é hoje, verifica se a hora não passou
+          if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
+            if (appointmentDate < now) {
+              console.error(`❌ Hora no passado hoje: ${appointmentDate.toISOString()} < ${now.toISOString()}`)
+              return {
+                success: false,
+                error: 'Não é possível agendar para um horário que já passou hoje. Por favor, escolha um horário futuro.',
+              }
+            }
+          } else if (appointmentDateOnly < todayOnly) {
+            // Data no passado
+            console.error(`❌ Data no passado: ${appointmentDateOnly.toISOString()} < ${todayOnly.toISOString()}`)
             return {
               success: false,
               error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
