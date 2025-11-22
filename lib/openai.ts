@@ -210,6 +210,7 @@ export async function generateAIResponse(
 
       messages.push({
         role: 'function',
+        name: response.functionCall.name,
         content: JSON.stringify(functionResult),
       })
 
