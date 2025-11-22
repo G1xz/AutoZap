@@ -1089,24 +1089,28 @@ async function executeAIOnlyWorkflow(
     }
 
     // Função auxiliar para obter data/hora atual no fuso horário do Brasil (UTC-3)
+    // O servidor está em UTC, então para obter o horário do Brasil, subtraímos 3 horas
     const getBrazilianDate = (): Date => {
-      const now = new Date()
-      // Converte UTC para horário do Brasil (UTC-3)
-      // getTimezoneOffset() retorna o offset em minutos (positivo para UTC-, negativo para UTC+)
-      // Para UTC-3, precisamos adicionar 3 horas (180 minutos)
-      const brazilianOffset = 3 * 60 // +3 horas em minutos
+      const now = new Date() // UTC
+      // Brasil está em UTC-3, então subtraímos 3 horas do UTC para obter horário do Brasil
+      // Exemplo: Se são 20:33 UTC, no Brasil são 17:33 (UTC-3)
+      const brazilianOffset = -3 * 60 // -3 horas em minutos
       const brazilianTime = new Date(now.getTime() + (brazilianOffset * 60000))
       return brazilianTime
     }
     
-    // Função auxiliar para converter data do Brasil para UTC
+    // Função auxiliar para converter data do Brasil para UTC (para salvar no banco)
+    // Se temos uma data no horário do Brasil e queremos UTC, adicionamos 3 horas
+    // Exemplo: Se são 07:00 no Brasil, em UTC são 10:00
     const brazilianToUTC = (brazilianDate: Date): Date => {
-      return new Date(brazilianDate.getTime() - (3 * 60 * 60000))
+      return new Date(brazilianDate.getTime() + (3 * 60 * 60000))
     }
     
-    // Função auxiliar para converter data de UTC para Brasil
+    // Função auxiliar para converter data de UTC para Brasil (para exibição/validação)
+    // Se temos uma data em UTC e queremos horário do Brasil, subtraímos 3 horas
+    // Exemplo: Se são 10:00 UTC, no Brasil são 07:00
     const utcToBrazilian = (utcDate: Date): Date => {
-      return new Date(utcDate.getTime() + (3 * 60 * 60000))
+      return new Date(utcDate.getTime() - (3 * 60 * 60000))
     }
 
     // Função auxiliar para converter datas relativas em português
@@ -1146,10 +1150,16 @@ async function executeAIOnlyWorkflow(
         const tomorrow = new Date(nowBrazilian)
         tomorrow.setDate(tomorrow.getDate() + 1)
         tomorrow.setHours(targetHour, targetMinute, 0, 0)
+        tomorrow.setSeconds(0, 0) // Garante que segundos e milissegundos são 0
+        
+        console.log(`📅 Parseado "amanhã" (Brasil): ${tomorrow.getDate()}/${tomorrow.getMonth() + 1}/${tomorrow.getFullYear()} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
+        console.log(`📅 Data/hora atual (Brasil): ${nowBrazilian.getDate()}/${nowBrazilian.getMonth() + 1}/${nowBrazilian.getFullYear()} às ${nowBrazilian.getHours()}:${nowBrazilian.getMinutes().toString().padStart(2, '0')}`)
+        
         // Converte de volta para UTC para salvar no banco
         const utcDate = brazilianToUTC(tomorrow)
-        console.log(`📅 Parseado "amanhã" para: ${utcDate.toISOString()} (hoje no Brasil é ${nowBrazilian.toISOString()})`)
-        console.log(`📅 Data calculada (Brasil): ${tomorrow.getDate()}/${tomorrow.getMonth() + 1}/${tomorrow.getFullYear()} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
+        console.log(`📅 Convertido para UTC: ${utcDate.toISOString()}`)
+        console.log(`📅 UTC convertido de volta para Brasil: ${utcToBrazilian(utcDate).getDate()}/${utcToBrazilian(utcDate).getMonth() + 1}/${utcToBrazilian(utcDate).getFullYear()} às ${utcToBrazilian(utcDate).getHours()}:${utcToBrazilian(utcDate).getMinutes().toString().padStart(2, '0')}`)
+        
         return utcDate
       }
       if (lower.includes('hoje')) {
@@ -1284,14 +1294,14 @@ async function executeAIOnlyWorkflow(
             console.log(`⚠️ Corrigindo ano de ${appointmentDateBrazilian.getFullYear()} para ${currentYear}`)
             appointmentDateBrazilian.setFullYear(currentYear)
             // Converte de volta para UTC
-            appointmentDate = new Date(appointmentDateBrazilian.getTime() - (3 * 60 * 60000))
+            appointmentDate = brazilianToUTC(appointmentDateBrazilian)
           }
           
           // Se não tem hora especificada, adiciona horário padrão (14:00 no Brasil)
           if (appointmentDateBrazilian.getHours() === 0 && appointmentDateBrazilian.getMinutes() === 0) {
             appointmentDateBrazilian.setHours(14, 0, 0, 0)
             // Converte de volta para UTC
-            appointmentDate = new Date(appointmentDateBrazilian.getTime() - (3 * 60 * 60000))
+            appointmentDate = brazilianToUTC(appointmentDateBrazilian)
           }
           
           console.log(`📅 Data parseada final (UTC): ${appointmentDate.toISOString()}`)
