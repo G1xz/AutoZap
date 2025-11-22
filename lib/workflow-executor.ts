@@ -833,48 +833,80 @@ async function executeAIOnlyWorkflow(
     // Monta o prompt do sistema com os detalhes do negócio
     const systemPrompt = buildAISystemPrompt(businessDetails, contactNameFinal || formattedPhoneFormatted)
 
-    // Verifica se é a primeira interação (poucas mensagens na conversa)
-    const isFirstInteraction = conversationHistory.length <= 2
+    // Verifica se é a primeira interação (poucas mensagens na conversa ou nenhuma resposta da IA ainda)
+    // Considera primeira interação se há menos de 3 mensagens OU se não há nenhuma mensagem da IA ainda
+    const hasAIResponse = recentMessages.some(msg => msg.isFromMe)
+    const isFirstInteraction = conversationHistory.length <= 2 || !hasAIResponse
     
-    // Se for primeira interação, adiciona contexto FORTE e DIRETO para evitar respostas genéricas
-    let userMessageWithContext = userMessage
+    // Se for primeira interação, monta resposta pré-definida baseada nos dados do negócio
+    // Isso garante que sempre apresente o negócio corretamente, sem depender da IA
     if (isFirstInteraction && businessDetails.businessName) {
       const servicesList = businessDetails.services?.join(', ') || ''
       const productsList = businessDetails.products?.join(', ') || ''
       const howToBuyText = businessDetails.howToBuy || ''
       const pricingText = businessDetails.pricingInfo || ''
+      const businessDesc = businessDetails.businessDescription || ''
       
-      // Instrução MUITO clara e direta para evitar respostas genéricas como "teste de eco"
-      userMessageWithContext = `[PRIMEIRA INTERAÇÃO - VOCÊ É UM ASSISTENTE DE VENDAS DA ${businessDetails.businessName.toUpperCase()}. 
-
-OBRIGATÓRIO seguir este formato EXATO:
-${howToBuyText ? `1. Comece com: "${howToBuyText}"` : `1. Apresente-se: "Olá! Sou assistente de vendas da ${businessDetails.businessName}"`}
-${businessDetails.businessDescription ? `2. Explique: "${businessDetails.businessDescription.substring(0, 150)}"` : ''}
-${servicesList ? `3. Liste serviços: "Oferecemos: ${servicesList}"` : ''}
-${productsList ? `3. Liste produtos: "Temos: ${productsList}"` : ''}
-${pricingText ? `4. Mencione preços: "${pricingText}"` : ''}
-5. Finalize: "Como posso te ajudar hoje?"
-
-⚠️ PROIBIDO: NUNCA responda "teste de eco", "Parece que estamos fazendo um teste" ou "Como posso ajudar?" sem mencionar o negócio.
-⚠️ VOCÊ É UM VENDEDOR, não um chatbot genérico.
-⚠️ SEMPRE apresente produtos/serviços e preços na primeira resposta.
-⚠️ NUNCA seja genérico - sempre seja específico sobre ${businessDetails.businessName}.]
-
-Mensagem do cliente: ${userMessage}`
+      // Monta resposta pré-definida para garantir que sempre apresente o negócio
+      let predefinedResponse = ''
+      
+      if (howToBuyText && howToBuyText.trim().length > 10) {
+        predefinedResponse = `${howToBuyText}\n\n`
+      } else {
+        predefinedResponse = `Olá! Sou assistente de vendas da ${businessDetails.businessName}.\n\n`
+      }
+      
+      if (businessDesc) {
+        predefinedResponse += `${businessDesc}\n\n`
+      }
+      
+      if (servicesList) {
+        predefinedResponse += `Oferecemos os seguintes serviços: ${servicesList}.\n\n`
+      }
+      
+      if (productsList) {
+        predefinedResponse += `Temos os seguintes produtos: ${productsList}.\n\n`
+      }
+      
+      if (pricingText) {
+        predefinedResponse += `Preços: ${pricingText}.\n\n`
+      }
+      
+      predefinedResponse += `Como posso te ajudar hoje?`
+      
+      // Envia a resposta pré-definida primeiro
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, predefinedResponse.trim(), 'service')
+      })
+      
+      console.log(`🤖 Resposta pré-definida enviada para ${contactNumber} (primeira interação)`)
+      return // Não gera resposta da IA na primeira vez, usa a pré-definida
     }
+    
+    // Para mensagens seguintes, usa IA normalmente
+    let userMessageWithContext = userMessage
 
     // Gera resposta usando IA
     const { generateAIResponse } = await import('./openai')
+    
+    // Se for primeira interação, não usa histórico para forçar seguir o template
+    // E aumenta temperatura para ser mais criativo seguindo as instruções
+    const finalConversationHistory = isFirstInteraction ? [] : conversationHistory
+    const temperature = isFirstInteraction ? 0.9 : 0.7 // Mais criativo na primeira vez
+    
+    console.log(`🤖 Gerando resposta IA-only. Primeira interação: ${isFirstInteraction}, Histórico: ${finalConversationHistory.length} mensagens`)
+    
     const aiResponse = await generateAIResponse(userMessageWithContext, {
       systemPrompt,
-      conversationHistory,
+      conversationHistory: finalConversationHistory,
       variables: {
         nome: contactNameFinal || formattedPhoneFormatted || 'Usuário',
         telefone: formattedPhoneFormatted || contactNumber,
         telefoneNumero: formattedPhone || contactNumber,
       },
-      temperature: 0.7,
-      maxTokens: 500,
+      temperature,
+      maxTokens: 600, // Aumenta para garantir que cabe tudo
     })
 
     // Envia a resposta gerada pela IA
