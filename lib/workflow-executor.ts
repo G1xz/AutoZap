@@ -830,7 +830,13 @@ async function executeAIOnlyWorkflow(
       }
     }
 
-    // Se houver um catalogId, buscar produtos/serviços do catálogo
+    console.log(`🔍 Detalhes do negócio ANTES de buscar catálogo:`, {
+      catalogId: businessDetails.catalogId,
+      productsManuais: businessDetails.products,
+      servicesManuais: businessDetails.services
+    })
+
+    // Se houver um catalogId, buscar produtos/serviços do catálogo e SUBSTITUIR os manuais
     if (businessDetails.catalogId) {
       try {
         // Buscar o workflow completo para obter o userId
@@ -889,14 +895,13 @@ async function executeAIOnlyWorkflow(
           })
 
           // Se há catalogId, SEMPRE usar produtos/serviços do catálogo (substitui os manuais)
-          if (catalogProducts.length > 0) {
-            businessDetails.products = catalogProducts
-            console.log(`📦 Produtos do catálogo carregados: ${catalogProducts.length} produtos`)
-          }
-          if (catalogServices.length > 0) {
-            businessDetails.services = catalogServices
-            console.log(`🛠️ Serviços do catálogo carregados: ${catalogServices.length} serviços`)
-          }
+          // Limpa produtos/serviços manuais quando há catálogo
+          businessDetails.products = catalogProducts.length > 0 ? catalogProducts : []
+          businessDetails.services = catalogServices.length > 0 ? catalogServices : []
+          
+          console.log(`📦 Produtos do catálogo carregados: ${catalogProducts.length} produtos`, catalogProducts)
+          console.log(`🛠️ Serviços do catálogo carregados: ${catalogServices.length} serviços`, catalogServices)
+          console.log(`🔄 Produtos/Serviços manuais foram SUBSTITUÍDOS pelos do catálogo`)
           
           // Log para debug
           console.log(`📊 Catálogo processado:`, {
@@ -908,10 +913,16 @@ async function executeAIOnlyWorkflow(
             products: catalogProducts,
             services: catalogServices
           })
+        } else {
+          console.error(`❌ Catálogo não encontrado: catalogId=${businessDetails.catalogId}, userId=${fullWorkflow?.userId}`)
+          console.error(`⚠️ Usando produtos/serviços manuais porque catálogo não foi encontrado`)
         }
       } catch (error) {
-        console.error('Erro ao buscar catálogo:', error)
+        console.error('❌ Erro ao buscar catálogo:', error)
+        console.error('Stack trace:', error instanceof Error ? error.stack : 'N/A')
       }
+    } else {
+      console.log(`ℹ️ Nenhum catalogId configurado. Usando produtos/serviços manuais.`)
     }
 
     console.log(`📊 Dados do negócio carregados:`, {
