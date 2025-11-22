@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 
 interface BusinessDetails {
   businessName: string
@@ -53,6 +53,10 @@ export default function AIWorkflowConfig({
 
   const [newProduct, setNewProduct] = useState('')
   const [newService, setNewService] = useState('')
+  const [catalogs, setCatalogs] = useState<any[]>([])
+  const [showCatalogImport, setShowCatalogImport] = useState(false)
+  const [selectedCatalogId, setSelectedCatalogId] = useState('')
+  const [isLoadingCatalogs, setIsLoadingCatalogs] = useState(false)
 
   const handleAddProduct = () => {
     if (newProduct.trim()) {
@@ -86,6 +90,86 @@ export default function AIWorkflowConfig({
       ...details,
       services: details.services?.filter((_, i) => i !== index) || [],
     })
+  }
+
+  // Buscar catálogos disponíveis
+  useEffect(() => {
+    const fetchCatalogs = async () => {
+      setIsLoadingCatalogs(true)
+      try {
+        const response = await fetch('/api/catalogs')
+        if (response.ok) {
+          const data = await response.json()
+          setCatalogs(data)
+        }
+      } catch (error) {
+        console.error('Erro ao buscar catálogos:', error)
+      } finally {
+        setIsLoadingCatalogs(false)
+      }
+    }
+    fetchCatalogs()
+  }, [])
+
+  // Importar produtos/serviços do catálogo
+  const handleImportFromCatalog = async () => {
+    if (!selectedCatalogId) {
+      alert('Selecione um catálogo para importar')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/catalogs/${selectedCatalogId}`)
+      if (!response.ok) {
+        throw new Error('Erro ao buscar catálogo')
+      }
+
+      const catalog = await response.json()
+      
+      // Extrair produtos e serviços dos nós do catálogo
+      const importedProducts: string[] = []
+      const importedServices: string[] = []
+
+      catalog.nodes.forEach((node: any) => {
+        try {
+          const nodeData = JSON.parse(node.data)
+          if (node.type === 'product' && nodeData.name) {
+            // Formata: "Nome do Produto - R$ XX,XX" ou apenas "Nome do Produto"
+            let productName = nodeData.name
+            if (nodeData.price) {
+              productName += ` - R$ ${nodeData.price.toFixed(2).replace('.', ',')}`
+            }
+            importedProducts.push(productName)
+          } else if (node.type === 'service' && nodeData.name) {
+            // Formata: "Nome do Serviço - R$ XX,XX" ou apenas "Nome do Serviço"
+            let serviceName = nodeData.name
+            if (nodeData.price) {
+              serviceName += ` - R$ ${nodeData.price.toFixed(2).replace('.', ',')}`
+            }
+            importedServices.push(serviceName)
+          }
+        } catch (e) {
+          console.error('Erro ao parsear dados do nó:', e)
+        }
+      })
+
+      // Adicionar aos arrays existentes (sem duplicatas)
+      const updatedProducts = [...new Set([...(details.products || []), ...importedProducts])]
+      const updatedServices = [...new Set([...(details.services || []), ...importedServices])]
+
+      setDetails({
+        ...details,
+        products: updatedProducts,
+        services: updatedServices,
+      })
+
+      setShowCatalogImport(false)
+      setSelectedCatalogId('')
+      alert(`Importados ${importedProducts.length} produtos e ${importedServices.length} serviços do catálogo!`)
+    } catch (error) {
+      console.error('Erro ao importar do catálogo:', error)
+      alert('Erro ao importar produtos/serviços do catálogo')
+    }
   }
 
   const handleSave = () => {
@@ -165,9 +249,75 @@ export default function AIWorkflowConfig({
 
           {/* Produtos */}
           <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">
-              Produtos (opcional)
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-semibold text-gray-900">
+                Produtos (opcional)
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowCatalogImport(!showCatalogImport)}
+                className="text-sm text-autozap-primary hover:text-autozap-light font-medium"
+              >
+                📦 Importar do Catálogo
+              </button>
+            </div>
+            
+            {/* Modal de importação do catálogo */}
+            {showCatalogImport && (
+              <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-900">Importar do Catálogo</h3>
+                  <button
+                    onClick={() => {
+                      setShowCatalogImport(false)
+                      setSelectedCatalogId('')
+                    }}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    ×
+                  </button>
+                </div>
+                {isLoadingCatalogs ? (
+                  <p className="text-sm text-gray-600">Carregando catálogos...</p>
+                ) : catalogs.length === 0 ? (
+                  <p className="text-sm text-gray-600">Nenhum catálogo disponível. Crie um catálogo primeiro.</p>
+                ) : (
+                  <div className="space-y-3">
+                    <select
+                      value={selectedCatalogId}
+                      onChange={(e) => setSelectedCatalogId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent text-sm"
+                    >
+                      <option value="">Selecione um catálogo...</option>
+                      {catalogs.map((catalog) => (
+                        <option key={catalog.id} value={catalog.id}>
+                          {catalog.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleImportFromCatalog}
+                        disabled={!selectedCatalogId}
+                        className="flex-1 px-3 py-2 bg-autozap-primary text-white rounded-md hover:bg-autozap-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      >
+                        Importar Produtos/Serviços
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowCatalogImport(false)
+                          setSelectedCatalogId('')
+                        }}
+                        className="px-3 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors text-sm"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
             <div className="flex gap-2 mb-2">
               <input
                 type="text"
@@ -206,9 +356,75 @@ export default function AIWorkflowConfig({
 
           {/* Serviços */}
           <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">
-              Serviços (opcional)
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-semibold text-gray-900">
+                Serviços (opcional)
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowCatalogImport(!showCatalogImport)}
+                className="text-sm text-autozap-primary hover:text-autozap-light font-medium"
+              >
+                📦 Importar do Catálogo
+              </button>
+            </div>
+            
+            {/* Modal de importação do catálogo (mesmo da seção de produtos) */}
+            {showCatalogImport && (
+              <div className="mb-4 p-4 bg-gray-50 border border-gray-200 rounded-md">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-gray-900">Importar do Catálogo</h3>
+                  <button
+                    onClick={() => {
+                      setShowCatalogImport(false)
+                      setSelectedCatalogId('')
+                    }}
+                    className="text-gray-500 hover:text-gray-700"
+                  >
+                    ×
+                  </button>
+                </div>
+                {isLoadingCatalogs ? (
+                  <p className="text-sm text-gray-600">Carregando catálogos...</p>
+                ) : catalogs.length === 0 ? (
+                  <p className="text-sm text-gray-600">Nenhum catálogo disponível. Crie um catálogo primeiro.</p>
+                ) : (
+                  <div className="space-y-3">
+                    <select
+                      value={selectedCatalogId}
+                      onChange={(e) => setSelectedCatalogId(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent text-sm"
+                    >
+                      <option value="">Selecione um catálogo...</option>
+                      {catalogs.map((catalog) => (
+                        <option key={catalog.id} value={catalog.id}>
+                          {catalog.name}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleImportFromCatalog}
+                        disabled={!selectedCatalogId}
+                        className="flex-1 px-3 py-2 bg-autozap-primary text-white rounded-md hover:bg-autozap-light transition-colors disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                      >
+                        Importar Produtos/Serviços
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowCatalogImport(false)
+                          setSelectedCatalogId('')
+                        }}
+                        className="px-3 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 transition-colors text-sm"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            
             <div className="flex gap-2 mb-2">
               <input
                 type="text"
