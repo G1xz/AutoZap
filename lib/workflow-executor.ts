@@ -1171,8 +1171,8 @@ async function executeAIOnlyWorkflow(
       // Tenta parsear como ISO primeiro
       const isoDate = new Date(dateStr)
       if (!isNaN(isoDate.getTime())) {
-        // Se a data ISO tem ano 2024 ou anterior e estamos em 2025, corrige para 2025
-        const currentYear = now.getFullYear()
+        // Se a data ISO tem ano anterior ao atual, corrige para o ano atual
+        const currentYear = nowBrazilian.getFullYear()
         if (isoDate.getFullYear() < currentYear) {
           isoDate.setFullYear(currentYear)
           console.log(`⚠️ Corrigindo ano de ${isoDate.getFullYear() - 1} para ${currentYear}`)
@@ -1196,8 +1196,8 @@ async function executeAIOnlyWorkflow(
             const month = parseInt(match[2]) - 1
             let year = parseInt(match[3])
             // Se ano < ano atual, corrige
-            if (year < now.getFullYear()) {
-              year = now.getFullYear()
+            if (year < nowBrazilian.getFullYear()) {
+              year = nowBrazilian.getFullYear()
             }
             const date = new Date(year, month, day, targetHour, targetMinute, 0, 0)
             return date
@@ -1207,8 +1207,8 @@ async function executeAIOnlyWorkflow(
             const month = parseInt(match[2]) - 1
             const day = parseInt(match[3])
             // Se ano < ano atual, corrige
-            if (year < now.getFullYear()) {
-              year = now.getFullYear()
+            if (year < nowBrazilian.getFullYear()) {
+              year = nowBrazilian.getFullYear()
             }
             const date = new Date(year, month, day, targetHour, targetMinute, 0, 0)
             return date
@@ -1216,7 +1216,7 @@ async function executeAIOnlyWorkflow(
             // DD/MM (sem ano)
             const day = parseInt(match[1])
             const month = parseInt(match[2]) - 1
-            const year = now.getFullYear()
+            const year = nowBrazilian.getFullYear()
             const date = new Date(year, month, day, targetHour, targetMinute, 0, 0)
             return date
           }
@@ -1247,11 +1247,11 @@ async function executeAIOnlyWorkflow(
               console.log(`⚠️ Parse português falhou, tentando Date() direto`)
               appointmentDate = new Date(args.date)
               
-              // Se ainda assim tem ano errado, corrige
-              const now = new Date()
-              if (appointmentDate.getFullYear() < now.getFullYear()) {
-                console.log(`⚠️ Corrigindo ano de ${appointmentDate.getFullYear()} para ${now.getFullYear()}`)
-                appointmentDate.setFullYear(now.getFullYear())
+              // Se ainda assim tem ano errado, corrige usando horário do Brasil
+              const nowBrazilianCheck = getBrazilianDate()
+              if (appointmentDate.getFullYear() < nowBrazilianCheck.getFullYear()) {
+                console.log(`⚠️ Corrigindo ano de ${appointmentDate.getFullYear()} para ${nowBrazilianCheck.getFullYear()}`)
+                appointmentDate.setFullYear(nowBrazilianCheck.getFullYear())
               }
             }
             
