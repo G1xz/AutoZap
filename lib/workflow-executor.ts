@@ -951,11 +951,13 @@ async function executeAIOnlyWorkflow(
       if (servicesList || productsList) {
         predefinedResponse += `\n\n`
         if (servicesList && productsList) {
-          predefinedResponse += `Oferecemos os serviços: ${servicesList}. Também temos os produtos: ${productsList}.`
+          predefinedResponse += `Oferecemos os seguintes serviços:\n${servicesList.split(', ').map(s => `- ${s}`).join('\n')}\n\nTambém temos os seguintes produtos:\n${productsList.split(', ').map(p => `- ${p}`).join('\n')}`
         } else if (servicesList) {
-          predefinedResponse += `Oferecemos: ${servicesList}.`
+          const servicesArray = servicesList.split(', ')
+          predefinedResponse += `Oferecemos os seguintes serviços:\n${servicesArray.map(s => `- ${s}`).join('\n')}`
         } else if (productsList) {
-          predefinedResponse += `Temos: ${productsList}.`
+          const productsArray = productsList.split(', ')
+          predefinedResponse += `Temos os seguintes produtos:\n${productsArray.map(p => `- ${p}`).join('\n')}`
         }
       }
       
@@ -1147,12 +1149,20 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   }
   
   if (sellsProducts && products.length > 0) {
-    prompt += `- Na primeira mensagem, SEMPRE mencione os produtos: ${products.join(', ')}\n`
-    prompt += `- Quando perguntarem sobre produtos, seja detalhado e persuasivo\n`
+    prompt += `- Na primeira mensagem, SEMPRE mencione os produtos em formato de lista com marcadores:\n`
+    products.forEach((p: string) => {
+      prompt += `  - ${p}\n`
+    })
+    prompt += `- Quando perguntarem sobre produtos, SEMPRE liste-os em formato de lista com marcadores (-), um por linha\n`
+    prompt += `- Seja detalhado e persuasivo ao apresentar produtos\n`
   }
   if (sellsServices && services.length > 0) {
-    prompt += `- Na primeira mensagem, SEMPRE mencione os serviços: ${services.join(', ')}\n`
-    prompt += `- Quando perguntarem sobre serviços, seja detalhado e persuasivo\n`
+    prompt += `- Na primeira mensagem, SEMPRE mencione os serviços em formato de lista com marcadores:\n`
+    services.forEach((s: string) => {
+      prompt += `  - ${s}\n`
+    })
+    prompt += `- Quando perguntarem sobre serviços, SEMPRE liste-os em formato de lista com marcadores (-), um por linha\n`
+    prompt += `- Seja detalhado e persuasivo ao apresentar serviços\n`
   }
   
   if (pricingInfo) {
@@ -1189,10 +1199,16 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   }
   
   if (services.length > 0) {
-    prompt += `3. Liste os serviços: "Oferecemos: ${services.join(', ')}"\n`
+    prompt += `3. Liste os serviços em formato de lista:\n`
+    services.forEach((s: string) => {
+      prompt += `   - ${s}\n`
+    })
   }
   if (products.length > 0) {
-    prompt += `3. Liste os produtos: "Temos: ${products.join(', ')}"\n`
+    prompt += `3. Liste os produtos em formato de lista:\n`
+    products.forEach((p: string) => {
+      prompt += `   - ${p}\n`
+    })
   }
   
   if (pricingInfo) {
