@@ -154,8 +154,8 @@ export default function AIWorkflowConfig({
       })
 
       // Adicionar aos arrays existentes (sem duplicatas)
-      const updatedProducts = [...new Set([...(details.products || []), ...importedProducts])]
-      const updatedServices = [...new Set([...(details.services || []), ...importedServices])]
+      const updatedProducts = Array.from(new Set([...(details.products || []), ...importedProducts]))
+      const updatedServices = Array.from(new Set([...(details.services || []), ...importedServices]))
 
       setDetails({
         ...details,
