@@ -54,6 +54,28 @@ export default function SchedulingManager() {
     }
   }
 
+  const handleDelete = async (id: string) => {
+    if (!confirm('Tem certeza que deseja excluir este agendamento?')) {
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/appointments/${id}`, {
+        method: 'DELETE',
+      })
+
+      if (response.ok) {
+        fetchAppointments()
+      } else {
+        const error = await response.json()
+        alert(error.error || 'Erro ao excluir agendamento')
+      }
+    } catch (error) {
+      console.error('Erro ao excluir agendamento:', error)
+      alert('Erro ao excluir agendamento')
+    }
+  }
+
   const formatDate = (dateString: string) => {
     const date = new Date(dateString)
     return date.toLocaleString('pt-BR', {
@@ -296,7 +318,7 @@ export default function SchedulingManager() {
                       <p className="text-sm text-gray-600 mb-3">{appointment.description}</p>
                     )}
 
-                    <div className="flex gap-2">
+                    <div className="flex gap-2 items-center">
                       {appointment.status === 'pending' && (
                         <>
                           <button
@@ -321,6 +343,13 @@ export default function SchedulingManager() {
                           Marcar como Concluído
                         </button>
                       )}
+                      <button
+                        onClick={() => handleDelete(appointment.id)}
+                        className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 transition-colors"
+                        title="Excluir agendamento"
+                      >
+                        Excluir
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -376,6 +405,13 @@ export default function SchedulingManager() {
                           {appointment.description}
                         </div>
                       )}
+                      <button
+                        onClick={() => handleDelete(appointment.id)}
+                        className="mt-2 w-full px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
+                        title="Excluir agendamento"
+                      >
+                        Excluir
+                      </button>
                     </div>
                   )
                 })}

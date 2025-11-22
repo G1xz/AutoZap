@@ -42,3 +42,38 @@ export async function PATCH(
   }
 }
 
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+    }
+
+    const appointment = await prisma.appointment.findFirst({
+      where: {
+        id: params.id,
+        userId: session.user.id,
+      },
+    })
+
+    if (!appointment) {
+      return NextResponse.json({ error: 'Agendamento não encontrado' }, { status: 404 })
+    }
+
+    await prisma.appointment.delete({
+      where: { id: params.id },
+    })
+
+    return NextResponse.json({ success: true, message: 'Agendamento excluído com sucesso' })
+  } catch (error) {
+    console.error('Erro ao excluir agendamento:', error)
+    return NextResponse.json(
+      { error: 'Erro ao excluir agendamento' },
+      { status: 500 }
+    )
+  }
+}
+

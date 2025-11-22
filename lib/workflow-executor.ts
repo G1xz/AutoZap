@@ -1088,10 +1088,31 @@ async function executeAIOnlyWorkflow(
       },
     }
 
+    // Função auxiliar para obter data/hora atual no fuso horário do Brasil (UTC-3)
+    const getBrazilianDate = (): Date => {
+      const now = new Date()
+      // Converte UTC para horário do Brasil (UTC-3)
+      // getTimezoneOffset() retorna o offset em minutos (positivo para UTC-, negativo para UTC+)
+      // Para UTC-3, precisamos adicionar 3 horas (180 minutos)
+      const brazilianOffset = 3 * 60 // +3 horas em minutos
+      const brazilianTime = new Date(now.getTime() + (brazilianOffset * 60000))
+      return brazilianTime
+    }
+    
+    // Função auxiliar para converter data do Brasil para UTC
+    const brazilianToUTC = (brazilianDate: Date): Date => {
+      return new Date(brazilianDate.getTime() - (3 * 60 * 60000))
+    }
+    
+    // Função auxiliar para converter data de UTC para Brasil
+    const utcToBrazilian = (utcDate: Date): Date => {
+      return new Date(utcDate.getTime() + (3 * 60 * 60000))
+    }
+
     // Função auxiliar para converter datas relativas em português
     const parsePortugueseDate = (dateStr: string): Date | null => {
       const lower = dateStr.toLowerCase().trim()
-      const now = new Date()
+      const nowBrazilian = getBrazilianDate() // Usa horário do Brasil
       
       // Extrai hora se mencionada (ex: "5 da tarde", "17h", "17:00")
       let targetHour = 14 // Padrão: 14:00
@@ -1120,25 +1141,31 @@ async function executeAIOnlyWorkflow(
         }
       }
       
-      // Datas relativas em português
+      // Datas relativas em português (usando horário do Brasil)
       if (lower.includes('amanhã') || lower.includes('amanha')) {
-        const tomorrow = new Date(now)
+        const tomorrow = new Date(nowBrazilian)
         tomorrow.setDate(tomorrow.getDate() + 1)
         tomorrow.setHours(targetHour, targetMinute, 0, 0)
-        console.log(`📅 Parseado "amanhã" para: ${tomorrow.toISOString()} (hoje é ${now.toISOString()})`)
-        console.log(`📅 Data calculada: ${tomorrow.getDate()}/${tomorrow.getMonth() + 1}/${tomorrow.getFullYear()} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
-        return tomorrow
+        // Converte de volta para UTC para salvar no banco
+        const utcDate = brazilianToUTC(tomorrow)
+        console.log(`📅 Parseado "amanhã" para: ${utcDate.toISOString()} (hoje no Brasil é ${nowBrazilian.toISOString()})`)
+        console.log(`📅 Data calculada (Brasil): ${tomorrow.getDate()}/${tomorrow.getMonth() + 1}/${tomorrow.getFullYear()} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
+        return utcDate
       }
       if (lower.includes('hoje')) {
-        const today = new Date(now)
+        const today = new Date(nowBrazilian)
         today.setHours(targetHour, targetMinute, 0, 0)
-        return today
+        // Converte de volta para UTC
+        const utcDate = brazilianToUTC(today)
+        return utcDate
       }
       if (lower.includes('depois de amanhã') || lower.includes('depois de amanha')) {
-        const dayAfterTomorrow = new Date(now)
+        const dayAfterTomorrow = new Date(nowBrazilian)
         dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2)
         dayAfterTomorrow.setHours(targetHour, targetMinute, 0, 0)
-        return dayAfterTomorrow
+        // Converte de volta para UTC
+        const utcDate = brazilianToUTC(dayAfterTomorrow)
+        return utcDate
       }
       
       // Tenta parsear como ISO primeiro
@@ -1235,41 +1262,52 @@ async function executeAIOnlyWorkflow(
             }
           }
           
-          // Se ainda não tem data válida, usa amanhã como padrão
+          // Usa horário do Brasil para validações
+          const nowBrazilian = getBrazilianDate()
+          
+          // Se ainda não tem data válida, usa amanhã como padrão (no horário do Brasil)
           if (!appointmentDate || isNaN(appointmentDate.getTime())) {
-            const tomorrow = new Date()
-            tomorrow.setDate(tomorrow.getDate() + 1)
-            tomorrow.setHours(14, 0, 0, 0) // Horário padrão: 14:00
-            appointmentDate = tomorrow
-            console.log(`⚠️ Data não parseada, usando amanhã às 14:00 como padrão`)
+            const tomorrowBrazilian = new Date(nowBrazilian)
+            tomorrowBrazilian.setDate(tomorrowBrazilian.getDate() + 1)
+            tomorrowBrazilian.setHours(14, 0, 0, 0) // Horário padrão: 14:00 no Brasil
+            // Converte para UTC para salvar no banco
+            appointmentDate = brazilianToUTC(tomorrowBrazilian)
+            console.log(`⚠️ Data não parseada, usando amanhã às 14:00 (Brasil) como padrão`)
           }
+          
+          // Converte a data do agendamento para horário do Brasil para validação
+          const appointmentDateBrazilian = utcToBrazilian(appointmentDate)
           
           // CORREÇÃO CRÍTICA: Se o ano está no passado, corrige para o ano atual
-          const now = new Date()
-          const currentYear = now.getFullYear()
-          if (appointmentDate.getFullYear() < currentYear) {
-            console.log(`⚠️ Corrigindo ano de ${appointmentDate.getFullYear()} para ${currentYear}`)
-            appointmentDate.setFullYear(currentYear)
+          const currentYear = nowBrazilian.getFullYear()
+          if (appointmentDateBrazilian.getFullYear() < currentYear) {
+            console.log(`⚠️ Corrigindo ano de ${appointmentDateBrazilian.getFullYear()} para ${currentYear}`)
+            appointmentDateBrazilian.setFullYear(currentYear)
+            // Converte de volta para UTC
+            appointmentDate = new Date(appointmentDateBrazilian.getTime() - (3 * 60 * 60000))
           }
           
-          // Se não tem hora especificada, adiciona horário padrão (14:00)
-          if (appointmentDate.getHours() === 0 && appointmentDate.getMinutes() === 0) {
-            appointmentDate.setHours(14, 0, 0, 0)
+          // Se não tem hora especificada, adiciona horário padrão (14:00 no Brasil)
+          if (appointmentDateBrazilian.getHours() === 0 && appointmentDateBrazilian.getMinutes() === 0) {
+            appointmentDateBrazilian.setHours(14, 0, 0, 0)
+            // Converte de volta para UTC
+            appointmentDate = new Date(appointmentDateBrazilian.getTime() - (3 * 60 * 60000))
           }
           
-          console.log(`📅 Data parseada final: ${appointmentDate.toISOString()} (ano: ${appointmentDate.getFullYear()})`)
+          console.log(`📅 Data parseada final (UTC): ${appointmentDate.toISOString()}`)
+          console.log(`📅 Data parseada final (Brasil): ${appointmentDateBrazilian.getDate()}/${appointmentDateBrazilian.getMonth() + 1}/${appointmentDateBrazilian.getFullYear()} às ${appointmentDateBrazilian.getHours()}:${appointmentDateBrazilian.getMinutes().toString().padStart(2, '0')}`)
           
-          // Valida se a data é válida e não é no passado
+          // Valida se a data é válida e não é no passado (usando horário do Brasil)
           // Compara apenas a data (sem hora) para evitar rejeitar datas válidas
-          const appointmentDateOnly = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate())
-          const todayOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+          const appointmentDateOnly = new Date(appointmentDateBrazilian.getFullYear(), appointmentDateBrazilian.getMonth(), appointmentDateBrazilian.getDate())
+          const todayOnly = new Date(nowBrazilian.getFullYear(), nowBrazilian.getMonth(), nowBrazilian.getDate())
           
-          console.log(`🔍 Validação: appointmentDateOnly=${appointmentDateOnly.toISOString()}, todayOnly=${todayOnly.toISOString()}`)
+          console.log(`🔍 Validação (Brasil): appointmentDateOnly=${appointmentDateOnly.getDate()}/${appointmentDateOnly.getMonth() + 1}/${appointmentDateOnly.getFullYear()}, todayOnly=${todayOnly.getDate()}/${todayOnly.getMonth() + 1}/${todayOnly.getFullYear()}`)
           
           // Se a data é hoje, verifica se a hora não passou
           if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
-            if (appointmentDate < now) {
-              console.error(`❌ Hora no passado hoje: ${appointmentDate.toISOString()} < ${now.toISOString()}`)
+            if (appointmentDateBrazilian < nowBrazilian) {
+              console.error(`❌ Hora no passado hoje (Brasil): ${appointmentDateBrazilian.toISOString()} < ${nowBrazilian.toISOString()}`)
               return {
                 success: false,
                 error: 'Não é possível agendar para um horário que já passou hoje. Por favor, escolha um horário futuro.',
@@ -1277,7 +1315,7 @@ async function executeAIOnlyWorkflow(
             }
           } else if (appointmentDateOnly < todayOnly) {
             // Data no passado
-            console.error(`❌ Data no passado: ${appointmentDateOnly.toISOString()} < ${todayOnly.toISOString()}`)
+            console.error(`❌ Data no passado (Brasil): ${appointmentDateOnly.getDate()}/${appointmentDateOnly.getMonth() + 1}/${appointmentDateOnly.getFullYear()} < ${todayOnly.getDate()}/${todayOnly.getMonth() + 1}/${todayOnly.getFullYear()}`)
             return {
               success: false,
               error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
