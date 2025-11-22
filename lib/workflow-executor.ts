@@ -843,7 +843,7 @@ async function executeAIOnlyWorkflow(
         const catalog = await prisma.catalog.findFirst({
           where: {
             id: businessDetails.catalogId,
-            userId: fullWorkflow?.userId, // Garantir que é do mesmo usuário
+            userId: userId, // Garantir que é do mesmo usuário
           },
           include: {
             nodes: true,
@@ -909,7 +909,7 @@ async function executeAIOnlyWorkflow(
             services: catalogServices
           })
         } else {
-          console.error(`❌ Catálogo não encontrado: catalogId=${businessDetails.catalogId}, userId=${fullWorkflow?.userId}`)
+          console.error(`❌ Catálogo não encontrado: catalogId=${businessDetails.catalogId}, userId=${userId}`)
           console.error(`⚠️ Usando produtos/serviços manuais porque catálogo não foi encontrado`)
         }
       } catch (error) {
