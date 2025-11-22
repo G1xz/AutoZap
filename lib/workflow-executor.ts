@@ -830,6 +830,15 @@ async function executeAIOnlyWorkflow(
       }
     }
 
+    console.log(`📊 Dados do negócio carregados:`, {
+      hasBusinessDetails: !!workflow.aiBusinessDetails,
+      businessName: businessDetails.businessName,
+      hasServices: !!(businessDetails.services && businessDetails.services.length > 0),
+      hasProducts: !!(businessDetails.products && businessDetails.products.length > 0),
+      hasHowToBuy: !!businessDetails.howToBuy,
+      hasPricing: !!businessDetails.pricingInfo
+    })
+
     // Monta o prompt do sistema com os detalhes do negócio
     const systemPrompt = buildAISystemPrompt(businessDetails, contactNameFinal || formattedPhoneFormatted)
 
@@ -838,9 +847,29 @@ async function executeAIOnlyWorkflow(
     const hasAIResponse = recentMessages.some(msg => msg.isFromMe)
     const isFirstInteraction = conversationHistory.length <= 2 || !hasAIResponse
     
-    // Se for primeira interação, monta resposta pré-definida baseada nos dados do negócio
+    console.log(`🔍 Debug primeira interação:`, {
+      conversationHistoryLength: conversationHistory.length,
+      hasAIResponse,
+      isFirstInteraction,
+      recentMessagesCount: recentMessages.length,
+      businessName: businessDetails.businessName,
+      hasBusinessDetails: !!workflow.aiBusinessDetails
+    })
+    
+    // SEMPRE usa resposta pré-definida se:
+    // 1. É primeira interação E tem nome do negócio
+    // 2. OU se não há resposta da IA ainda (primeira vez que o workflow responde)
     // Isso garante que sempre apresente o negócio corretamente, sem depender da IA
-    if (isFirstInteraction && businessDetails.businessName) {
+    const shouldUsePredefined = (isFirstInteraction || !hasAIResponse) && businessDetails.businessName
+    
+    console.log(`🤖 Decisão de resposta:`, {
+      shouldUsePredefined,
+      isFirstInteraction,
+      hasBusinessName: !!businessDetails.businessName,
+      businessName: businessDetails.businessName
+    })
+    
+    if (shouldUsePredefined) {
       const servicesList = businessDetails.services?.join(', ') || ''
       const productsList = businessDetails.products?.join(', ') || ''
       const howToBuyText = businessDetails.howToBuy || ''
@@ -885,7 +914,13 @@ async function executeAIOnlyWorkflow(
     }
     
     // Para mensagens seguintes, usa IA normalmente
+    // MAS sempre força mencionar o negócio mesmo em mensagens seguintes
     let userMessageWithContext = userMessage
+    
+    // Adiciona contexto FORTE mesmo em mensagens seguintes para garantir que sempre mencione o negócio
+    if (businessDetails.businessName) {
+      userMessageWithContext = `[CONTEXTO OBRIGATÓRIO: Você é assistente de vendas da ${businessDetails.businessName}. SEMPRE mencione o negócio "${businessDetails.businessName}" e produtos/serviços nas suas respostas. NUNCA seja genérico como "teste de eco" ou "Parece que estamos fazendo um teste". Você DEVE vender e apresentar o negócio.]\n\nMensagem do cliente: ${userMessage}`
+    }
 
     // Gera resposta usando IA
     const { generateAIResponse } = await import('./openai')
@@ -908,6 +943,16 @@ async function executeAIOnlyWorkflow(
       temperature,
       maxTokens: 600, // Aumenta para garantir que cabe tudo
     })
+    
+    // Validação CRÍTICA: Se a resposta não mencionar o negócio, força mencionar
+    if (businessDetails.businessName && !aiResponse.toLowerCase().includes(businessDetails.businessName.toLowerCase())) {
+      console.warn(`⚠️ Resposta da IA não mencionou o negócio "${businessDetails.businessName}"! Forçando correção...`)
+      const correctedResponse = `Olá! Sou assistente de vendas da ${businessDetails.businessName}.\n\n${aiResponse}`
+      await queueMessage(`${instanceId}-${contactNumber}`, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, correctedResponse, 'service')
+      })
+      return
+    }
 
     // Envia a resposta gerada pela IA
     const contactKey = `${instanceId}-${contactNumber}`
