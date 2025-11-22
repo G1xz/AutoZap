@@ -879,29 +879,41 @@ async function executeAIOnlyWorkflow(
       // Monta resposta pré-definida para garantir que sempre apresente o negócio
       let predefinedResponse = ''
       
+      // Monta resposta mais natural e conversacional
       if (howToBuyText && howToBuyText.trim().length > 10) {
-        predefinedResponse = `${howToBuyText}\n\n`
+        predefinedResponse = `${howToBuyText}`
       } else {
-        predefinedResponse = `Olá! Sou assistente de vendas da ${businessDetails.businessName}.\n\n`
+        predefinedResponse = `Olá! Sou assistente da ${businessDetails.businessName}.`
       }
       
       if (businessDesc) {
-        predefinedResponse += `${businessDesc}\n\n`
+        predefinedResponse += ` ${businessDesc}`
       }
       
-      if (servicesList) {
-        predefinedResponse += `Oferecemos os seguintes serviços: ${servicesList}.\n\n`
-      }
-      
-      if (productsList) {
-        predefinedResponse += `Temos os seguintes produtos: ${productsList}.\n\n`
+      if (servicesList || productsList) {
+        predefinedResponse += `\n\n`
+        if (servicesList && productsList) {
+          predefinedResponse += `Oferecemos os serviços: ${servicesList}. Também temos os produtos: ${productsList}.`
+        } else if (servicesList) {
+          predefinedResponse += `Oferecemos: ${servicesList}.`
+        } else if (productsList) {
+          predefinedResponse += `Temos: ${productsList}.`
+        }
       }
       
       if (pricingText) {
-        predefinedResponse += `Preços: ${pricingText}.\n\n`
+        predefinedResponse += `\n\n${pricingText}`
       }
       
-      predefinedResponse += `Como posso te ajudar hoje?`
+      // Finalização mais natural e variada
+      const closings = [
+        'Em que posso ajudar?',
+        'Tem alguma dúvida?',
+        'Quer saber mais sobre algum deles?',
+        'Qual te interessa?'
+      ]
+      const randomClosing = closings[Math.floor(Math.random() * closings.length)]
+      predefinedResponse += `\n\n${randomClosing}`
       
       // Envia a resposta pré-definida primeiro
       const contactKey = `${instanceId}-${contactNumber}`
@@ -919,7 +931,7 @@ async function executeAIOnlyWorkflow(
     
     // Adiciona contexto FORTE mesmo em mensagens seguintes para garantir que sempre mencione o negócio
     if (businessDetails.businessName) {
-      userMessageWithContext = `[CONTEXTO OBRIGATÓRIO: Você é assistente de vendas da ${businessDetails.businessName}. SEMPRE mencione o negócio "${businessDetails.businessName}" e produtos/serviços nas suas respostas. NUNCA seja genérico como "teste de eco" ou "Parece que estamos fazendo um teste". Você DEVE vender e apresentar o negócio.]\n\nMensagem do cliente: ${userMessage}`
+      userMessageWithContext = `[CONTEXTO: Você é assistente de vendas da ${businessDetails.businessName}. Seja NATURAL e CONVERSACIONAL. Mencione o negócio quando relevante, mas não seja repetitivo. Varie suas respostas - não termine sempre com "Como posso te ajudar?". Seja direto e objetivo, como em uma conversa normal. NUNCA seja genérico como "teste de eco".]\n\nMensagem do cliente: ${userMessage}`
     }
 
     // Gera resposta usando IA
@@ -928,7 +940,7 @@ async function executeAIOnlyWorkflow(
     // Se for primeira interação, não usa histórico para forçar seguir o template
     // E aumenta temperatura para ser mais criativo seguindo as instruções
     const finalConversationHistory = isFirstInteraction ? [] : conversationHistory
-    const temperature = isFirstInteraction ? 0.9 : 0.7 // Mais criativo na primeira vez
+    const temperature = isFirstInteraction ? 0.9 : 0.8 // Mais criativo e natural
     
     console.log(`🤖 Gerando resposta IA-only. Primeira interação: ${isFirstInteraction}, Histórico: ${finalConversationHistory.length} mensagens`)
     
@@ -1064,6 +1076,11 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- ⚠️ OBRIGATÓRIO: NUNCA responda de forma genérica como "Como posso ajudar?" ou "teste de eco"\n`
   prompt += `- ⚠️ OBRIGATÓRIO: NUNCA ignore que você está vendendo/apresentando produtos ou serviços\n`
   prompt += `- ⚠️ SEMPRE mencione os produtos/serviços disponíveis na primeira interação\n`
+  prompt += `- Seja NATURAL e CONVERSACIONAL - fale como uma pessoa real, não como um robô\n`
+  prompt += `- Varie suas respostas - não termine sempre com "Como posso te ajudar?" ou frases repetitivas\n`
+  prompt += `- Use linguagem natural e direta, como se estivesse conversando com um amigo\n`
+  prompt += `- Seja objetivo e direto ao ponto, mas mantenha o tom ${toneDescription}\n`
+  prompt += `- Evite ser muito formal ou repetitivo - seja espontâneo e natural\n`
   
   // Mensagem de boas-vindas personalizada se configurada
   if (howToBuy && howToBuy.trim().length > 10) {
@@ -1096,6 +1113,10 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- Mantenha o foco em VENDER e APRESENTAR ${businessName} de forma positiva\n`
   prompt += `- Você está conversando com ${contactName}\n`
   prompt += `- Lembre-se: você é um VENDEDOR, não um assistente genérico\n`
+  prompt += `- Seja NATURAL e CONVERSACIONAL - evite ser muito formal ou repetitivo\n`
+  prompt += `- Varie suas respostas - não termine sempre com "Como posso te ajudar?"\n`
+  prompt += `- Use linguagem natural, como se estivesse conversando com um amigo\n`
+  prompt += `- Seja direto e objetivo, mas mantenha o tom ${toneDescription}\n`
   
   // Template de primeira resposta OBRIGATÓRIO
   prompt += `\n\nTEMPLATE OBRIGATÓRIO PARA PRIMEIRA RESPOSTA:\n`
