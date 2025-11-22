@@ -951,13 +951,13 @@ async function executeAIOnlyWorkflow(
       if (servicesList || productsList) {
         predefinedResponse += `\n\n`
         if (servicesList && productsList) {
-          predefinedResponse += `Oferecemos os seguintes serviços:\n${servicesList.split(', ').map(s => `- ${s}`).join('\n')}\n\nTambém temos os seguintes produtos:\n${productsList.split(', ').map(p => `- ${p}`).join('\n')}`
+          predefinedResponse += `Oferecemos os seguintes serviços:\n${servicesList.split(', ').map((s: string) => `- ${s}`).join('\n')}\n\nTambém temos os seguintes produtos:\n${productsList.split(', ').map((p: string) => `- ${p}`).join('\n')}`
         } else if (servicesList) {
           const servicesArray = servicesList.split(', ')
-          predefinedResponse += `Oferecemos os seguintes serviços:\n${servicesArray.map(s => `- ${s}`).join('\n')}`
+          predefinedResponse += `Oferecemos os seguintes serviços:\n${servicesArray.map((s: string) => `- ${s}`).join('\n')}`
         } else if (productsList) {
           const productsArray = productsList.split(', ')
-          predefinedResponse += `Temos os seguintes produtos:\n${productsArray.map(p => `- ${p}`).join('\n')}`
+          predefinedResponse += `Temos os seguintes produtos:\n${productsArray.map((p: string) => `- ${p}`).join('\n')}`
         }
       }
       
