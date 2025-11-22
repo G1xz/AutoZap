@@ -850,6 +850,8 @@ async function executeAIOnlyWorkflow(
         })
 
         if (catalog) {
+          console.log(`📚 Catálogo encontrado: "${catalog.name}" com ${catalog.nodes.length} nós`)
+          
           // Extrair produtos e serviços do catálogo
           const catalogProducts: string[] = []
           const catalogServices: string[] = []
@@ -857,31 +859,55 @@ async function executeAIOnlyWorkflow(
           catalog.nodes.forEach((node: any) => {
             try {
               const nodeData = JSON.parse(node.data)
+              console.log(`🔍 Processando nó do catálogo:`, {
+                type: node.type,
+                name: nodeData.name,
+                hasPrice: !!nodeData.price,
+                price: nodeData.price
+              })
+              
               if (node.type === 'product' && nodeData.name) {
                 let productName = nodeData.name
                 if (nodeData.price) {
                   productName += ` - R$ ${nodeData.price.toFixed(2).replace('.', ',')}`
                 }
                 catalogProducts.push(productName)
+                console.log(`✅ Produto adicionado: ${productName}`)
               } else if (node.type === 'service' && nodeData.name) {
                 let serviceName = nodeData.name
                 if (nodeData.price) {
                   serviceName += ` - R$ ${nodeData.price.toFixed(2).replace('.', ',')}`
                 }
                 catalogServices.push(serviceName)
+                console.log(`✅ Serviço adicionado: ${serviceName}`)
+              } else {
+                console.log(`⚠️ Nó ignorado: tipo=${node.type}, tem nome=${!!nodeData.name}`)
               }
             } catch (e) {
-              console.error('Erro ao parsear dados do nó do catálogo:', e)
+              console.error('❌ Erro ao parsear dados do nó do catálogo:', e, 'Node data:', node.data)
             }
           })
 
-          // Usar produtos/serviços do catálogo se não houver produtos/serviços manuais
-          if (catalogProducts.length > 0 && (!businessDetails.products || businessDetails.products.length === 0)) {
+          // Se há catalogId, SEMPRE usar produtos/serviços do catálogo (substitui os manuais)
+          if (catalogProducts.length > 0) {
             businessDetails.products = catalogProducts
+            console.log(`📦 Produtos do catálogo carregados: ${catalogProducts.length} produtos`)
           }
-          if (catalogServices.length > 0 && (!businessDetails.services || businessDetails.services.length === 0)) {
+          if (catalogServices.length > 0) {
             businessDetails.services = catalogServices
+            console.log(`🛠️ Serviços do catálogo carregados: ${catalogServices.length} serviços`)
           }
+          
+          // Log para debug
+          console.log(`📊 Catálogo processado:`, {
+            catalogId: businessDetails.catalogId,
+            catalogName: catalog.name,
+            nodesCount: catalog.nodes.length,
+            productsFound: catalogProducts.length,
+            servicesFound: catalogServices.length,
+            products: catalogProducts,
+            services: catalogServices
+          })
         }
       } catch (error) {
         console.error('Erro ao buscar catálogo:', error)
@@ -891,8 +917,13 @@ async function executeAIOnlyWorkflow(
     console.log(`📊 Dados do negócio carregados:`, {
       hasBusinessDetails: !!workflow.aiBusinessDetails,
       businessName: businessDetails.businessName,
+      catalogId: businessDetails.catalogId,
       hasServices: !!(businessDetails.services && businessDetails.services.length > 0),
+      servicesCount: businessDetails.services?.length || 0,
+      services: businessDetails.services,
       hasProducts: !!(businessDetails.products && businessDetails.products.length > 0),
+      productsCount: businessDetails.products?.length || 0,
+      products: businessDetails.products,
       hasHowToBuy: !!businessDetails.howToBuy,
       hasPricing: !!businessDetails.pricingInfo
     })
