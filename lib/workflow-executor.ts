@@ -991,7 +991,22 @@ async function executeAIOnlyWorkflow(
     
     // Adiciona contexto FORTE mesmo em mensagens seguintes para garantir que sempre mencione o negócio
     if (businessDetails.businessName) {
-      userMessageWithContext = `[CONTEXTO: Você é assistente de vendas da ${businessDetails.businessName}. Seja NATURAL e CONVERSACIONAL. Mencione o negócio quando relevante, mas não seja repetitivo. Varie suas respostas - não termine sempre com "Como posso te ajudar?". Seja direto e objetivo, como em uma conversa normal. NUNCA seja genérico como "teste de eco".]\n\nMensagem do cliente: ${userMessage}`
+      const servicesList = businessDetails.services?.join('\n- ') || ''
+      const productsList = businessDetails.products?.join('\n- ') || ''
+      
+      let listFormatting = ''
+      if (servicesList || productsList) {
+        listFormatting = `\n\n⚠️ IMPORTANTE: Quando listar produtos ou serviços, SEMPRE use formato de lista:\n`
+        if (servicesList) {
+          listFormatting += `- ${servicesList}\n`
+        }
+        if (productsList) {
+          listFormatting += `- ${productsList}\n`
+        }
+        listFormatting += `NUNCA use vírgulas. SEMPRE use marcadores (-) e quebra de linha.`
+      }
+      
+      userMessageWithContext = `[CONTEXTO: Você é assistente de vendas da ${businessDetails.businessName}. Seja NATURAL e CONVERSACIONAL. Mencione o negócio quando relevante, mas não seja repetitivo. Varie suas respostas - não termine sempre com "Como posso te ajudar?". Seja direto e objetivo, como em uma conversa normal. NUNCA seja genérico como "teste de eco".${listFormatting}]\n\nMensagem do cliente: ${userMessage}`
     }
 
     // Gera resposta usando IA
@@ -1093,14 +1108,22 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
 
   // Produtos
   if (products.length > 0) {
-    prompt += `\n\nPRODUTOS DISPONÍVEIS:\n${products.map((p: string, i: number) => `${i + 1}. ${p}`).join('\n')}`
-    prompt += `\n\nQuando perguntarem sobre produtos, mencione especificamente os produtos listados acima.`
+    prompt += `\n\nPRODUTOS DISPONÍVEIS:\n${products.map((p: string) => `- ${p}`).join('\n')}`
+    prompt += `\n\n⚠️ CRÍTICO: Quando perguntarem sobre produtos OU quando você mencionar produtos, SEMPRE use este formato EXATO:\n`
+    products.forEach((p: string) => {
+      prompt += `- ${p}\n`
+    })
+    prompt += `\nNUNCA liste produtos separados por vírgula. SEMPRE use o formato acima com marcadores (-) e quebra de linha.`
   }
 
   // Serviços
   if (services.length > 0) {
-    prompt += `\n\nSERVIÇOS DISPONÍVEIS:\n${services.map((s: string, i: number) => `${i + 1}. ${s}`).join('\n')}`
-    prompt += `\n\nQuando perguntarem sobre serviços, mencione especificamente os serviços listados acima.`
+    prompt += `\n\nSERVIÇOS DISPONÍVEIS:\n${services.map((s: string) => `- ${s}`).join('\n')}`
+    prompt += `\n\n⚠️ CRÍTICO: Quando perguntarem sobre serviços OU quando você mencionar serviços, SEMPRE use este formato EXATO:\n`
+    services.forEach((s: string) => {
+      prompt += `- ${s}\n`
+    })
+    prompt += `\nNUNCA liste serviços separados por vírgula. SEMPRE use o formato acima com marcadores (-) e quebra de linha.`
   }
 
   // Informações de preço
@@ -1141,6 +1164,12 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- Use linguagem natural e direta, como se estivesse conversando com um amigo\n`
   prompt += `- Seja objetivo e direto ao ponto, mas mantenha o tom ${toneDescription}\n`
   prompt += `- Evite ser muito formal ou repetitivo - seja espontâneo e natural\n`
+  prompt += `- ⚠️ OBRIGATÓRIO: Quando listar produtos ou serviços, SEMPRE use formato de lista com marcadores (-) e quebra de linha\n`
+  prompt += `- ⚠️ PROIBIDO: NUNCA liste produtos/serviços separados por vírgula como "produto1, produto2, produto3"\n`
+  prompt += `- ⚠️ OBRIGATÓRIO: SEMPRE use o formato:\n`
+  prompt += `  - Item 1\n`
+  prompt += `  - Item 2\n`
+  prompt += `  - Item 3\n`
   
   // Mensagem de boas-vindas personalizada se configurada
   if (howToBuy && howToBuy.trim().length > 10) {
