@@ -821,6 +821,18 @@ async function executeAIOnlyWorkflow(
         content: msg.body,
       }))
 
+    // Buscar userId do workflow para criar agendamentos e buscar catálogo
+    const fullWorkflow = await prisma.workflow.findUnique({
+      where: { id: workflow.id },
+      select: { userId: true },
+    })
+    const userId = fullWorkflow?.userId
+
+    if (!userId) {
+      console.error('❌ userId não encontrado para o workflow')
+      return
+    }
+
     // Parse dos detalhes do negócio
     let businessDetails: any = {}
     if (workflow.aiBusinessDetails) {
