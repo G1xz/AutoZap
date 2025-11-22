@@ -1092,32 +1092,71 @@ async function executeAIOnlyWorkflow(
     const parsePortugueseDate = (dateStr: string): Date | null => {
       const lower = dateStr.toLowerCase().trim()
       const now = new Date()
-      const tomorrow = new Date(now)
-      tomorrow.setDate(tomorrow.getDate() + 1)
-      const dayAfterTomorrow = new Date(now)
-      dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2)
       
-      // Tenta parsear como ISO primeiro
-      const isoDate = new Date(dateStr)
-      if (!isNaN(isoDate.getTime())) {
-        return isoDate
+      // Extrai hora se mencionada (ex: "5 da tarde", "17h", "17:00")
+      let targetHour = 14 // Padrão: 14:00
+      let targetMinute = 0
+      
+      // Procura por padrões de hora
+      const hourPatterns = [
+        /(\d{1,2})\s*(?:da\s*)?(?:tarde|manhã|manha|noite)/i, // "5 da tarde", "17 da tarde"
+        /(\d{1,2}):(\d{2})/, // "17:30"
+        /(\d{1,2})h/i, // "17h"
+      ]
+      
+      for (const pattern of hourPatterns) {
+        const match = lower.match(pattern)
+        if (match) {
+          targetHour = parseInt(match[1])
+          if (match[2]) {
+            targetMinute = parseInt(match[2])
+          }
+          
+          // Se mencionou "tarde" e hora < 12, adiciona 12 (ex: "5 da tarde" = 17h)
+          if ((lower.includes('tarde') || lower.includes('noite')) && targetHour < 12) {
+            targetHour += 12
+          }
+          break
+        }
       }
       
       // Datas relativas em português
       if (lower.includes('amanhã') || lower.includes('amanha')) {
+        const tomorrow = new Date(now)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        tomorrow.setHours(targetHour, targetMinute, 0, 0)
+        console.log(`📅 Parseado "amanhã" para: ${tomorrow.toISOString()}`)
         return tomorrow
       }
       if (lower.includes('hoje')) {
-        return now
+        const today = new Date(now)
+        today.setHours(targetHour, targetMinute, 0, 0)
+        return today
       }
       if (lower.includes('depois de amanhã') || lower.includes('depois de amanha')) {
+        const dayAfterTomorrow = new Date(now)
+        dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2)
+        dayAfterTomorrow.setHours(targetHour, targetMinute, 0, 0)
         return dayAfterTomorrow
+      }
+      
+      // Tenta parsear como ISO primeiro
+      const isoDate = new Date(dateStr)
+      if (!isNaN(isoDate.getTime())) {
+        // Se a data ISO tem ano 2024 ou anterior e estamos em 2025, corrige para 2025
+        const currentYear = now.getFullYear()
+        if (isoDate.getFullYear() < currentYear) {
+          isoDate.setFullYear(currentYear)
+          console.log(`⚠️ Corrigindo ano de ${isoDate.getFullYear() - 1} para ${currentYear}`)
+        }
+        return isoDate
       }
       
       // Tenta parsear formatos comuns
       const formats = [
         /(\d{1,2})\/(\d{1,2})\/(\d{4})/, // DD/MM/YYYY
         /(\d{4})-(\d{1,2})-(\d{1,2})/, // YYYY-MM-DD
+        /(\d{1,2})\/(\d{1,2})/, // DD/MM (sem ano, assume ano atual)
       ]
       
       for (const format of formats) {
@@ -1127,11 +1166,31 @@ async function executeAIOnlyWorkflow(
             // DD/MM/YYYY
             const day = parseInt(match[1])
             const month = parseInt(match[2]) - 1
-            const year = parseInt(match[3])
-            return new Date(year, month, day)
-          } else {
+            let year = parseInt(match[3])
+            // Se ano < ano atual, corrige
+            if (year < now.getFullYear()) {
+              year = now.getFullYear()
+            }
+            const date = new Date(year, month, day, targetHour, targetMinute, 0, 0)
+            return date
+          } else if (format === formats[1]) {
             // YYYY-MM-DD
-            return new Date(dateStr)
+            let year = parseInt(match[1])
+            const month = parseInt(match[2]) - 1
+            const day = parseInt(match[3])
+            // Se ano < ano atual, corrige
+            if (year < now.getFullYear()) {
+              year = now.getFullYear()
+            }
+            const date = new Date(year, month, day, targetHour, targetMinute, 0, 0)
+            return date
+          } else if (format === formats[2]) {
+            // DD/MM (sem ano)
+            const day = parseInt(match[1])
+            const month = parseInt(match[2]) - 1
+            const year = now.getFullYear()
+            const date = new Date(year, month, day, targetHour, targetMinute, 0, 0)
+            return date
           }
         }
       }
@@ -1149,11 +1208,20 @@ async function executeAIOnlyWorkflow(
           let appointmentDate: Date | null = null
           
           if (args.date) {
+            console.log(`🔍 Tentando parsear data: "${args.date}"`)
             appointmentDate = parsePortugueseDate(args.date)
             
             // Se não conseguiu parsear, tenta criar diretamente
-            if (!appointmentDate) {
+            if (!appointmentDate || isNaN(appointmentDate.getTime())) {
+              console.log(`⚠️ Parse falhou, tentando Date() direto`)
               appointmentDate = new Date(args.date)
+              
+              // Se ainda assim tem ano errado, corrige
+              const now = new Date()
+              if (appointmentDate.getFullYear() < now.getFullYear()) {
+                appointmentDate.setFullYear(now.getFullYear())
+                console.log(`⚠️ Corrigindo ano para ${now.getFullYear()}`)
+              }
             }
           }
           
@@ -1166,18 +1234,27 @@ async function executeAIOnlyWorkflow(
             console.log(`⚠️ Data não parseada, usando amanhã às 14:00 como padrão`)
           }
           
+          // CORREÇÃO CRÍTICA: Se o ano está no passado, corrige para o ano atual
+          const now = new Date()
+          const currentYear = now.getFullYear()
+          if (appointmentDate.getFullYear() < currentYear) {
+            console.log(`⚠️ Corrigindo ano de ${appointmentDate.getFullYear()} para ${currentYear}`)
+            appointmentDate.setFullYear(currentYear)
+          }
+          
           // Se não tem hora especificada, adiciona horário padrão (14:00)
           if (appointmentDate.getHours() === 0 && appointmentDate.getMinutes() === 0) {
             appointmentDate.setHours(14, 0, 0, 0)
           }
           
-          console.log(`📅 Data parseada: ${appointmentDate.toISOString()}`)
+          console.log(`📅 Data parseada final: ${appointmentDate.toISOString()} (ano: ${appointmentDate.getFullYear()})`)
           
           // Valida se a data é válida e não é no passado
           // Compara apenas a data (sem hora) para evitar rejeitar datas válidas
-          const now = new Date()
           const appointmentDateOnly = new Date(appointmentDate.getFullYear(), appointmentDate.getMonth(), appointmentDate.getDate())
           const todayOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+          
+          console.log(`🔍 Validação: appointmentDateOnly=${appointmentDateOnly.toISOString()}, todayOnly=${todayOnly.toISOString()}`)
           
           // Se a data é hoje, verifica se a hora não passou
           if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
