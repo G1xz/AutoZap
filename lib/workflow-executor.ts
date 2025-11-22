@@ -830,6 +830,64 @@ async function executeAIOnlyWorkflow(
       }
     }
 
+    // Se houver um catalogId, buscar produtos/serviços do catálogo
+    if (businessDetails.catalogId) {
+      try {
+        // Buscar o workflow completo para obter o userId
+        const fullWorkflow = await prisma.workflow.findUnique({
+          where: { id: workflow.id },
+          select: { userId: true },
+        })
+
+        const catalog = await prisma.catalog.findFirst({
+          where: {
+            id: businessDetails.catalogId,
+            userId: fullWorkflow?.userId, // Garantir que é do mesmo usuário
+          },
+          include: {
+            nodes: true,
+          },
+        })
+
+        if (catalog) {
+          // Extrair produtos e serviços do catálogo
+          const catalogProducts: string[] = []
+          const catalogServices: string[] = []
+
+          catalog.nodes.forEach((node: any) => {
+            try {
+              const nodeData = JSON.parse(node.data)
+              if (node.type === 'product' && nodeData.name) {
+                let productName = nodeData.name
+                if (nodeData.price) {
+                  productName += ` - R$ ${nodeData.price.toFixed(2).replace('.', ',')}`
+                }
+                catalogProducts.push(productName)
+              } else if (node.type === 'service' && nodeData.name) {
+                let serviceName = nodeData.name
+                if (nodeData.price) {
+                  serviceName += ` - R$ ${nodeData.price.toFixed(2).replace('.', ',')}`
+                }
+                catalogServices.push(serviceName)
+              }
+            } catch (e) {
+              console.error('Erro ao parsear dados do nó do catálogo:', e)
+            }
+          })
+
+          // Usar produtos/serviços do catálogo se não houver produtos/serviços manuais
+          if (catalogProducts.length > 0 && (!businessDetails.products || businessDetails.products.length === 0)) {
+            businessDetails.products = catalogProducts
+          }
+          if (catalogServices.length > 0 && (!businessDetails.services || businessDetails.services.length === 0)) {
+            businessDetails.services = catalogServices
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao buscar catálogo:', error)
+      }
+    }
+
     console.log(`📊 Dados do negócio carregados:`, {
       hasBusinessDetails: !!workflow.aiBusinessDetails,
       businessName: businessDetails.businessName,
