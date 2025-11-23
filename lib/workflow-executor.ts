@@ -1069,22 +1069,27 @@ async function executeAIOnlyWorkflow(
     console.log(`🤖 Gerando resposta IA-only. Primeira interação: ${isFirstInteraction}, Histórico: ${finalConversationHistory.length} mensagens`)
     
     // Define função de agendamento para a IA usar quando necessário
+    // Agora coleta data e hora separadamente para processamento mais confiável
     const appointmentFunction = {
       name: 'create_appointment',
-      description: 'Cria um agendamento na agenda quando o cliente quer marcar um horário. Use esta função quando o cliente expressar interesse em agendar algo, marcar uma consulta, ou definir um horário. IMPORTANTE: Se o cliente mencionar "amanhã", "hoje", "depois de amanhã" ou outras datas relativas, converta para uma data ISO válida. Se não especificar hora, use 14:00 como padrão.',
+      description: 'Cria um agendamento na agenda quando o cliente quer marcar um horário. Use esta função APENAS quando você tiver coletado tanto a DATA quanto a HORA do cliente. Se o cliente mencionar datas relativas como "amanhã", "hoje", "depois de amanhã", converta para formato DD/MM/YYYY antes de chamar esta função.',
       parameters: {
         type: 'object',
         properties: {
           date: {
             type: 'string',
-            description: 'Data e hora do agendamento. Aceita: formato ISO 8601 (ex: 2024-12-25T14:30:00), datas relativas em português como "amanhã", "hoje", "depois de amanhã", ou formato DD/MM/YYYY. Se o cliente não especificar hora, você pode omitir e o sistema usará 14:00 como padrão. IMPORTANTE: Se o cliente disser "amanhã", converta para uma data ISO válida (ex: se hoje é 22/11/2024, amanhã seria 2024-11-23T14:00:00).',
+            description: 'Data do agendamento no formato DD/MM/YYYY (ex: "24/11/2025", "30/12/2025"). Se o cliente disser "amanhã", calcule a data de amanhã no formato DD/MM/YYYY. Se disser "hoje", use a data de hoje. Se disser "depois de amanhã", calcule a data correspondente.',
+          },
+          time: {
+            type: 'string',
+            description: 'Hora do agendamento no formato HH:MM em horário de 24 horas (ex: "14:00", "16:00", "19:00"). Se o cliente disser "4 da tarde", converta para "16:00". Se disser "7 da manhã", converta para "07:00". Se disser "9 da noite", converta para "21:00". Se não especificar hora, use "14:00" como padrão.',
           },
           description: {
             type: 'string',
             description: 'Descrição do agendamento, incluindo o que será feito, serviço solicitado, ou motivo do agendamento.',
           },
         },
-        required: ['date', 'description'],
+        required: ['date', 'time', 'description'],
       },
     }
 
@@ -1237,112 +1242,103 @@ async function executeAIOnlyWorkflow(
     }
 
     // Handler para quando a IA chamar a função de agendamento
+    // Agora recebe data e hora separadamente para processamento mais simples e confiável
     const handleFunctionCall = async (functionName: string, args: any) => {
       if (functionName === 'create_appointment' && userId) {
         try {
           console.log(`📅 Tentando criar agendamento com args:`, args)
           
-          // Tenta parsear a data
-          let appointmentDate: Date | null = null
-          
-          if (args.date) {
-            console.log(`🔍 Tentando parsear data: "${args.date}"`)
-            console.log(`📅 Data/hora atual do servidor: ${new Date().toISOString()}`)
-            
-            // Primeiro tenta parsear com a função que entende português
-            appointmentDate = parsePortugueseDate(args.date)
-            
-            // Se não conseguiu parsear, tenta criar diretamente
-            if (!appointmentDate || isNaN(appointmentDate.getTime())) {
-              console.log(`⚠️ Parse português falhou, tentando Date() direto`)
-              appointmentDate = new Date(args.date)
-              
-              // Se ainda assim tem ano errado, corrige usando horário do Brasil
-              const nowBrazilianCheck = getBrazilianDate()
-              if (appointmentDate.getFullYear() < nowBrazilianCheck.getFullYear()) {
-                console.log(`⚠️ Corrigindo ano de ${appointmentDate.getFullYear()} para ${nowBrazilianCheck.getFullYear()}`)
-                appointmentDate.setFullYear(nowBrazilianCheck.getFullYear())
-              }
-            }
-            
-            // Log detalhado da data parseada
-            if (appointmentDate && !isNaN(appointmentDate.getTime())) {
-              console.log(`✅ Data parseada: ${appointmentDate.toISOString()}`)
-              console.log(`📅 Data formatada: ${appointmentDate.getDate()}/${appointmentDate.getMonth() + 1}/${appointmentDate.getFullYear()} às ${appointmentDate.getHours()}:${appointmentDate.getMinutes().toString().padStart(2, '0')}`)
+          // Valida que temos data e hora
+          if (!args.date || !args.time) {
+            return {
+              success: false,
+              error: 'É necessário informar tanto a data quanto a hora do agendamento.',
             }
           }
           
-          // Usa horário do Brasil para validações
+          // Processa a data (formato DD/MM/YYYY)
+          const dateMatch = args.date.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+          if (!dateMatch) {
+            return {
+              success: false,
+              error: `Data inválida: "${args.date}". Use o formato DD/MM/YYYY (ex: 24/11/2025).`,
+            }
+          }
+          
+          const day = parseInt(dateMatch[1])
+          const month = parseInt(dateMatch[2]) - 1 // JavaScript usa meses 0-11
+          const year = parseInt(dateMatch[3])
+          
+          // Processa a hora (formato HH:MM)
+          const timeMatch = args.time.match(/(\d{1,2}):(\d{2})/)
+          if (!timeMatch) {
+            return {
+              success: false,
+              error: `Hora inválida: "${args.time}". Use o formato HH:MM (ex: 16:00).`,
+            }
+          }
+          
+          const hour = parseInt(timeMatch[1])
+          const minute = parseInt(timeMatch[2])
+          
+          // Valida valores
+          if (day < 1 || day > 31 || month < 0 || month > 11 || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+            return {
+              success: false,
+              error: 'Data ou hora inválida. Verifique os valores informados.',
+            }
+          }
+          
+          // Cria a data no horário do Brasil
           const nowBrazilian = getBrazilianDate()
+          const appointmentDateBrazilian = new Date(year, month, day, hour, minute, 0, 0)
           
-          // Se ainda não tem data válida, usa amanhã como padrão (no horário do Brasil)
-          if (!appointmentDate || isNaN(appointmentDate.getTime())) {
-            const tomorrowBrazilian = new Date(nowBrazilian)
-            tomorrowBrazilian.setDate(tomorrowBrazilian.getDate() + 1)
-            tomorrowBrazilian.setHours(14, 0, 0, 0) // Horário padrão: 14:00 no Brasil
-            // Converte para UTC para salvar no banco
-            appointmentDate = brazilianToUTC(tomorrowBrazilian)
-            console.log(`⚠️ Data não parseada, usando amanhã às 14:00 (Brasil) como padrão`)
+          // Se o ano informado é menor que o atual, assume que é o próximo ano
+          if (year < nowBrazilian.getFullYear()) {
+            appointmentDateBrazilian.setFullYear(nowBrazilian.getFullYear() + 1)
+            console.log(`⚠️ Ano ${year} é menor que o atual, ajustando para ${appointmentDateBrazilian.getFullYear()}`)
           }
           
-          // Converte a data do agendamento para horário do Brasil para validação
-          const appointmentDateBrazilian = utcToBrazilian(appointmentDate)
+          console.log(`📅 Data/hora coletada: ${day}/${month + 1}/${appointmentDateBrazilian.getFullYear()} às ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (Brasil)`)
+          console.log(`📅 Data/hora atual: ${nowBrazilian.getDate()}/${nowBrazilian.getMonth() + 1}/${nowBrazilian.getFullYear()} às ${nowBrazilian.getHours()}:${nowBrazilian.getMinutes().toString().padStart(2, '0')} (Brasil)`)
           
-          // CORREÇÃO CRÍTICA: Se o ano está no passado, corrige para o ano atual
-          const currentYear = nowBrazilian.getFullYear()
-          if (appointmentDateBrazilian.getFullYear() < currentYear) {
-            console.log(`⚠️ Corrigindo ano de ${appointmentDateBrazilian.getFullYear()} para ${currentYear}`)
-            appointmentDateBrazilian.setFullYear(currentYear)
-            // Converte de volta para UTC
-            appointmentDate = brazilianToUTC(appointmentDateBrazilian)
-          }
-          
-          // Se não tem hora especificada, adiciona horário padrão (14:00 no Brasil)
-          if (appointmentDateBrazilian.getHours() === 0 && appointmentDateBrazilian.getMinutes() === 0) {
-            appointmentDateBrazilian.setHours(14, 0, 0, 0)
-            // Converte de volta para UTC
-            appointmentDate = brazilianToUTC(appointmentDateBrazilian)
-          }
-          
-          console.log(`📅 Data parseada final (UTC): ${appointmentDate.toISOString()}`)
-          console.log(`📅 Data parseada final (Brasil): ${appointmentDateBrazilian.getDate()}/${appointmentDateBrazilian.getMonth() + 1}/${appointmentDateBrazilian.getFullYear()} às ${appointmentDateBrazilian.getHours()}:${appointmentDateBrazilian.getMinutes().toString().padStart(2, '0')}`)
-          
-          // Valida se a data é válida e não é no passado (usando horário do Brasil)
-          // Compara apenas a data (sem hora) para evitar rejeitar datas válidas
+          // Valida se a data não é no passado
           const appointmentDateOnly = new Date(appointmentDateBrazilian.getFullYear(), appointmentDateBrazilian.getMonth(), appointmentDateBrazilian.getDate())
           const todayOnly = new Date(nowBrazilian.getFullYear(), nowBrazilian.getMonth(), nowBrazilian.getDate())
-          
-          console.log(`🔍 Validação (Brasil): appointmentDateOnly=${appointmentDateOnly.getDate()}/${appointmentDateOnly.getMonth() + 1}/${appointmentDateOnly.getFullYear()}, todayOnly=${todayOnly.getDate()}/${todayOnly.getMonth() + 1}/${todayOnly.getFullYear()}`)
           
           // Se a data é hoje, verifica se a hora não passou
           if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
             if (appointmentDateBrazilian < nowBrazilian) {
-              console.error(`❌ Hora no passado hoje (Brasil): ${appointmentDateBrazilian.toISOString()} < ${nowBrazilian.toISOString()}`)
+              console.error(`❌ Hora no passado hoje (Brasil)`)
               return {
                 success: false,
                 error: 'Não é possível agendar para um horário que já passou hoje. Por favor, escolha um horário futuro.',
               }
             }
           } else if (appointmentDateOnly < todayOnly) {
-            // Data no passado
-            console.error(`❌ Data no passado (Brasil): ${appointmentDateOnly.getDate()}/${appointmentDateOnly.getMonth() + 1}/${appointmentDateOnly.getFullYear()} < ${todayOnly.getDate()}/${todayOnly.getMonth() + 1}/${todayOnly.getFullYear()}`)
+            console.error(`❌ Data no passado (Brasil)`)
             return {
               success: false,
               error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
             }
           }
+          
+          // Converte para UTC antes de salvar no banco
+          const appointmentDateUTC = brazilianToUTC(appointmentDateBrazilian)
+          console.log(`📅 Convertido para UTC: ${appointmentDateUTC.toISOString()}`)
+          console.log(`📅 Verificação (UTC→Brasil): ${utcToBrazilian(appointmentDateUTC).getDate()}/${utcToBrazilian(appointmentDateUTC).getMonth() + 1}/${utcToBrazilian(appointmentDateUTC).getFullYear()} às ${utcToBrazilian(appointmentDateUTC).getHours()}:${utcToBrazilian(appointmentDateUTC).getMinutes().toString().padStart(2, '0')}`)
 
           const result = await createAppointment({
             userId,
             instanceId,
             contactNumber,
             contactName: contactNameFinal,
-            date: appointmentDate,
+            date: appointmentDateUTC,
             description: args.description || `Agendamento solicitado via WhatsApp`,
           })
 
           if (result.success) {
-            const formattedDate = appointmentDate.toLocaleString('pt-BR', {
+            const formattedDate = appointmentDateBrazilian.toLocaleString('pt-BR', {
               day: '2-digit',
               month: '2-digit',
               year: 'numeric',
