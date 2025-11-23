@@ -201,10 +201,31 @@ export async function generateAIResponse(
       if (typeof parsedArgs === 'string') {
         try {
           parsedArgs = JSON.parse(parsedArgs)
+          console.log(`✅ Argumentos parseados com sucesso:`, parsedArgs)
         } catch (e) {
           console.error('❌ Erro ao fazer parse dos argumentos:', e)
-          parsedArgs = {}
+          console.error('❌ String recebida:', parsedArgs)
+          // Tenta extrair manualmente se o parse falhar
+          try {
+            // Tenta extrair date e time mesmo se o JSON estiver malformado
+            const dateMatch = parsedArgs.match(/"date"\s*:\s*"([^"]+)"/)
+            const timeMatch = parsedArgs.match(/"time"\s*:\s*"([^"]+)"/)
+            if (dateMatch && timeMatch) {
+              parsedArgs = { date: dateMatch[1], time: timeMatch[1] }
+              console.log(`⚠️ Extraído manualmente:`, parsedArgs)
+            } else {
+              parsedArgs = {}
+            }
+          } catch (e2) {
+            console.error('❌ Erro ao extrair manualmente:', e2)
+            parsedArgs = {}
+          }
         }
+      } else if (parsedArgs && typeof parsedArgs === 'object') {
+        console.log(`✅ Argumentos já são objeto:`, parsedArgs)
+      } else {
+        console.error(`❌ Tipo inesperado de argumentos:`, typeof parsedArgs, parsedArgs)
+        parsedArgs = {}
       }
       
       const functionResult = await context.onFunctionCall(
