@@ -77,30 +77,31 @@ export default function SchedulingManager() {
   }
 
   // Função auxiliar para converter UTC para horário do Brasil (UTC-3)
+  // Usada apenas para comparações, não para formatação
   const utcToBrazilian = (utcDate: Date): Date => {
     return new Date(utcDate.getTime() - (3 * 60 * 60000))
   }
 
   const formatDate = (dateString: string) => {
     const utcDate = new Date(dateString) // Data vem do banco em UTC
-    const brazilianDate = utcToBrazilian(utcDate) // Converte para horário do Brasil
-    return brazilianDate.toLocaleString('pt-BR', {
+    // Usa apenas timeZone para conversão automática (não faz conversão manual)
+    return utcDate.toLocaleString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-      timeZone: 'America/Sao_Paulo', // Força uso do fuso horário do Brasil
+      timeZone: 'America/Sao_Paulo', // JavaScript converte automaticamente de UTC para horário do Brasil
     })
   }
 
   const formatTime = (dateString: string) => {
     const utcDate = new Date(dateString) // Data vem do banco em UTC
-    const brazilianDate = utcToBrazilian(utcDate) // Converte para horário do Brasil
-    return brazilianDate.toLocaleTimeString('pt-BR', {
+    // Usa apenas timeZone para conversão automática (não faz conversão manual)
+    return utcDate.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
-      timeZone: 'America/Sao_Paulo', // Força uso do fuso horário do Brasil
+      timeZone: 'America/Sao_Paulo', // JavaScript converte automaticamente de UTC para horário do Brasil
     })
   }
 
