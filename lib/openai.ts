@@ -224,10 +224,27 @@ export async function generateAIResponse(
         },
       })
 
+      // Garante que o conteúdo da função seja uma string válida
+      let functionContent = ''
+      if (typeof functionResult === 'string') {
+        functionContent = functionResult
+      } else if (functionResult && typeof functionResult === 'object') {
+        try {
+          functionContent = JSON.stringify(functionResult)
+        } catch (e) {
+          console.error('❌ Erro ao serializar resultado da função:', e)
+          functionContent = JSON.stringify({ success: false, error: 'Erro ao processar resultado' })
+        }
+      } else {
+        functionContent = String(functionResult || '')
+      }
+      
+      console.log(`📤 Enviando resultado da função para IA:`, functionContent)
+      
       messages.push({
         role: 'function',
         name: response.functionCall.name,
-        content: typeof functionResult === 'string' ? functionResult : JSON.stringify(functionResult),
+        content: functionContent,
       })
 
       // Chama novamente para obter a resposta final

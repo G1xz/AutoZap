@@ -1362,6 +1362,15 @@ async function executeAIOnlyWorkflow(
             console.error(`❌ ERRO: Hora não corresponde após conversão! Esperado: ${hour}:${minute.toString().padStart(2, '0')}, Obtido: ${verificationBrazilian.getHours()}:${verificationBrazilian.getMinutes().toString().padStart(2, '0')}`)
           }
 
+          console.log(`💾 Chamando createAppointment com:`, {
+            userId,
+            instanceId,
+            contactNumber,
+            contactName: contactNameFinal,
+            date: appointmentDateUTC.toISOString(),
+            description: args.description || `Agendamento solicitado via WhatsApp`,
+          })
+
           const result = await createAppointment({
             userId,
             instanceId,
@@ -1370,6 +1379,8 @@ async function executeAIOnlyWorkflow(
             date: appointmentDateUTC,
             description: args.description || `Agendamento solicitado via WhatsApp`,
           })
+
+          console.log(`📊 Resultado do createAppointment:`, result)
 
           if (result.success) {
             const formattedDate = appointmentDateBrazilian.toLocaleString('pt-BR', {
@@ -1380,12 +1391,15 @@ async function executeAIOnlyWorkflow(
               minute: '2-digit',
             })
 
+            console.log(`✅ Agendamento criado com sucesso! Data formatada: ${formattedDate}`)
+            
             return {
               success: true,
               message: `Agendamento criado com sucesso para ${formattedDate}.`,
               appointment: result.appointment,
             }
           } else {
+            console.error(`❌ Falha ao criar agendamento:`, result.error)
             return {
               success: false,
               error: result.error || 'Erro ao criar agendamento.',
