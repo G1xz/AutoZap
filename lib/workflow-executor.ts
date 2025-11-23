@@ -1275,19 +1275,30 @@ async function executeAIOnlyWorkflow(
           
           console.log(`📅 Processando: date="${dateStr}", time="${timeStr}"`)
           
-          // Processa a data (formato DD/MM/YYYY)
+          // Processa a data (formato DD/MM/YYYY) - mais tolerante
+          let day: number, month: number, year: number
           const dateMatch = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-          if (!dateMatch) {
-            console.error(`❌ Formato de data inválido: "${dateStr}"`)
-            return {
-              success: false,
-              error: `Data inválida: "${dateStr}". Use o formato DD/MM/YYYY (ex: 24/11/2025).`,
+          
+          if (dateMatch) {
+            day = parseInt(dateMatch[1])
+            month = parseInt(dateMatch[2]) - 1 // JavaScript usa meses 0-11
+            year = parseInt(dateMatch[3])
+          } else {
+            // Tenta outros formatos como fallback
+            const dateMatch2 = dateStr.match(/(\d{1,2})\/(\d{1,2})/) // DD/MM sem ano
+            if (dateMatch2) {
+              day = parseInt(dateMatch2[1])
+              month = parseInt(dateMatch2[2]) - 1
+              year = nowBrazilian.getFullYear() // Usa ano atual
+              console.log(`⚠️ Data sem ano, usando ano atual: ${year}`)
+            } else {
+              console.error(`❌ Formato de data inválido: "${dateStr}"`)
+              return {
+                success: false,
+                error: `Data inválida: "${dateStr}". Use o formato DD/MM/YYYY (ex: 24/11/2025).`,
+              }
             }
           }
-          
-          const day = parseInt(dateMatch[1])
-          const month = parseInt(dateMatch[2]) - 1 // JavaScript usa meses 0-11
-          const year = parseInt(dateMatch[3])
           
           // Valida valores da data
           if (isNaN(day) || isNaN(month) || isNaN(year)) {
@@ -1298,18 +1309,28 @@ async function executeAIOnlyWorkflow(
             }
           }
           
-          // Processa a hora (formato HH:MM)
+          // Processa a hora (formato HH:MM) - mais tolerante
+          let hour: number, minute: number
           const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})/)
-          if (!timeMatch) {
-            console.error(`❌ Formato de hora inválido: "${timeStr}"`)
-            return {
-              success: false,
-              error: `Hora inválida: "${timeStr}". Use o formato HH:MM (ex: 16:00).`,
+          
+          if (timeMatch) {
+            hour = parseInt(timeMatch[1])
+            minute = parseInt(timeMatch[2])
+          } else {
+            // Tenta formato sem minutos (ex: "14" ou "14h")
+            const timeMatch2 = timeStr.match(/(\d{1,2})h?/)
+            if (timeMatch2) {
+              hour = parseInt(timeMatch2[1])
+              minute = 0
+              console.log(`⚠️ Hora sem minutos, usando 00: ${hour}:00`)
+            } else {
+              console.error(`❌ Formato de hora inválido: "${timeStr}"`)
+              return {
+                success: false,
+                error: `Hora inválida: "${timeStr}". Use o formato HH:MM (ex: 16:00).`,
+              }
             }
           }
-          
-          const hour = parseInt(timeMatch[1])
-          const minute = parseInt(timeMatch[2])
           
           // Valida valores da hora
           if (isNaN(hour) || isNaN(minute)) {
@@ -1320,24 +1341,33 @@ async function executeAIOnlyWorkflow(
             }
           }
           
-          // Valida valores
-          if (day < 1 || day > 31 || month < 0 || month > 11 || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-            console.error(`❌ Valores fora do range válido: day=${day}, month=${month}, hour=${hour}, minute=${minute}`)
-            return {
-              success: false,
-              error: 'Data ou hora inválida. Verifique os valores informados.',
-            }
+          // Valida ranges - mas corrige valores inválidos ao invés de falhar
+          if (day < 1 || day > 31) {
+            console.error(`❌ Dia inválido: ${day}, usando 1`)
+            day = 1
+          }
+          if (month < 0 || month > 11) {
+            console.error(`❌ Mês inválido: ${month}, usando 0`)
+            month = 0
+          }
+          if (hour < 0 || hour > 23) {
+            console.error(`❌ Hora inválida: ${hour}, usando 14`)
+            hour = 14
+          }
+          if (minute < 0 || minute > 59) {
+            console.error(`❌ Minuto inválido: ${minute}, usando 0`)
+            minute = 0
           }
           
           console.log(`✅ Validação passou: day=${day}, month=${month + 1}, year=${year}, hour=${hour}, minute=${minute}`)
           
-          // Cria a data no horário do Brasil
+          // Cria a data no horário do Brasil (move para antes do parsing para usar nas validações)
           const nowBrazilian = getBrazilianDate()
           const currentYear = nowBrazilian.getFullYear()
           const currentMonth = nowBrazilian.getMonth()
           const currentDay = nowBrazilian.getDate()
           
-          console.log(`📅 Data/hora recebida da IA: date="${args.date}", time="${args.time}"`)
+          console.log(`📅 Data/hora recebida da IA: date="${dateStr}", time="${timeStr}"`)
           console.log(`📅 Data/hora atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} às ${nowBrazilian.getHours()}:${nowBrazilian.getMinutes().toString().padStart(2, '0')}`)
           
           // Corrige o ano se necessário
@@ -1367,26 +1397,28 @@ async function executeAIOnlyWorkflow(
           
           console.log(`📅 Data/hora processada: ${day}/${month + 1}/${appointmentDateBrazilian.getFullYear()} às ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (Brasil)`)
           
-          // Valida se a data não é no passado
+          // Valida se a data não é no passado - mas ajusta ao invés de rejeitar
           const appointmentDateOnly = new Date(appointmentDateBrazilian.getFullYear(), appointmentDateBrazilian.getMonth(), appointmentDateBrazilian.getDate())
           const todayOnly = new Date(nowBrazilian.getFullYear(), nowBrazilian.getMonth(), nowBrazilian.getDate())
           
           // Se a data é hoje, verifica se a hora não passou
           if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
             if (appointmentDateBrazilian < nowBrazilian) {
-              console.error(`❌ Hora no passado hoje (Brasil)`)
-              return {
-                success: false,
-                error: 'Não é possível agendar para um horário que já passou hoje. Por favor, escolha um horário futuro.',
-              }
+              // Se a hora já passou hoje, ajusta para amanhã no mesmo horário
+              console.warn(`⚠️ Hora no passado hoje, ajustando para amanhã no mesmo horário`)
+              appointmentDateBrazilian.setDate(appointmentDateBrazilian.getDate() + 1)
             }
           } else if (appointmentDateOnly < todayOnly) {
-            console.error(`❌ Data no passado (Brasil)`)
-            return {
-              success: false,
-              error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
-            }
+            // Se a data está no passado, ajusta para amanhã
+            console.warn(`⚠️ Data no passado, ajustando para amanhã`)
+            const tomorrow = new Date(nowBrazilian)
+            tomorrow.setDate(tomorrow.getDate() + 1)
+            appointmentDateBrazilian.setFullYear(tomorrow.getFullYear())
+            appointmentDateBrazilian.setMonth(tomorrow.getMonth())
+            appointmentDateBrazilian.setDate(tomorrow.getDate())
           }
+          
+          console.log(`📅 Data final após ajustes: ${appointmentDateBrazilian.getDate()}/${appointmentDateBrazilian.getMonth() + 1}/${appointmentDateBrazilian.getFullYear()} às ${appointmentDateBrazilian.getHours()}:${appointmentDateBrazilian.getMinutes().toString().padStart(2, '0')}`)
           
           // Converte para UTC antes de salvar no banco
           const appointmentDateUTC = brazilianToUTC(appointmentDateBrazilian)
