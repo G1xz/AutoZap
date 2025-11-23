@@ -1109,29 +1109,63 @@ async function executeAIOnlyWorkflow(
       },
     }
 
-    // Função auxiliar para obter data/hora atual no fuso horário do Brasil (UTC-3)
-    // O servidor está em UTC, então para obter o horário do Brasil, subtraímos 3 horas
+    // Função auxiliar para obter data/hora atual no fuso horário do Brasil
+    // Usa a API nativa do JavaScript para obter o horário correto do Brasil
     const getBrazilianDate = (): Date => {
-      const now = new Date() // UTC
-      // Brasil está em UTC-3, então subtraímos 3 horas do UTC para obter horário do Brasil
-      // Exemplo: Se são 20:33 UTC, no Brasil são 17:33 (UTC-3)
-      const brazilianOffset = -3 * 60 // -3 horas em minutos
-      const brazilianTime = new Date(now.getTime() + (brazilianOffset * 60000))
-      return brazilianTime
+      const now = new Date()
+      // Obtém componentes de data/hora no fuso horário do Brasil
+      const brazilianParts = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+      }).formatToParts(now)
+      
+      // Cria uma data local com os componentes do Brasil (para comparação)
+      const year = parseInt(brazilianParts.find(p => p.type === 'year')!.value)
+      const month = parseInt(brazilianParts.find(p => p.type === 'month')!.value) - 1
+      const day = parseInt(brazilianParts.find(p => p.type === 'day')!.value)
+      const hour = parseInt(brazilianParts.find(p => p.type === 'hour')!.value)
+      const minute = parseInt(brazilianParts.find(p => p.type === 'minute')!.value)
+      const second = parseInt(brazilianParts.find(p => p.type === 'second')!.value)
+      
+      return new Date(year, month, day, hour, minute, second)
     }
     
-    // Função auxiliar para converter data do Brasil para UTC (para salvar no banco)
-    // Se temos uma data no horário do Brasil e queremos UTC, adicionamos 3 horas
-    // Exemplo: Se são 07:00 no Brasil, em UTC são 10:00
-    const brazilianToUTC = (brazilianDate: Date): Date => {
-      return new Date(brazilianDate.getTime() + (3 * 60 * 60000))
+    // Função auxiliar para criar uma data no fuso horário do Brasil e converter para UTC
+    // Recebe componentes de data/hora no horário do Brasil e retorna um Date em UTC
+    const createBrazilianDateAsUTC = (year: number, month: number, day: number, hour: number, minute: number): Date => {
+      // Cria uma string ISO assumindo que é no fuso do Brasil (UTC-3)
+      // Formato: YYYY-MM-DDTHH:mm:ss-03:00
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00-03:00`
+      
+      // Cria a data a partir da string ISO (JavaScript converte automaticamente para UTC)
+      return new Date(dateStr)
     }
     
-    // Função auxiliar para converter data de UTC para Brasil (para exibição/validação)
-    // Se temos uma data em UTC e queremos horário do Brasil, subtraímos 3 horas
-    // Exemplo: Se são 10:00 UTC, no Brasil são 07:00
-    const utcToBrazilian = (utcDate: Date): Date => {
-      return new Date(utcDate.getTime() - (3 * 60 * 60000))
+    // Função auxiliar para converter data de UTC para componentes do Brasil
+    const utcToBrazilianComponents = (utcDate: Date): { year: number; month: number; day: number; hour: number; minute: number } => {
+      const parts = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(utcDate)
+      
+      return {
+        year: parseInt(parts.find(p => p.type === 'year')!.value),
+        month: parseInt(parts.find(p => p.type === 'month')!.value) - 1,
+        day: parseInt(parts.find(p => p.type === 'day')!.value),
+        hour: parseInt(parts.find(p => p.type === 'hour')!.value),
+        minute: parseInt(parts.find(p => p.type === 'minute')!.value),
+      }
     }
 
     // Função auxiliar para calcular a próxima ocorrência de um dia da semana
@@ -1202,9 +1236,11 @@ async function executeAIOnlyWorkflow(
       for (const [dayName, dayOfWeek] of Object.entries(weekdays)) {
         if (lower.includes(dayName)) {
           const nextDate = getNextWeekday(dayOfWeek, nowBrazilian)
-          nextDate.setHours(targetHour, targetMinute, 0, 0)
-          console.log(`📅 Parseado "${dayName}" → próxima ocorrência: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
-          const utcDate = brazilianToUTC(nextDate)
+          const year = nextDate.getFullYear()
+          const month = nextDate.getMonth()
+          const day = nextDate.getDate()
+          console.log(`📅 Parseado "${dayName}" → próxima ocorrência: ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
+          const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
           return utcDate
         }
       }
@@ -1213,32 +1249,34 @@ async function executeAIOnlyWorkflow(
       if (lower.includes('amanhã') || lower.includes('amanha')) {
         const tomorrow = new Date(nowBrazilian)
         tomorrow.setDate(tomorrow.getDate() + 1)
-        tomorrow.setHours(targetHour, targetMinute, 0, 0)
-        tomorrow.setSeconds(0, 0) // Garante que segundos e milissegundos são 0
+        const year = tomorrow.getFullYear()
+        const month = tomorrow.getMonth()
+        const day = tomorrow.getDate()
         
-        console.log(`📅 Parseado "amanhã" (Brasil): ${tomorrow.getDate()}/${tomorrow.getMonth() + 1}/${tomorrow.getFullYear()} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
+        console.log(`📅 Parseado "amanhã" (Brasil): ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
         console.log(`📅 Data/hora atual (Brasil): ${nowBrazilian.getDate()}/${nowBrazilian.getMonth() + 1}/${nowBrazilian.getFullYear()} às ${nowBrazilian.getHours()}:${nowBrazilian.getMinutes().toString().padStart(2, '0')}`)
         
-        // Converte de volta para UTC para salvar no banco
-        const utcDate = brazilianToUTC(tomorrow)
+        const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
         console.log(`📅 Convertido para UTC: ${utcDate.toISOString()}`)
-        console.log(`📅 UTC convertido de volta para Brasil: ${utcToBrazilian(utcDate).getDate()}/${utcToBrazilian(utcDate).getMonth() + 1}/${utcToBrazilian(utcDate).getFullYear()} às ${utcToBrazilian(utcDate).getHours()}:${utcToBrazilian(utcDate).getMinutes().toString().padStart(2, '0')}`)
+        const brazilianCheck = utcToBrazilianComponents(utcDate)
+        console.log(`📅 UTC convertido de volta para Brasil: ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year} às ${brazilianCheck.hour}:${brazilianCheck.minute.toString().padStart(2, '0')}`)
         
         return utcDate
       }
       if (lower.includes('hoje')) {
-        const today = new Date(nowBrazilian)
-        today.setHours(targetHour, targetMinute, 0, 0)
-        // Converte de volta para UTC
-        const utcDate = brazilianToUTC(today)
+        const year = nowBrazilian.getFullYear()
+        const month = nowBrazilian.getMonth()
+        const day = nowBrazilian.getDate()
+        const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
         return utcDate
       }
       if (lower.includes('depois de amanhã') || lower.includes('depois de amanha')) {
         const dayAfterTomorrow = new Date(nowBrazilian)
         dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2)
-        dayAfterTomorrow.setHours(targetHour, targetMinute, 0, 0)
-        // Converte de volta para UTC
-        const utcDate = brazilianToUTC(dayAfterTomorrow)
+        const year = dayAfterTomorrow.getFullYear()
+        const month = dayAfterTomorrow.getMonth()
+        const day = dayAfterTomorrow.getDate()
+        const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
         return utcDate
       }
       
@@ -1316,17 +1354,19 @@ async function executeAIOnlyWorkflow(
           }
           
           // Tenta primeiro parsear como data em português (dias da semana, "amanhã", etc)
-          let appointmentDateBrazilian: Date | null = null
+          let appointmentDateUTC: Date | null = null
           const parsedPortugueseDate = parsePortugueseDate(args.date)
           
           if (parsedPortugueseDate) {
-            // Se conseguiu parsear como data em português, usa ela
-            appointmentDateBrazilian = utcToBrazilian(parsedPortugueseDate)
-            console.log(`📅 Data parseada do português: ${appointmentDateBrazilian.getDate()}/${appointmentDateBrazilian.getMonth() + 1}/${appointmentDateBrazilian.getFullYear()}`)
+            // Se conseguiu parsear como data em português, já vem em UTC
+            appointmentDateUTC = parsedPortugueseDate
+            const brazilianCheck = utcToBrazilianComponents(appointmentDateUTC)
+            console.log(`📅 Data parseada do português (UTC): ${appointmentDateUTC.toISOString()}`)
+            console.log(`📅 Data parseada do português (Brasil): ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year}`)
           }
           
           // Se não conseguiu parsear como português, tenta formato DD/MM/YYYY
-          if (!appointmentDateBrazilian) {
+          if (!appointmentDateUTC) {
             const dateMatch = args.date.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
             if (!dateMatch) {
               return {
@@ -1337,29 +1377,30 @@ async function executeAIOnlyWorkflow(
             
             const day = parseInt(dateMatch[1])
             const month = parseInt(dateMatch[2]) - 1 // JavaScript usa meses 0-11
-            const year = parseInt(dateMatch[3])
+            let year = parseInt(dateMatch[3])
             
             // Cria a data no horário do Brasil
             const nowBrazilian = getBrazilianDate()
             const currentYear = nowBrazilian.getFullYear()
             
             // Corrige o ano se necessário
-            let finalYear = year
             if (year < currentYear) {
-              finalYear = currentYear
-              console.log(`⚠️ Ano ${year} é menor que o atual (${currentYear}), corrigindo para ${finalYear}`)
+              year = currentYear
+              console.log(`⚠️ Ano ${year} é menor que o atual (${currentYear}), corrigindo para ${year}`)
             } else if (year > currentYear + 1) {
-              finalYear = currentYear
-              console.log(`⚠️ Ano ${year} é muito no futuro, corrigindo para ${finalYear}`)
+              year = currentYear
+              console.log(`⚠️ Ano ${year} é muito no futuro, corrigindo para ${year}`)
             }
             
-            // Cria a data com o ano corrigido
-            appointmentDateBrazilian = new Date(finalYear, month, day, 0, 0, 0, 0)
+            // Cria a data no fuso do Brasil e converte para UTC (hora será definida depois)
+            appointmentDateUTC = createBrazilianDateAsUTC(year, month, day, 0, 0)
           }
           
-          const day = appointmentDateBrazilian.getDate()
-          const month = appointmentDateBrazilian.getMonth()
-          const year = appointmentDateBrazilian.getFullYear()
+          // Obtém componentes brasileiros para validação
+          const brazilianComponents = utcToBrazilianComponents(appointmentDateUTC)
+          const day = brazilianComponents.day
+          const month = brazilianComponents.month
+          const year = brazilianComponents.year
           
           // Processa a hora (formato HH:MM ou "meio-dia")
           let hour: number
@@ -1393,51 +1434,52 @@ async function executeAIOnlyWorkflow(
             }
           }
           
-          // Define a hora na data já parseada (sempre sobrescreve para garantir que está correta)
-          appointmentDateBrazilian.setHours(hour, minute, 0, 0)
+          // Recria a data UTC com a hora correta no fuso do Brasil
+          appointmentDateUTC = createBrazilianDateAsUTC(year, month, day, hour, minute)
           
           // Cria a data no horário do Brasil para comparação
           const nowBrazilian = getBrazilianDate()
           const currentYear = nowBrazilian.getFullYear()
           const currentMonth = nowBrazilian.getMonth()
           const currentDay = nowBrazilian.getDate()
+          const currentHour = nowBrazilian.getHours()
+          const currentMinute = nowBrazilian.getMinutes()
           
           console.log(`📅 Data/hora recebida da IA: date="${args.date}", time="${args.time}"`)
-          console.log(`📅 Data/hora atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} às ${nowBrazilian.getHours()}:${nowBrazilian.getMinutes().toString().padStart(2, '0')}`)
-          console.log(`📅 Data/hora processada: ${day}/${month + 1}/${appointmentDateBrazilian.getFullYear()} às ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (Brasil)`)
+          console.log(`📅 Data/hora atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} às ${currentHour}:${currentMinute.toString().padStart(2, '0')}`)
+          console.log(`📅 Data/hora processada (Brasil): ${day}/${month + 1}/${year} às ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`)
+          console.log(`📅 Data/hora processada (UTC): ${appointmentDateUTC.toISOString()}`)
           
-          // Valida se a data não é no passado
-          const appointmentDateOnly = new Date(appointmentDateBrazilian.getFullYear(), appointmentDateBrazilian.getMonth(), appointmentDateBrazilian.getDate())
-          const todayOnly = new Date(nowBrazilian.getFullYear(), nowBrazilian.getMonth(), nowBrazilian.getDate())
+          // Valida se a data não é no passado (comparando componentes brasileiros)
+          const appointmentDateOnly = new Date(year, month, day)
+          const todayOnly = new Date(currentYear, currentMonth, currentDay)
           
           // Se a data é hoje, verifica se a hora não passou
           if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
-            if (appointmentDateBrazilian < nowBrazilian) {
-              console.error(`❌ Hora no passado hoje (Brasil)`)
+            const appointmentTime = hour * 60 + minute
+            const currentTime = currentHour * 60 + currentMinute
+            if (appointmentTime <= currentTime) {
+              console.error(`❌ Hora no passado hoje (Brasil): ${hour}:${minute.toString().padStart(2, '0')} <= ${currentHour}:${currentMinute.toString().padStart(2, '0')}`)
               return {
                 success: false,
                 error: 'Não é possível agendar para um horário que já passou hoje. Por favor, escolha um horário futuro.',
               }
             }
           } else if (appointmentDateOnly < todayOnly) {
-            console.error(`❌ Data no passado (Brasil)`)
+            console.error(`❌ Data no passado (Brasil): ${day}/${month + 1}/${year} < ${currentDay}/${currentMonth + 1}/${currentYear}`)
             return {
               success: false,
               error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
             }
           }
           
-          // Converte para UTC antes de salvar no banco
-          const appointmentDateUTC = brazilianToUTC(appointmentDateBrazilian)
-          console.log(`📅 Convertido para UTC: ${appointmentDateUTC.toISOString()}`)
-          
           // Verifica se a conversão está correta
-          const verificationBrazilian = utcToBrazilian(appointmentDateUTC)
-          console.log(`📅 Verificação (UTC→Brasil): ${verificationBrazilian.getDate()}/${verificationBrazilian.getMonth() + 1}/${verificationBrazilian.getFullYear()} às ${verificationBrazilian.getHours()}:${verificationBrazilian.getMinutes().toString().padStart(2, '0')}`)
+          const verificationBrazilian = utcToBrazilianComponents(appointmentDateUTC)
+          console.log(`📅 Verificação (UTC→Brasil): ${verificationBrazilian.day}/${verificationBrazilian.month + 1}/${verificationBrazilian.year} às ${verificationBrazilian.hour}:${verificationBrazilian.minute.toString().padStart(2, '0')}`)
           
           // Valida se a hora está correta após conversão
-          if (verificationBrazilian.getHours() !== hour || verificationBrazilian.getMinutes() !== minute) {
-            console.error(`❌ ERRO: Hora não corresponde após conversão! Esperado: ${hour}:${minute.toString().padStart(2, '0')}, Obtido: ${verificationBrazilian.getHours()}:${verificationBrazilian.getMinutes().toString().padStart(2, '0')}`)
+          if (verificationBrazilian.hour !== hour || verificationBrazilian.minute !== minute) {
+            console.error(`❌ ERRO: Hora não corresponde após conversão! Esperado: ${hour}:${minute.toString().padStart(2, '0')}, Obtido: ${verificationBrazilian.hour}:${verificationBrazilian.minute.toString().padStart(2, '0')}`)
           }
 
           const result = await createAppointment({
@@ -1450,12 +1492,13 @@ async function executeAIOnlyWorkflow(
           })
 
           if (result.success) {
-            const formattedDate = appointmentDateBrazilian.toLocaleString('pt-BR', {
+            const formattedDate = appointmentDateUTC.toLocaleString('pt-BR', {
               day: '2-digit',
               month: '2-digit',
               year: 'numeric',
               hour: '2-digit',
               minute: '2-digit',
+              timeZone: 'America/Sao_Paulo',
             })
 
             return {
