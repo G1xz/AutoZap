@@ -1291,16 +1291,39 @@ async function executeAIOnlyWorkflow(
           
           // Cria a data no horário do Brasil
           const nowBrazilian = getBrazilianDate()
-          const appointmentDateBrazilian = new Date(year, month, day, hour, minute, 0, 0)
+          const currentYear = nowBrazilian.getFullYear()
+          const currentMonth = nowBrazilian.getMonth()
+          const currentDay = nowBrazilian.getDate()
           
-          // Se o ano informado é menor que o atual, assume que é o próximo ano
-          if (year < nowBrazilian.getFullYear()) {
-            appointmentDateBrazilian.setFullYear(nowBrazilian.getFullYear() + 1)
-            console.log(`⚠️ Ano ${year} é menor que o atual, ajustando para ${appointmentDateBrazilian.getFullYear()}`)
+          console.log(`📅 Data/hora recebida da IA: date="${args.date}", time="${args.time}"`)
+          console.log(`📅 Data/hora atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} às ${nowBrazilian.getHours()}:${nowBrazilian.getMinutes().toString().padStart(2, '0')}`)
+          
+          // Corrige o ano se necessário
+          let finalYear = year
+          if (year < currentYear) {
+            // Se o ano informado é menor que o atual, usa o ano atual
+            finalYear = currentYear
+            console.log(`⚠️ Ano ${year} é menor que o atual (${currentYear}), corrigindo para ${finalYear}`)
+          } else if (year > currentYear + 1) {
+            // Se o ano informado é muito no futuro (mais de 1 ano), provavelmente está errado, usa o ano atual
+            finalYear = currentYear
+            console.log(`⚠️ Ano ${year} é muito no futuro, corrigindo para ${finalYear}`)
           }
           
-          console.log(`📅 Data/hora coletada: ${day}/${month + 1}/${appointmentDateBrazilian.getFullYear()} às ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (Brasil)`)
-          console.log(`📅 Data/hora atual: ${nowBrazilian.getDate()}/${nowBrazilian.getMonth() + 1}/${nowBrazilian.getFullYear()} às ${nowBrazilian.getHours()}:${nowBrazilian.getMinutes().toString().padStart(2, '0')} (Brasil)`)
+          // Cria a data com o ano corrigido
+          const appointmentDateBrazilian = new Date(finalYear, month, day, hour, minute, 0, 0)
+          
+          // Validação adicional: se a data criada ainda está no passado, ajusta para o ano atual
+          if (appointmentDateBrazilian < nowBrazilian) {
+            // Se a data está no passado mesmo após correção, pode ser que o mês/dia estejam errados
+            // Mas vamos apenas garantir que o ano está correto
+            if (appointmentDateBrazilian.getFullYear() < currentYear) {
+              appointmentDateBrazilian.setFullYear(currentYear)
+              console.log(`⚠️ Data ainda no passado após correção, ajustando ano para ${currentYear}`)
+            }
+          }
+          
+          console.log(`📅 Data/hora processada: ${day}/${month + 1}/${appointmentDateBrazilian.getFullYear()} às ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (Brasil)`)
           
           // Valida se a data não é no passado
           const appointmentDateOnly = new Date(appointmentDateBrazilian.getFullYear(), appointmentDateBrazilian.getMonth(), appointmentDateBrazilian.getDate())
@@ -1326,7 +1349,15 @@ async function executeAIOnlyWorkflow(
           // Converte para UTC antes de salvar no banco
           const appointmentDateUTC = brazilianToUTC(appointmentDateBrazilian)
           console.log(`📅 Convertido para UTC: ${appointmentDateUTC.toISOString()}`)
-          console.log(`📅 Verificação (UTC→Brasil): ${utcToBrazilian(appointmentDateUTC).getDate()}/${utcToBrazilian(appointmentDateUTC).getMonth() + 1}/${utcToBrazilian(appointmentDateUTC).getFullYear()} às ${utcToBrazilian(appointmentDateUTC).getHours()}:${utcToBrazilian(appointmentDateUTC).getMinutes().toString().padStart(2, '0')}`)
+          
+          // Verifica se a conversão está correta
+          const verificationBrazilian = utcToBrazilian(appointmentDateUTC)
+          console.log(`📅 Verificação (UTC→Brasil): ${verificationBrazilian.getDate()}/${verificationBrazilian.getMonth() + 1}/${verificationBrazilian.getFullYear()} às ${verificationBrazilian.getHours()}:${verificationBrazilian.getMinutes().toString().padStart(2, '0')}`)
+          
+          // Valida se a hora está correta após conversão
+          if (verificationBrazilian.getHours() !== hour || verificationBrazilian.getMinutes() !== minute) {
+            console.error(`❌ ERRO: Hora não corresponde após conversão! Esperado: ${hour}:${minute.toString().padStart(2, '0')}, Obtido: ${verificationBrazilian.getHours()}:${verificationBrazilian.getMinutes().toString().padStart(2, '0')}`)
+          }
 
           const result = await createAppointment({
             userId,
@@ -1581,11 +1612,12 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `  4. Varie suas perguntas: às vezes pergunte "Que dia funciona melhor?", outras vezes "Qual horário você prefere?", seja CONVERSACIONAL\n`
   prompt += `  5. Aceite qualquer forma que o cliente responder: "amanhã", "24/11", "quinta-feira", "7 da manhã", "16h", "4 da tarde", etc.\n`
   prompt += `- CONVERSÃO INTERNA DE DATAS (você faz isso internamente, não pede ao cliente):\n`
-  prompt += `  - "hoje" → calcule a data de hoje no formato DD/MM/YYYY\n`
-  prompt += `  - "amanhã" → calcule a data de amanhã no formato DD/MM/YYYY\n`
-  prompt += `  - "depois de amanhã" → calcule a data correspondente no formato DD/MM/YYYY\n`
-  prompt += `  - "24/11" ou "24/11/2025" → use "24/11/2025" (se não tiver ano, use o ano atual)\n`
-  prompt += `  - Exemplo: Se hoje é 22/11/2025 e o cliente diz "amanhã", você internamente converte para "23/11/2025"\n`
+  prompt += `  - "hoje" → calcule a data de hoje no formato DD/MM/YYYY usando o ANO ATUAL\n`
+  prompt += `  - "amanhã" → calcule a data de amanhã no formato DD/MM/YYYY usando o ANO ATUAL\n`
+  prompt += `  - "depois de amanhã" → calcule a data correspondente no formato DD/MM/YYYY usando o ANO ATUAL\n`
+  prompt += `  - "24/11" ou "24/11/2025" → use "24/11/YYYY" onde YYYY é o ANO ATUAL (não use anos passados ou muito futuros)\n`
+  prompt += `  - ⚠️ CRÍTICO: SEMPRE use o ANO ATUAL (2025) ao calcular datas relativas como "amanhã" ou "hoje"\n`
+  prompt += `  - Exemplo: Se hoje é 22/11/2025 e o cliente diz "amanhã", você internamente converte para "23/11/2025" (não "23/11/2024" ou "23/11/2026")\n`
   prompt += `- CONVERSÃO INTERNA DE HORAS (você faz isso internamente, não pede ao cliente):\n`
   prompt += `  - "7 da manhã" ou "7h da manhã" → "07:00"\n`
   prompt += `  - "4 da tarde" ou "4h da tarde" → "16:00"\n`
