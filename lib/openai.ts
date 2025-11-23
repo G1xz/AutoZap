@@ -193,47 +193,10 @@ export async function generateAIResponse(
   // Se a IA quer chamar uma função, executa e continua a conversa
   if (response.functionCall && context?.onFunctionCall) {
     try {
-      console.log(`🔧 IA chamou função: ${response.functionCall.name}`)
-      console.log(`🔧 Argumentos recebidos:`, response.functionCall.arguments)
-      
-      // Parse dos argumentos se for string
-      let parsedArgs = response.functionCall.arguments
-      if (typeof parsedArgs === 'string') {
-        try {
-          parsedArgs = JSON.parse(parsedArgs)
-          console.log(`✅ Argumentos parseados com sucesso:`, parsedArgs)
-        } catch (e) {
-          console.error('❌ Erro ao fazer parse dos argumentos:', e)
-          console.error('❌ String recebida:', parsedArgs)
-          // Tenta extrair manualmente se o parse falhar
-          try {
-            // Tenta extrair date e time mesmo se o JSON estiver malformado
-            const dateMatch = parsedArgs.match(/"date"\s*:\s*"([^"]+)"/)
-            const timeMatch = parsedArgs.match(/"time"\s*:\s*"([^"]+)"/)
-            if (dateMatch && timeMatch) {
-              parsedArgs = { date: dateMatch[1], time: timeMatch[1] }
-              console.log(`⚠️ Extraído manualmente:`, parsedArgs)
-            } else {
-              parsedArgs = {}
-            }
-          } catch (e2) {
-            console.error('❌ Erro ao extrair manualmente:', e2)
-            parsedArgs = {}
-          }
-        }
-      } else if (parsedArgs && typeof parsedArgs === 'object') {
-        console.log(`✅ Argumentos já são objeto:`, parsedArgs)
-      } else {
-        console.error(`❌ Tipo inesperado de argumentos:`, typeof parsedArgs, parsedArgs)
-        parsedArgs = {}
-      }
-      
       const functionResult = await context.onFunctionCall(
         response.functionCall.name,
-        parsedArgs
+        response.functionCall.arguments
       )
-      
-      console.log(`✅ Resultado da função:`, functionResult)
 
       // Adiciona a resposta da função e pede para a IA continuar
       messages.push({
@@ -241,46 +204,26 @@ export async function generateAIResponse(
         content: '',
         function_call: {
           name: response.functionCall.name,
-          arguments: typeof parsedArgs === 'string' ? parsedArgs : JSON.stringify(parsedArgs),
+          arguments: JSON.stringify(response.functionCall.arguments),
         },
       })
 
-      // Garante que o conteúdo da função seja uma string válida
-      let functionContent = ''
-      if (typeof functionResult === 'string') {
-        functionContent = functionResult
-      } else if (functionResult && typeof functionResult === 'object') {
-        try {
-          functionContent = JSON.stringify(functionResult)
-        } catch (e) {
-          console.error('❌ Erro ao serializar resultado da função:', e)
-          functionContent = JSON.stringify({ success: false, error: 'Erro ao processar resultado' })
-        }
-      } else {
-        functionContent = String(functionResult || '')
-      }
-      
-      console.log(`📤 Enviando resultado da função para IA:`, functionContent)
-      
       messages.push({
         role: 'function',
         name: response.functionCall.name,
-        content: functionContent,
+        content: JSON.stringify(functionResult),
       })
 
       // Chama novamente para obter a resposta final
-      console.log(`🔄 Chamando IA novamente para gerar resposta final após função...`)
       const finalResponse = await callChatGPT(messages, {
         temperature: context?.temperature,
         maxTokens: context?.maxTokens,
         functions: context?.functions,
       })
-      
-      console.log(`✅ Resposta final da IA:`, finalResponse.content)
+
       return finalResponse.content
     } catch (error) {
-      console.error('❌ Erro ao executar função:', error)
-      console.error('❌ Stack trace:', error instanceof Error ? error.stack : 'N/A')
+      console.error('Erro ao executar função:', error)
       return 'Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente.'
     }
   }

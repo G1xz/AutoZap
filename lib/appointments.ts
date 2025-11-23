@@ -19,15 +19,6 @@ export interface CreateAppointmentParams {
  */
 export async function createAppointment(params: CreateAppointmentParams) {
   try {
-    console.log(`💾 Tentando criar agendamento no banco com params:`, {
-      userId: params.userId,
-      instanceId: params.instanceId,
-      contactNumber: params.contactNumber,
-      contactName: params.contactName,
-      date: params.date,
-      description: params.description,
-    })
-    
     const appointment = await prisma.appointment.create({
       data: {
         userId: params.userId,
@@ -40,13 +31,6 @@ export async function createAppointment(params: CreateAppointmentParams) {
       },
     })
 
-    console.log(`✅ Agendamento criado com sucesso no banco:`, {
-      id: appointment.id,
-      date: appointment.date,
-      description: appointment.description,
-      status: appointment.status,
-    })
-
     return {
       success: true,
       appointment: {
@@ -57,14 +41,10 @@ export async function createAppointment(params: CreateAppointmentParams) {
       },
     }
   } catch (error) {
-    console.error('❌ Erro ao criar agendamento no banco:', error)
-    if (error instanceof Error) {
-      console.error('❌ Mensagem de erro:', error.message)
-      console.error('❌ Stack trace:', error.stack)
-    }
+    console.error('Erro ao criar agendamento:', error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : 'Erro ao criar agendamento',
+      error: 'Erro ao criar agendamento',
     }
   }
 }
