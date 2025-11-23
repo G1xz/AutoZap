@@ -1275,6 +1275,14 @@ async function executeAIOnlyWorkflow(
           
           console.log(`📅 Processando: date="${dateStr}", time="${timeStr}"`)
           
+          // Obtém data atual do Brasil ANTES de usar no parsing
+          const nowBrazilian = getBrazilianDate()
+          const currentYear = nowBrazilian.getFullYear()
+          const currentMonth = nowBrazilian.getMonth()
+          const currentDay = nowBrazilian.getDate()
+          
+          console.log(`📅 Data/hora atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} às ${nowBrazilian.getHours()}:${nowBrazilian.getMinutes().toString().padStart(2, '0')}`)
+          
           // Processa a data (formato DD/MM/YYYY) - mais tolerante
           let day: number, month: number, year: number
           const dateMatch = dateStr.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
@@ -1289,7 +1297,7 @@ async function executeAIOnlyWorkflow(
             if (dateMatch2) {
               day = parseInt(dateMatch2[1])
               month = parseInt(dateMatch2[2]) - 1
-              year = nowBrazilian.getFullYear() // Usa ano atual
+              year = currentYear // Usa ano atual
               console.log(`⚠️ Data sem ano, usando ano atual: ${year}`)
             } else {
               console.error(`❌ Formato de data inválido: "${dateStr}"`)
@@ -1360,15 +1368,6 @@ async function executeAIOnlyWorkflow(
           }
           
           console.log(`✅ Validação passou: day=${day}, month=${month + 1}, year=${year}, hour=${hour}, minute=${minute}`)
-          
-          // Cria a data no horário do Brasil (move para antes do parsing para usar nas validações)
-          const nowBrazilian = getBrazilianDate()
-          const currentYear = nowBrazilian.getFullYear()
-          const currentMonth = nowBrazilian.getMonth()
-          const currentDay = nowBrazilian.getDate()
-          
-          console.log(`📅 Data/hora recebida da IA: date="${dateStr}", time="${timeStr}"`)
-          console.log(`📅 Data/hora atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} às ${nowBrazilian.getHours()}:${nowBrazilian.getMinutes().toString().padStart(2, '0')}`)
           
           // Corrige o ano se necessário
           let finalYear = year
