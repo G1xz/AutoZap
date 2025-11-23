@@ -1,7 +1,7 @@
 'use client'
 
 import { NodeProps, Position } from '@xyflow/react'
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { CustomHandle } from './CustomHandle'
 import { useToast } from '@/hooks/use-toast'
 
@@ -11,6 +11,8 @@ interface ServiceNodeData {
   description?: string
   price?: number
   imageUrl?: string
+  requiresAppointment?: boolean
+  appointmentDuration?: number // Duração em minutos
 }
 
 export default function ServiceNode(props: NodeProps) {
@@ -23,8 +25,20 @@ export default function ServiceNode(props: NodeProps) {
   const [description, setDescription] = useState(nodeData.description || '')
   const [price, setPrice] = useState(nodeData.price?.toString() || '')
   const [imageUrl, setImageUrl] = useState(nodeData.imageUrl || '')
+  const [requiresAppointment, setRequiresAppointment] = useState(nodeData.requiresAppointment || false)
+  const [appointmentDuration, setAppointmentDuration] = useState(nodeData.appointmentDuration?.toString() || '')
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Sincroniza estados quando os dados do nó mudarem (ao carregar catálogo existente)
+  useEffect(() => {
+    setName(nodeData.name || '')
+    setDescription(nodeData.description || '')
+    setPrice(nodeData.price?.toString() || '')
+    setImageUrl(nodeData.imageUrl || '')
+    setRequiresAppointment(nodeData.requiresAppointment || false)
+    setAppointmentDuration(nodeData.appointmentDuration?.toString() || '')
+  }, [nodeData.name, nodeData.description, nodeData.price, nodeData.imageUrl, nodeData.requiresAppointment, nodeData.appointmentDuration])
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -76,6 +90,8 @@ export default function ServiceNode(props: NodeProps) {
     nodeData.description = description
     nodeData.price = price ? parseFloat(price) : undefined
     nodeData.imageUrl = imageUrl
+    nodeData.requiresAppointment = requiresAppointment
+    nodeData.appointmentDuration = appointmentDuration ? parseInt(appointmentDuration) : undefined
     setIsEditing(false)
   }
 
@@ -160,6 +176,34 @@ export default function ServiceNode(props: NodeProps) {
               className="w-full px-2 py-1 text-xs bg-white/90 rounded border border-gray-300 text-gray-800"
             />
           </div>
+          <div className="space-y-2 pt-2 border-t border-white/20">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={requiresAppointment}
+                onChange={(e) => setRequiresAppointment(e.target.checked)}
+                className="nodrag w-4 h-4 rounded border-gray-300 text-autozap-primary focus:ring-autozap-primary"
+              />
+              <span className="text-xs font-semibold text-white">
+                Precisa de agendamento?
+              </span>
+            </label>
+            {requiresAppointment && (
+              <div>
+                <label className="text-xs font-semibold text-white block mb-1">
+                  Duração do agendamento (minutos):
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={appointmentDuration}
+                  onChange={(e) => setAppointmentDuration(e.target.value)}
+                  placeholder="Ex: 30, 60, 90..."
+                  className="w-full px-2 py-1 text-xs bg-white/90 rounded border border-gray-300 text-gray-800"
+                />
+              </div>
+            )}
+          </div>
           <div className="flex gap-2">
             <button
               onClick={handleSave}
@@ -180,6 +224,15 @@ export default function ServiceNode(props: NodeProps) {
           {name && <div className="text-xs text-white/90 font-medium">{name}</div>}
           {description && <div className="text-xs text-white/80 bg-white/10 p-2 rounded">{description}</div>}
           {price && <div className="text-xs text-white/90 font-bold">R$ {parseFloat(price).toFixed(2)}</div>}
+          {requiresAppointment && (
+            <div className="text-xs text-white/90 bg-white/10 px-2 py-1 rounded flex items-center gap-1">
+              <span>📅</span>
+              <span>Agendamento necessário</span>
+              {appointmentDuration && (
+                <span className="text-white/70">({appointmentDuration} min)</span>
+              )}
+            </div>
+          )}
           {imageUrl && (
             <div className="w-full h-16 bg-white/10 rounded overflow-hidden">
               <img src={imageUrl} alt={name} className="w-full h-full object-cover" />

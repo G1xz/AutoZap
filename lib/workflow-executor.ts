@@ -868,6 +868,7 @@ async function executeAIOnlyWorkflow(
           // Extrair produtos e serviços do catálogo
           const catalogProducts: string[] = []
           const catalogServices: string[] = []
+          const servicesWithAppointment: Array<{ name: string; duration?: number }> = []
 
           catalog.nodes.forEach((node: any) => {
             try {
@@ -876,7 +877,9 @@ async function executeAIOnlyWorkflow(
                 type: node.type,
                 name: nodeData.name,
                 hasPrice: !!nodeData.price,
-                price: nodeData.price
+                price: nodeData.price,
+                requiresAppointment: nodeData.requiresAppointment,
+                appointmentDuration: nodeData.appointmentDuration
               })
               
               if (node.type === 'product' && nodeData.name) {
@@ -892,6 +895,16 @@ async function executeAIOnlyWorkflow(
                   serviceName += ` - R$ ${nodeData.price.toFixed(2).replace('.', ',')}`
                 }
                 catalogServices.push(serviceName)
+                
+                // Coleta informações de agendamento do serviço
+                if (nodeData.requiresAppointment) {
+                  servicesWithAppointment.push({
+                    name: nodeData.name,
+                    duration: nodeData.appointmentDuration
+                  })
+                  console.log(`📅 Serviço com agendamento: ${nodeData.name} (duração: ${nodeData.appointmentDuration || 'não especificada'} min)`)
+                }
+                
                 console.log(`✅ Serviço adicionado: ${serviceName}`)
               } else {
                 console.log(`⚠️ Nó ignorado: tipo=${node.type}, tem nome=${!!nodeData.name}`)
@@ -905,6 +918,9 @@ async function executeAIOnlyWorkflow(
           // Limpa produtos/serviços manuais quando há catálogo
           businessDetails.products = catalogProducts.length > 0 ? catalogProducts : []
           businessDetails.services = catalogServices.length > 0 ? catalogServices : []
+          
+          // Armazena informações de agendamento dos serviços
+          businessDetails.servicesWithAppointment = servicesWithAppointment
           
           console.log(`📦 Produtos do catálogo carregados: ${catalogProducts.length} produtos`, catalogProducts)
           console.log(`🛠️ Serviços do catálogo carregados: ${catalogServices.length} serviços`, catalogServices)
@@ -1512,6 +1528,20 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
     prompt += `\nNUNCA liste serviços separados por vírgula. SEMPRE use o formato acima com marcadores (-) e quebra de linha.`
   }
 
+  // Serviços que precisam de agendamento
+  const servicesWithAppointment = businessDetails.servicesWithAppointment || []
+  if (servicesWithAppointment.length > 0) {
+    prompt += `\n\n📅 SERVIÇOS QUE PRECISAM DE AGENDAMENTO:\n`
+    servicesWithAppointment.forEach((service: { name: string; duration?: number }) => {
+      if (service.duration) {
+        prompt += `- ${service.name} (duração: ${service.duration} minutos)\n`
+      } else {
+        prompt += `- ${service.name} (duração não especificada)\n`
+      }
+    })
+    prompt += `\n⚠️ IMPORTANTE: Quando o cliente mencionar interesse em algum desses serviços, você DEVE oferecer agendamento de forma natural. Informe que o serviço requer agendamento e pergunte quando seria melhor para o cliente.`
+  }
+
   // Informações de preço
   if (pricingInfo) {
     prompt += `\n\nINFORMAÇÕES DE PREÇO:\n${pricingInfo}`
@@ -1597,6 +1627,18 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- Você está conversando com ${contactName}\n`
   prompt += `- Lembre-se: você é um VENDEDOR, não um assistente genérico\n`
   prompt += `\n\n📅 FUNCIONALIDADE DE AGENDAMENTO:\n`
+  if (servicesWithAppointment.length > 0) {
+    prompt += `- Os seguintes serviços REQUEREM agendamento:\n`
+    servicesWithAppointment.forEach((service: { name: string; duration?: number }) => {
+      if (service.duration) {
+        prompt += `  * ${service.name} (duração aproximada: ${service.duration} minutos)\n`
+      } else {
+        prompt += `  * ${service.name}\n`
+      }
+    })
+    prompt += `- Quando o cliente mencionar interesse em algum desses serviços, você DEVE oferecer agendamento de forma natural e proativa\n`
+    prompt += `- Se o cliente perguntar sobre um serviço que requer agendamento, mencione que é necessário agendar e ofereça ajuda para marcar\n`
+  }
   prompt += `- Quando o cliente quiser agendar algo, marcar uma consulta, ou definir um horário, você deve ENTENDER a linguagem natural do cliente e converter internamente\n`
   prompt += `- ⚠️ CRÍTICO: NUNCA peça ao cliente para usar formatos técnicos como "DD/MM/YYYY" ou "HH:MM" - você deve entender a linguagem natural dele\n`
   prompt += `- ⚠️ CRÍTICO: NUNCA seja repetitivo ou genérico ao responder sobre agendamento\n`

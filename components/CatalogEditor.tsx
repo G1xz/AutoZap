@@ -186,7 +186,7 @@ export default function CatalogEditor({ catalogId, onSave }: CatalogEditorProps)
       case 'product':
         return { label: 'Produto', name: '', description: '', price: undefined, imageUrl: '' }
       case 'service':
-        return { label: 'Serviço', name: '', description: '', price: undefined, imageUrl: '' }
+        return { label: 'Serviço', name: '', description: '', price: undefined, imageUrl: '', requiresAppointment: false, appointmentDuration: undefined }
       case 'category':
         return { label: 'Categoria', name: '', description: '' }
       default:
