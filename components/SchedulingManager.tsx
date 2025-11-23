@@ -76,22 +76,31 @@ export default function SchedulingManager() {
     }
   }
 
+  // Função auxiliar para converter UTC para horário do Brasil (UTC-3)
+  const utcToBrazilian = (utcDate: Date): Date => {
+    return new Date(utcDate.getTime() - (3 * 60 * 60000))
+  }
+
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleString('pt-BR', {
+    const utcDate = new Date(dateString) // Data vem do banco em UTC
+    const brazilianDate = utcToBrazilian(utcDate) // Converte para horário do Brasil
+    return brazilianDate.toLocaleString('pt-BR', {
       day: '2-digit',
       month: '2-digit',
       year: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      timeZone: 'America/Sao_Paulo', // Força uso do fuso horário do Brasil
     })
   }
 
   const formatTime = (dateString: string) => {
-    const date = new Date(dateString)
-    return date.toLocaleTimeString('pt-BR', {
+    const utcDate = new Date(dateString) // Data vem do banco em UTC
+    const brazilianDate = utcToBrazilian(utcDate) // Converte para horário do Brasil
+    return brazilianDate.toLocaleTimeString('pt-BR', {
       hour: '2-digit',
       minute: '2-digit',
+      timeZone: 'America/Sao_Paulo', // Força uso do fuso horário do Brasil
     })
   }
 
@@ -151,29 +160,56 @@ export default function SchedulingManager() {
 
   const getAppointmentsForDate = (date: Date | null) => {
     if (!date) return []
-    const dateStr = date.toISOString().split('T')[0]
+    // Usa horário do Brasil para comparar datas
+    const dateStr = date.toLocaleDateString('pt-BR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    })
     return appointments.filter(apt => {
-      const aptDate = new Date(apt.date).toISOString().split('T')[0]
-      return aptDate === dateStr && apt.status !== 'cancelled'
+      const utcDate = new Date(apt.date)
+      const brazilianDate = utcToBrazilian(utcDate)
+      const aptDateStr = brazilianDate.toLocaleDateString('pt-BR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        timeZone: 'America/Sao_Paulo',
+      })
+      return aptDateStr === dateStr && apt.status !== 'cancelled'
     })
   }
 
   const getUpcomingAppointments = () => {
-    const now = new Date()
+    const nowBrazilian = utcToBrazilian(new Date()) // Horário atual no Brasil
     return appointments
       .filter(apt => {
-        const aptDate = new Date(apt.date)
-        return aptDate >= now && apt.status !== 'cancelled'
+        const utcDate = new Date(apt.date)
+        const aptDateBrazilian = utcToBrazilian(utcDate)
+        return aptDateBrazilian >= nowBrazilian && apt.status !== 'cancelled'
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
       .slice(0, 5)
   }
 
   const getSelectedDateAppointments = () => {
-    const dateStr = selectedDate.toISOString().split('T')[0]
+    // Usa horário do Brasil para comparar datas
+    const dateStr = selectedDate.toLocaleDateString('pt-BR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      timeZone: 'America/Sao_Paulo',
+    })
     return appointments.filter(apt => {
-      const aptDate = new Date(apt.date).toISOString().split('T')[0]
-      return aptDate === dateStr
+      const utcDate = new Date(apt.date)
+      const brazilianDate = utcToBrazilian(utcDate)
+      const aptDateStr = brazilianDate.toLocaleDateString('pt-BR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        timeZone: 'America/Sao_Paulo',
+      })
+      return aptDateStr === dateStr
     }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
   }
 
@@ -369,8 +405,10 @@ export default function SchedulingManager() {
             ) : (
               <div className="space-y-3">
                 {upcomingAppointments.map((appointment) => {
-                  const aptDate = new Date(appointment.date)
-                  const isToday = aptDate.toDateString() === new Date().toDateString()
+                  const utcDate = new Date(appointment.date)
+                  const aptDateBrazilian = utcToBrazilian(utcDate)
+                  const nowBrazilian = utcToBrazilian(new Date())
+                  const isToday = aptDateBrazilian.toDateString() === nowBrazilian.toDateString()
                   
                   return (
                     <div
@@ -384,9 +422,10 @@ export default function SchedulingManager() {
                       <div className="flex items-start justify-between mb-2">
                         <div className="flex-1">
                           <div className="text-xs font-semibold text-gray-600 mb-1">
-                            {isToday ? 'Hoje' : aptDate.toLocaleDateString('pt-BR', { 
+                            {isToday ? 'Hoje' : aptDateBrazilian.toLocaleDateString('pt-BR', { 
                               day: '2-digit', 
-                              month: 'short' 
+                              month: 'short',
+                              timeZone: 'America/Sao_Paulo',
                             })}
                           </div>
                           <div className="text-sm font-semibold text-gray-900">
