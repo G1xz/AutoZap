@@ -1134,35 +1134,78 @@ async function executeAIOnlyWorkflow(
       return new Date(utcDate.getTime() - (3 * 60 * 60000))
     }
 
+    // Função auxiliar para calcular a próxima ocorrência de um dia da semana
+    const getNextWeekday = (targetDayOfWeek: number, now: Date): Date => {
+      // targetDayOfWeek: 0 = domingo, 1 = segunda, ..., 6 = sábado
+      const currentDayOfWeek = now.getDay()
+      let daysToAdd = targetDayOfWeek - currentDayOfWeek
+      
+      // Se o dia já passou esta semana, pega a próxima semana
+      if (daysToAdd <= 0) {
+        daysToAdd += 7
+      }
+      
+      const nextDate = new Date(now)
+      nextDate.setDate(now.getDate() + daysToAdd)
+      return nextDate
+    }
+
     // Função auxiliar para converter datas relativas em português
     const parsePortugueseDate = (dateStr: string): Date | null => {
       const lower = dateStr.toLowerCase().trim()
       const nowBrazilian = getBrazilianDate() // Usa horário do Brasil
       
-      // Extrai hora se mencionada (ex: "5 da tarde", "17h", "17:00")
+      // Extrai hora se mencionada (ex: "5 da tarde", "17h", "17:00", "meio-dia")
       let targetHour = 14 // Padrão: 14:00
       let targetMinute = 0
       
-      // Procura por padrões de hora
-      const hourPatterns = [
-        /(\d{1,2})\s*(?:da\s*)?(?:tarde|manhã|manha|noite)/i, // "5 da tarde", "17 da tarde"
-        /(\d{1,2}):(\d{2})/, // "17:30"
-        /(\d{1,2})h/i, // "17h"
-      ]
+      // Verifica "meio-dia" primeiro
+      if (lower.includes('meio-dia') || lower.includes('meio dia')) {
+        targetHour = 12
+        targetMinute = 0
+      } else {
+        // Procura por padrões de hora
+        const hourPatterns = [
+          /(\d{1,2})\s*(?:da\s*)?(?:tarde|manhã|manha|noite)/i, // "5 da tarde", "17 da tarde"
+          /(\d{1,2}):(\d{2})/, // "17:30"
+          /(\d{1,2})h/i, // "17h"
+        ]
+        
+        for (const pattern of hourPatterns) {
+          const match = lower.match(pattern)
+          if (match) {
+            targetHour = parseInt(match[1])
+            if (match[2]) {
+              targetMinute = parseInt(match[2])
+            }
+            
+            // Se mencionou "tarde" e hora < 12, adiciona 12 (ex: "5 da tarde" = 17h)
+            if ((lower.includes('tarde') || lower.includes('noite')) && targetHour < 12) {
+              targetHour += 12
+            }
+            break
+          }
+        }
+      }
       
-      for (const pattern of hourPatterns) {
-        const match = lower.match(pattern)
-        if (match) {
-          targetHour = parseInt(match[1])
-          if (match[2]) {
-            targetMinute = parseInt(match[2])
-          }
-          
-          // Se mencionou "tarde" e hora < 12, adiciona 12 (ex: "5 da tarde" = 17h)
-          if ((lower.includes('tarde') || lower.includes('noite')) && targetHour < 12) {
-            targetHour += 12
-          }
-          break
+      // Dias da semana em português (calcula a próxima ocorrência)
+      const weekdays: Record<string, number> = {
+        'domingo': 0,
+        'segunda': 1, 'segunda-feira': 1, 'segunda feira': 1,
+        'terça': 2, 'terça-feira': 2, 'terca': 2, 'terca-feira': 2, 'terça feira': 2, 'terca feira': 2,
+        'quarta': 3, 'quarta-feira': 3, 'quarta feira': 3,
+        'quinta': 4, 'quinta-feira': 4, 'quinta feira': 4,
+        'sexta': 5, 'sexta-feira': 5, 'sexta feira': 5,
+        'sábado': 6, 'sabado': 6,
+      }
+      
+      for (const [dayName, dayOfWeek] of Object.entries(weekdays)) {
+        if (lower.includes(dayName)) {
+          const nextDate = getNextWeekday(dayOfWeek, nowBrazilian)
+          nextDate.setHours(targetHour, targetMinute, 0, 0)
+          console.log(`📅 Parseado "${dayName}" → próxima ocorrência: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
+          const utcDate = brazilianToUTC(nextDate)
+          return utcDate
         }
       }
       
@@ -1272,40 +1315,88 @@ async function executeAIOnlyWorkflow(
             }
           }
           
-          // Processa a data (formato DD/MM/YYYY)
-          const dateMatch = args.date.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-          if (!dateMatch) {
-            return {
-              success: false,
-              error: `Data inválida: "${args.date}". Use o formato DD/MM/YYYY (ex: 24/11/2025).`,
+          // Tenta primeiro parsear como data em português (dias da semana, "amanhã", etc)
+          let appointmentDateBrazilian: Date | null = null
+          const parsedPortugueseDate = parsePortugueseDate(args.date)
+          
+          if (parsedPortugueseDate) {
+            // Se conseguiu parsear como data em português, usa ela
+            appointmentDateBrazilian = utcToBrazilian(parsedPortugueseDate)
+            console.log(`📅 Data parseada do português: ${appointmentDateBrazilian.getDate()}/${appointmentDateBrazilian.getMonth() + 1}/${appointmentDateBrazilian.getFullYear()}`)
+          }
+          
+          // Se não conseguiu parsear como português, tenta formato DD/MM/YYYY
+          if (!appointmentDateBrazilian) {
+            const dateMatch = args.date.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+            if (!dateMatch) {
+              return {
+                success: false,
+                error: `Data inválida: "${args.date}". Use o formato DD/MM/YYYY (ex: 24/11/2025) ou linguagem natural (ex: "terça-feira", "amanhã").`,
+              }
+            }
+            
+            const day = parseInt(dateMatch[1])
+            const month = parseInt(dateMatch[2]) - 1 // JavaScript usa meses 0-11
+            const year = parseInt(dateMatch[3])
+            
+            // Cria a data no horário do Brasil
+            const nowBrazilian = getBrazilianDate()
+            const currentYear = nowBrazilian.getFullYear()
+            
+            // Corrige o ano se necessário
+            let finalYear = year
+            if (year < currentYear) {
+              finalYear = currentYear
+              console.log(`⚠️ Ano ${year} é menor que o atual (${currentYear}), corrigindo para ${finalYear}`)
+            } else if (year > currentYear + 1) {
+              finalYear = currentYear
+              console.log(`⚠️ Ano ${year} é muito no futuro, corrigindo para ${finalYear}`)
+            }
+            
+            // Cria a data com o ano corrigido
+            appointmentDateBrazilian = new Date(finalYear, month, day, 0, 0, 0, 0)
+          }
+          
+          const day = appointmentDateBrazilian.getDate()
+          const month = appointmentDateBrazilian.getMonth()
+          const year = appointmentDateBrazilian.getFullYear()
+          
+          // Processa a hora (formato HH:MM ou "meio-dia")
+          let hour: number
+          let minute: number
+          
+          const timeLower = args.time.toLowerCase().trim()
+          
+          // Verifica se é "meio-dia"
+          if (timeLower.includes('meio-dia') || timeLower.includes('meio dia')) {
+            hour = 12
+            minute = 0
+          } else {
+            // Tenta formato HH:MM
+            const timeMatch = args.time.match(/(\d{1,2}):(\d{2})/)
+            if (!timeMatch) {
+              return {
+                success: false,
+                error: `Hora inválida: "${args.time}". Use o formato HH:MM (ex: 16:00) ou "meio-dia".`,
+              }
+            }
+            
+            hour = parseInt(timeMatch[1])
+            minute = parseInt(timeMatch[2])
+            
+            // Valida valores
+            if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
+              return {
+                success: false,
+                error: 'Hora inválida. Verifique os valores informados.',
+              }
             }
           }
           
-          const day = parseInt(dateMatch[1])
-          const month = parseInt(dateMatch[2]) - 1 // JavaScript usa meses 0-11
-          const year = parseInt(dateMatch[3])
+          // Define a hora na data já parseada (sempre sobrescreve para garantir que está correta)
+          appointmentDateBrazilian.setHours(hour, minute, 0, 0)
           
-          // Processa a hora (formato HH:MM)
-          const timeMatch = args.time.match(/(\d{1,2}):(\d{2})/)
-          if (!timeMatch) {
-            return {
-              success: false,
-              error: `Hora inválida: "${args.time}". Use o formato HH:MM (ex: 16:00).`,
-            }
-          }
-          
-          const hour = parseInt(timeMatch[1])
-          const minute = parseInt(timeMatch[2])
-          
-          // Valida valores
-          if (day < 1 || day > 31 || month < 0 || month > 11 || hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-            return {
-              success: false,
-              error: 'Data ou hora inválida. Verifique os valores informados.',
-            }
-          }
-          
-          // Cria a data no horário do Brasil
+          // Cria a data no horário do Brasil para comparação
           const nowBrazilian = getBrazilianDate()
           const currentYear = nowBrazilian.getFullYear()
           const currentMonth = nowBrazilian.getMonth()
@@ -1313,32 +1404,6 @@ async function executeAIOnlyWorkflow(
           
           console.log(`📅 Data/hora recebida da IA: date="${args.date}", time="${args.time}"`)
           console.log(`📅 Data/hora atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} às ${nowBrazilian.getHours()}:${nowBrazilian.getMinutes().toString().padStart(2, '0')}`)
-          
-          // Corrige o ano se necessário
-          let finalYear = year
-          if (year < currentYear) {
-            // Se o ano informado é menor que o atual, usa o ano atual
-            finalYear = currentYear
-            console.log(`⚠️ Ano ${year} é menor que o atual (${currentYear}), corrigindo para ${finalYear}`)
-          } else if (year > currentYear + 1) {
-            // Se o ano informado é muito no futuro (mais de 1 ano), provavelmente está errado, usa o ano atual
-            finalYear = currentYear
-            console.log(`⚠️ Ano ${year} é muito no futuro, corrigindo para ${finalYear}`)
-          }
-          
-          // Cria a data com o ano corrigido
-          const appointmentDateBrazilian = new Date(finalYear, month, day, hour, minute, 0, 0)
-          
-          // Validação adicional: se a data criada ainda está no passado, ajusta para o ano atual
-          if (appointmentDateBrazilian < nowBrazilian) {
-            // Se a data está no passado mesmo após correção, pode ser que o mês/dia estejam errados
-            // Mas vamos apenas garantir que o ano está correto
-            if (appointmentDateBrazilian.getFullYear() < currentYear) {
-              appointmentDateBrazilian.setFullYear(currentYear)
-              console.log(`⚠️ Data ainda no passado após correção, ajustando ano para ${currentYear}`)
-            }
-          }
-          
           console.log(`📅 Data/hora processada: ${day}/${month + 1}/${appointmentDateBrazilian.getFullYear()} às ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')} (Brasil)`)
           
           // Valida se a data não é no passado
@@ -1658,14 +1723,19 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `  - "amanhã" → calcule a data de amanhã no formato DD/MM/YYYY usando o ANO ATUAL\n`
   prompt += `  - "depois de amanhã" → calcule a data correspondente no formato DD/MM/YYYY usando o ANO ATUAL\n`
   prompt += `  - "24/11" ou "24/11/2025" → use "24/11/YYYY" onde YYYY é o ANO ATUAL (não use anos passados ou muito futuros)\n`
+  prompt += `  - DIAS DA SEMANA (SEMPRE calcule a PRÓXIMA ocorrência):\n`
+  prompt += `    * "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo" → calcule a PRÓXIMA ocorrência desse dia\n`
+  prompt += `    * Exemplo: Se hoje é quarta-feira e o cliente diz "terça-feira", calcule a PRÓXIMA terça-feira (não a que já passou)\n`
+  prompt += `    * Exemplo: Se hoje é segunda-feira e o cliente diz "segunda-feira", calcule a PRÓXIMA segunda-feira (que seria daqui a 7 dias)\n`
   prompt += `  - ⚠️ CRÍTICO: SEMPRE use o ANO ATUAL (2025) ao calcular datas relativas como "amanhã" ou "hoje"\n`
+  prompt += `  - ⚠️ CRÍTICO: Para dias da semana, SEMPRE calcule a PRÓXIMA ocorrência, nunca a que já passou\n`
   prompt += `  - Exemplo: Se hoje é 22/11/2025 e o cliente diz "amanhã", você internamente converte para "23/11/2025" (não "23/11/2024" ou "23/11/2026")\n`
   prompt += `- CONVERSÃO INTERNA DE HORAS (você faz isso internamente, não pede ao cliente):\n`
   prompt += `  - "7 da manhã" ou "7h da manhã" → "07:00"\n`
   prompt += `  - "4 da tarde" ou "4h da tarde" → "16:00"\n`
   prompt += `  - "9 da noite" ou "9h da noite" → "21:00"\n`
   prompt += `  - "14h" ou "14:00" → "14:00"\n`
-  prompt += `  - "meio-dia" → "12:00"\n`
+  prompt += `  - "meio-dia" ou "meio dia" → "12:00"\n`
   prompt += `  - Se não especificar hora, use "14:00" como padrão\n`
   prompt += `- FORMATO DA FUNÇÃO (você usa internamente, não menciona ao cliente):\n`
   prompt += `  - A função create_appointment espera:\n`
