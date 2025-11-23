@@ -193,10 +193,26 @@ export async function generateAIResponse(
   // Se a IA quer chamar uma função, executa e continua a conversa
   if (response.functionCall && context?.onFunctionCall) {
     try {
+      console.log(`🔧 IA chamou função: ${response.functionCall.name}`)
+      console.log(`🔧 Argumentos recebidos:`, response.functionCall.arguments)
+      
+      // Parse dos argumentos se for string
+      let parsedArgs = response.functionCall.arguments
+      if (typeof parsedArgs === 'string') {
+        try {
+          parsedArgs = JSON.parse(parsedArgs)
+        } catch (e) {
+          console.error('❌ Erro ao fazer parse dos argumentos:', e)
+          parsedArgs = {}
+        }
+      }
+      
       const functionResult = await context.onFunctionCall(
         response.functionCall.name,
-        response.functionCall.arguments
+        parsedArgs
       )
+      
+      console.log(`✅ Resultado da função:`, functionResult)
 
       // Adiciona a resposta da função e pede para a IA continuar
       messages.push({
@@ -204,26 +220,29 @@ export async function generateAIResponse(
         content: '',
         function_call: {
           name: response.functionCall.name,
-          arguments: JSON.stringify(response.functionCall.arguments),
+          arguments: typeof parsedArgs === 'string' ? parsedArgs : JSON.stringify(parsedArgs),
         },
       })
 
       messages.push({
         role: 'function',
         name: response.functionCall.name,
-        content: JSON.stringify(functionResult),
+        content: typeof functionResult === 'string' ? functionResult : JSON.stringify(functionResult),
       })
 
       // Chama novamente para obter a resposta final
+      console.log(`🔄 Chamando IA novamente para gerar resposta final após função...`)
       const finalResponse = await callChatGPT(messages, {
         temperature: context?.temperature,
         maxTokens: context?.maxTokens,
         functions: context?.functions,
       })
-
+      
+      console.log(`✅ Resposta final da IA:`, finalResponse.content)
       return finalResponse.content
     } catch (error) {
-      console.error('Erro ao executar função:', error)
+      console.error('❌ Erro ao executar função:', error)
+      console.error('❌ Stack trace:', error instanceof Error ? error.stack : 'N/A')
       return 'Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente.'
     }
   }

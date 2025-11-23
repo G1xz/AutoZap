@@ -1244,6 +1244,9 @@ async function executeAIOnlyWorkflow(
     // Handler para quando a IA chamar a função de agendamento
     // Agora recebe data e hora separadamente para processamento mais simples e confiável
     const handleFunctionCall = async (functionName: string, args: any) => {
+      console.log(`🔧 handleFunctionCall chamado: functionName="${functionName}", userId=${userId ? 'presente' : 'ausente'}`)
+      console.log(`🔧 Args recebidos:`, JSON.stringify(args, null, 2))
+      
       if (functionName === 'create_appointment' && userId) {
         try {
           console.log(`📅 Tentando criar agendamento com args:`, args)
