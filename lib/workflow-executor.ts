@@ -1275,14 +1275,25 @@ async function executeAIOnlyWorkflow(
       const currentYear = parseInt(brazilianParts.find(p => p.type === 'year')!.value)
       const currentMonth = parseInt(brazilianParts.find(p => p.type === 'month')!.value) - 1 // JavaScript usa 0-11
       const currentDay = parseInt(brazilianParts.find(p => p.type === 'day')!.value)
+      const currentWeekdayName = brazilianParts.find(p => p.type === 'weekday')!.value.toLowerCase()
       
-      // Obtém o dia da semana atual (0 = domingo, 1 = segunda, ..., 6 = sábado)
-      const currentDate = new Date(currentYear, currentMonth, currentDay)
-      const currentDayOfWeek = currentDate.getDay()
+      // Mapeia nome do dia da semana para número (0 = domingo, 1 = segunda, ..., 6 = sábado)
+      const weekdayMap: Record<string, number> = {
+        'domingo': 0,
+        'segunda-feira': 1, 'segunda': 1,
+        'terça-feira': 2, 'terça': 2, 'terca-feira': 2, 'terca': 2,
+        'quarta-feira': 3, 'quarta': 3,
+        'quinta-feira': 4, 'quinta': 4,
+        'sexta-feira': 5, 'sexta': 5,
+        'sábado': 6, 'sabado': 6,
+      }
+      
+      const currentDayOfWeek = weekdayMap[currentWeekdayName] ?? new Date(currentYear, currentMonth, currentDay).getDay()
       
       let daysToAdd = targetDayOfWeek - currentDayOfWeek
       
-      // Se o dia já passou esta semana, pega a próxima semana
+      // Se o dia já passou esta semana (daysToAdd <= 0), pega a próxima semana
+      // Se for o mesmo dia (daysToAdd === 0), também pega a próxima semana
       if (daysToAdd <= 0) {
         daysToAdd += 7
       }
@@ -1290,11 +1301,20 @@ async function executeAIOnlyWorkflow(
       const nextDate = new Date(currentYear, currentMonth, currentDay)
       nextDate.setDate(nextDate.getDate() + daysToAdd)
       
+      // Validação: verifica se o cálculo está correto
+      const nextDateCheck = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate())
+      const calculatedDayOfWeek = nextDateCheck.getDay()
+      
       console.log(`📅 Cálculo de dia da semana:`)
-      console.log(`   Data atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} (dia da semana: ${currentDayOfWeek})`)
-      console.log(`   Dia da semana desejado: ${targetDayOfWeek}`)
+      console.log(`   Data atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} (${currentWeekdayName}, dia da semana: ${currentDayOfWeek})`)
+      console.log(`   Dia da semana desejado: ${targetDayOfWeek} (${Object.keys(weekdayMap).find(k => weekdayMap[k] === targetDayOfWeek)})`)
       console.log(`   Dias a adicionar: ${daysToAdd}`)
-      console.log(`   Próxima ocorrência: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
+      console.log(`   Próxima ocorrência calculada: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
+      console.log(`   Validação: dia da semana da data calculada = ${calculatedDayOfWeek} (deve ser ${targetDayOfWeek})`)
+      
+      if (calculatedDayOfWeek !== targetDayOfWeek) {
+        console.error(`⚠️ ERRO: A data calculada não corresponde ao dia da semana desejado!`)
+      }
       
       return nextDate
     }
