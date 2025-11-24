@@ -812,16 +812,22 @@ async function processAppointmentConfirmation(
   }
 
   // Normaliza a mensagem para comparação (remove espaços extras e caracteres especiais)
+  // Remove todos os espaços, acentos e caracteres especiais para comparação mais robusta
   const userMessageLower = userMessage.toLowerCase().trim()
-  const normalizedMessage = userMessageLower.replace(/\s+/g, '').replace(/[.,!?]/g, '')
+  const normalizedMessage = userMessageLower
+    .replace(/\s+/g, '') // Remove todos os espaços
+    .replace(/[.,!?;:]/g, '') // Remove pontuação
+    .normalize('NFD') // Normaliza caracteres Unicode
+    .replace(/[\u0300-\u036f]/g, '') // Remove acentos
   
   console.log(`🔍 [processAppointmentConfirmation] Analisando mensagem:`)
   console.log(`   Mensagem original: "${userMessage}"`)
   console.log(`   Mensagem lowercase: "${userMessageLower}"`)
   console.log(`   Mensagem normalizada: "${normalizedMessage}"`)
   
-  // Detecção robusta de confirmação - verifica múltiplas variações
-  const isConfirmation = 
+  // Detecção MUITO robusta de confirmação - verifica múltiplas variações
+  // Primeiro verifica correspondências exatas
+  const exactMatch = 
     userMessageLower === 'confirmar' || 
     normalizedMessage === 'confirmar' ||
     userMessageLower === 'sim' || 
@@ -831,9 +837,29 @@ async function processAppointmentConfirmation(
     userMessageLower === 'ta certo' ||
     userMessageLower === 'esta certo' ||
     userMessageLower === 'está certo' ||
+    normalizedMessage === 'sim' ||
+    normalizedMessage === 'confirmo' ||
+    normalizedMessage === 'ok' ||
+    normalizedMessage === 'tacerto' ||
+    normalizedMessage === 'estacerto'
+  
+  // Depois verifica se começa com "confirmar"
+  const startsWithConfirm = 
     userMessageLower.startsWith('confirmar') ||
-    normalizedMessage.startsWith('confirmar') ||
-    (userMessageLower.length <= 15 && userMessageLower.includes('confirm'))
+    normalizedMessage.startsWith('confirmar')
+  
+  // Por último verifica se contém "confirm" (para pegar variações)
+  const containsConfirm = 
+    userMessageLower.length <= 20 && 
+    (userMessageLower.includes('confirm') || normalizedMessage.includes('confirm'))
+  
+  const isConfirmation = exactMatch || startsWithConfirm || containsConfirm
+  
+  console.log(`🔍 [processAppointmentConfirmation] Detecção detalhada:`)
+  console.log(`   Exact match: ${exactMatch}`)
+  console.log(`   Starts with confirm: ${startsWithConfirm}`)
+  console.log(`   Contains confirm: ${containsConfirm}`)
+  console.log(`   RESULTADO FINAL - É confirmação? ${isConfirmation}`)
   
   // Detecção de cancelamento
   const isCancellation = 
@@ -990,29 +1016,41 @@ async function executeAIOnlyWorkflow(
     console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
     
     if (processedAppointment) {
-      console.log(`✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA`)
+      console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
+      console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
       return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO CHAMA IA
     }
     
-    // Verificação adicional: se a mensagem é "confirmar" mas não há agendamento pendente,
-    // pode ser que acabou de confirmar. Não deve chamar IA para evitar criar novo agendamento
+    // PROTEÇÃO CRÍTICA: Verifica se acabou de confirmar um agendamento
+    // Mesmo que processAppointmentConfirmation retornou false, pode ser que o agendamento
+    // já foi confirmado em uma execução anterior. Verifica agendamentos muito recentes.
     const userMessageLower = userMessage.toLowerCase().trim()
-    const normalizedMsg = userMessageLower.replace(/\s+/g, '').replace(/[.,!?]/g, '')
+    const normalizedMsg = userMessageLower
+      .replace(/\s+/g, '')
+      .replace(/[.,!?;:]/g, '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+    
     const looksLikeConfirmation = 
       userMessageLower === 'confirmar' || 
       normalizedMsg === 'confirmar' ||
       userMessageLower === 'sim' ||
-      (userMessageLower.length <= 15 && userMessageLower.includes('confirm'))
+      normalizedMsg === 'sim' ||
+      userMessageLower.startsWith('confirmar') ||
+      normalizedMsg.startsWith('confirmar') ||
+      (userMessageLower.length <= 20 && (userMessageLower.includes('confirm') || normalizedMsg.includes('confirm')))
     
     if (looksLikeConfirmation) {
-      console.log(`⚠️ [executeAIOnlyWorkflow] Mensagem parece confirmação mas não há agendamento pendente`)
-      // Verifica se há um agendamento criado recentemente (últimos 60 segundos)
+      console.log(`⚠️⚠️⚠️ [executeAIOnlyWorkflow] ATENÇÃO: Mensagem parece confirmação!`)
+      console.log(`   Verificando se há agendamento criado recentemente...`)
+      
+      // Verifica se há um agendamento criado recentemente (últimos 120 segundos)
       const recentAppointment = await prisma.appointment.findFirst({
         where: {
           instanceId,
           contactNumber,
           createdAt: {
-            gte: new Date(Date.now() - 60000), // Últimos 60 segundos
+            gte: new Date(Date.now() - 120000), // Últimos 120 segundos
           },
         },
         orderBy: {
@@ -1021,8 +1059,12 @@ async function executeAIOnlyWorkflow(
       })
       
       if (recentAppointment) {
-        console.log(`✅ [executeAIOnlyWorkflow] Agendamento recente encontrado. NÃO CHAMARÁ IA para evitar duplicação`)
+        console.log(`✅✅✅ [executeAIOnlyWorkflow] BLOQUEADO: Agendamento criado há ${Math.round((Date.now() - recentAppointment.createdAt.getTime()) / 1000)}s`)
+        console.log(`✅✅✅ [executeAIOnlyWorkflow] NÃO CHAMARÁ IA para evitar duplicação`)
+        console.log(`✅✅✅ [executeAIOnlyWorkflow] RETORNANDO SEM CHAMAR IA`)
         return // Não chama IA se acabou de confirmar um agendamento
+      } else {
+        console.log(`   Nenhum agendamento recente encontrado, continuando...`)
       }
     }
     
