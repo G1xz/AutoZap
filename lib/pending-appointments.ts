@@ -92,7 +92,23 @@ export async function getPendingAppointment(
   contactNumber: string
 ): Promise<PendingAppointmentData | null> {
   try {
-    console.log(`🔍 [getPendingAppointment] Buscando agendamento pendente para ${instanceId}-${contactNumber}`)
+    console.log(`🔍🔍🔍 [getPendingAppointment] ========== BUSCANDO AGENDAMENTO PENDENTE ==========`)
+    console.log(`   instanceId: ${instanceId}`)
+    console.log(`   contactNumber: ${contactNumber}`)
+    
+    // Busca TODOS os agendamentos pendentes para este contato (para debug)
+    const allPending = await prisma.pendingAppointment.findMany({
+      where: {
+        instanceId,
+        contactNumber,
+      },
+    })
+    console.log(`🔍 [getPendingAppointment] Total de agendamentos pendentes encontrados: ${allPending.length}`)
+    if (allPending.length > 0) {
+      allPending.forEach((p, i) => {
+        console.log(`   [${i + 1}] ID: ${p.id}, Data: ${p.date}, Hora: ${p.time}, Expira: ${p.expiresAt.toISOString()}`)
+      })
+    }
     
     const pending = await prisma.pendingAppointment.findUnique({
       where: {
@@ -104,7 +120,27 @@ export async function getPendingAppointment(
     })
 
     if (!pending) {
-      console.log(`❌ [getPendingAppointment] Nenhum agendamento pendente encontrado`)
+      console.log(`❌❌❌ [getPendingAppointment] NENHUM agendamento pendente encontrado na busca única`)
+      console.log(`❌❌❌ [getPendingAppointment] Verificando se há algum problema com os parâmetros...`)
+      
+      // Tenta buscar sem o índice único para ver se encontra algo
+      const anyPending = await prisma.pendingAppointment.findFirst({
+        where: {
+          instanceId: {
+            contains: instanceId,
+          },
+          contactNumber: {
+            contains: contactNumber,
+          },
+        },
+      })
+      
+      if (anyPending) {
+        console.log(`⚠️⚠️⚠️ [getPendingAppointment] Encontrado agendamento com busca parcial:`)
+        console.log(`   instanceId esperado: ${instanceId}, encontrado: ${anyPending.instanceId}`)
+        console.log(`   contactNumber esperado: ${contactNumber}, encontrado: ${anyPending.contactNumber}`)
+      }
+      
       return null
     }
 

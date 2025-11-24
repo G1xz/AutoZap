@@ -858,11 +858,41 @@ export async function processAppointmentConfirmation(
     clearPendingAppointment = pendingAppointmentsModule.clearPendingAppointment
     
     // Busca agendamento pendente na tabela dedicada PendingAppointment
+    console.log(`🔍 [processAppointmentConfirmation] Buscando agendamento pendente...`)
+    console.log(`   Parâmetros de busca:`)
+    console.log(`   - instanceId: "${instanceId}"`)
+    console.log(`   - contactNumber: "${contactNumber}"`)
+    
     pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
     
-    console.log(`🔍 [processAppointmentConfirmation] Agendamento pendente:`, pendingAppointment ? 'ENCONTRADO' : 'NÃO ENCONTRADO')
+    console.log(`🔍 [processAppointmentConfirmation] Resultado da busca:`)
+    console.log(`   Agendamento pendente:`, pendingAppointment ? '✅ ENCONTRADO' : '❌ NÃO ENCONTRADO')
     if (pendingAppointment) {
-      console.log(`   Dados do agendamento pendente:`, JSON.stringify(pendingAppointment, null, 2))
+      console.log(`   ✅ Dados do agendamento pendente encontrado:`)
+      console.log(`      - Data: ${pendingAppointment.date}`)
+      console.log(`      - Hora: ${pendingAppointment.time}`)
+      console.log(`      - Serviço: ${pendingAppointment.service}`)
+      console.log(`   JSON completo:`, JSON.stringify(pendingAppointment, null, 2))
+    } else {
+      console.log(`   ❌ NENHUM agendamento pendente encontrado para:`)
+      console.log(`      instanceId: ${instanceId}`)
+      console.log(`      contactNumber: ${contactNumber}`)
+      
+      // Busca diretamente no banco para debug
+      try {
+        const directCheck = await (prisma as any).pendingAppointment.findMany({
+          where: {
+            instanceId,
+          },
+        })
+        console.log(`   🔍 Debug: Total de agendamentos pendentes para esta instância: ${directCheck.length}`)
+        directCheck.forEach((p: any, i: number) => {
+          console.log(`      [${i + 1}] contactNumber: "${p.contactNumber}" (esperado: "${contactNumber}")`)
+          console.log(`          Data: ${p.date}, Hora: ${p.time}, Serviço: ${p.service}`)
+        })
+      } catch (dbError) {
+        console.error(`   ❌ Erro ao buscar diretamente no banco:`, dbError)
+      }
     }
     
     // Verifica se a mensagem parece confirmação ANTES de verificar se há agendamento pendente
@@ -2031,25 +2061,60 @@ async function executeAIOnlyWorkflow(
           }
           
           // Armazena temporariamente o agendamento pendente
+          console.log(`📅📅📅 [handleFunctionCall] ========== CRIANDO AGENDAMENTO PENDENTE ==========`)
+          console.log(`   instanceId: ${instanceId}`)
+          console.log(`   contactNumber: ${contactNumber}`)
+          console.log(`   userId: ${userId}`)
+          console.log(`   date: ${formattedDate}`)
+          console.log(`   time: ${formattedTime}`)
+          console.log(`   service: ${args.description || 'Serviço não especificado'}`)
+          
           const { storePendingAppointment, getPendingAppointment: verifyPending } = await import('./pending-appointments')
-          await storePendingAppointment(instanceId, contactNumber, {
-            date: formattedDate,
-            time: formattedTime,
-            duration: serviceDuration,
-            service: args.description || 'Serviço não especificado',
-            description: args.description,
-          }, userId) // Passa userId como parâmetro obrigatório
           
-          console.log(`📅 Agendamento pendente armazenado: ${formattedDate} às ${formattedTime}`)
+          try {
+            await storePendingAppointment(instanceId, contactNumber, {
+              date: formattedDate,
+              time: formattedTime,
+              duration: serviceDuration,
+              service: args.description || 'Serviço não especificado',
+              description: args.description,
+            }, userId) // Passa userId como parâmetro obrigatório
+            
+            console.log(`✅✅✅ [handleFunctionCall] storePendingAppointment chamado com SUCESSO`)
+          } catch (storeError) {
+            console.error(`❌❌❌ [handleFunctionCall] ERRO ao chamar storePendingAppointment:`, storeError)
+            console.error(`❌❌❌ [handleFunctionCall] Stack trace:`, storeError instanceof Error ? storeError.stack : 'N/A')
+            throw storeError // Propaga o erro
+          }
           
-          // CRÍTICO: Verifica se foi salvo corretamente ANTES de retornar
+          // CRÍTICO: Aguarda um pouco e verifica se foi salvo corretamente ANTES de retornar
+          // Pequeno delay para garantir que o banco processou
+          await new Promise(resolve => setTimeout(resolve, 100))
+          
           const verification = await verifyPending(instanceId, contactNumber)
           if (verification) {
             console.log(`✅✅✅ [handleFunctionCall] VERIFICAÇÃO: Agendamento pendente confirmado no banco após salvar`)
             console.log(`✅✅✅ [handleFunctionCall] Dados verificados:`, JSON.stringify(verification, null, 2))
           } else {
             console.error(`❌❌❌ [handleFunctionCall] ERRO CRÍTICO: Agendamento pendente NÃO encontrado após salvar!`)
-            console.error(`❌❌❌ [handleFunctionCall] Isso pode causar problemas na confirmação!`)
+            console.error(`❌❌❌ [handleFunctionCall] instanceId usado: ${instanceId}`)
+            console.error(`❌❌❌ [handleFunctionCall] contactNumber usado: ${contactNumber}`)
+            console.error(`❌❌❌ [handleFunctionCall] Isso vai causar problemas na confirmação!`)
+            
+            // Tenta buscar diretamente no banco para debug
+            try {
+              const directCheck = await (prisma as any).pendingAppointment.findMany({
+                where: {
+                  instanceId,
+                },
+              })
+              console.error(`❌❌❌ [handleFunctionCall] Agendamentos pendentes para esta instância: ${directCheck.length}`)
+              directCheck.forEach((p: any, i: number) => {
+                console.error(`   [${i + 1}] contactNumber: ${p.contactNumber}, date: ${p.date}, time: ${p.time}`)
+              })
+            } catch (dbError) {
+              console.error(`❌❌❌ [handleFunctionCall] Erro ao buscar diretamente no banco:`, dbError)
+            }
           }
 
           // Retorna mensagem de confirmação para o usuário
