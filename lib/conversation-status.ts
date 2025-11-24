@@ -4,6 +4,7 @@ export type ConversationStatusType = 'active' | 'waiting_human' | 'closed'
 
 /**
  * Atualiza ou cria o status de uma conversa
+ * ⚠️ CRÍTICO: NÃO sobrescreve se já existe um agendamento pendente (a menos que seja explicitamente 'active')
  */
 export async function updateConversationStatus(
   instanceId: string,
@@ -11,6 +12,22 @@ export async function updateConversationStatus(
   status: ConversationStatusType
 ): Promise<void> {
   try {
+    // Verifica se existe um agendamento pendente antes de atualizar
+    const existing = await prisma.conversationStatus.findUnique({
+      where: {
+        instanceId_contactNumber: {
+          instanceId,
+          contactNumber,
+        },
+      },
+    })
+
+    // ⚠️ CRÍTICO: Se há agendamento pendente e não estamos explicitamente limpando para 'active', não sobrescreve
+    if (existing?.status?.startsWith('pending_appointment:') && status !== 'active') {
+      console.log(`⚠️ [updateConversationStatus] Agendamento pendente encontrado, NÃO sobrescrevendo com status "${status}"!`)
+      return // Mantém o agendamento pendente intacto
+    }
+
     await prisma.conversationStatus.upsert({
       where: {
         instanceId_contactNumber: {
@@ -28,9 +45,9 @@ export async function updateConversationStatus(
         status,
       },
     })
-    console.log(`✅ Status da conversa atualizado: ${instanceId}-${contactNumber} -> ${status}`)
+    console.log(`✅ [updateConversationStatus] Status da conversa atualizado: ${instanceId}-${contactNumber} -> ${status}`)
   } catch (error) {
-    console.error('Erro ao atualizar status da conversa:', error)
+    console.error('❌ [updateConversationStatus] Erro ao atualizar status da conversa:', error)
   }
 }
 
@@ -59,6 +76,7 @@ export async function getConversationStatus(
 
 /**
  * Inicializa status como 'active' quando uma nova mensagem chega
+ * ⚠️ CRÍTICO: NÃO sobrescreve se já existe um agendamento pendente
  */
 export async function ensureConversationStatus(
   instanceId: string,
@@ -74,6 +92,12 @@ export async function ensureConversationStatus(
       },
     })
 
+    // ⚠️ CRÍTICO: Se já existe um agendamento pendente, NÃO sobrescreve!
+    if (existing?.status?.startsWith('pending_appointment:')) {
+      console.log(`⚠️ [ensureConversationStatus] Agendamento pendente encontrado, NÃO sobrescrevendo!`)
+      return // Mantém o agendamento pendente intacto
+    }
+
     if (!existing) {
       await prisma.conversationStatus.create({
         data: {
@@ -82,9 +106,12 @@ export async function ensureConversationStatus(
           status: 'active',
         },
       })
+      console.log(`✅ [ensureConversationStatus] Status criado: active`)
+    } else {
+      console.log(`✅ [ensureConversationStatus] Status já existe: ${existing.status}`)
     }
   } catch (error) {
-    console.error('Erro ao garantir status da conversa:', error)
+    console.error('❌ [ensureConversationStatus] Erro ao garantir status da conversa:', error)
   }
 }
 

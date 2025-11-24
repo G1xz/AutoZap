@@ -827,7 +827,7 @@ export async function processQuestionnaireResponse(
  * Processa confirmação ou cancelamento de agendamento pendente
  * Retorna true se processou algo (confirmação ou cancelamento), false caso contrário
  */
-async function processAppointmentConfirmation(
+export async function processAppointmentConfirmation(
   instanceId: string,
   contactNumber: string,
   userMessage: string,
@@ -1763,6 +1763,29 @@ async function executeAIOnlyWorkflow(
               pending: true,
               error: reminderMessage,
               message: reminderMessage,
+            }
+          }
+          
+          // CRÍTICO: Verifica se acabou de confirmar um agendamento (últimos 60 segundos)
+          // Se sim, não cria novo agendamento para evitar loop
+          const recentConfirmedAppointment = await prisma.appointment.findFirst({
+            where: {
+              instanceId,
+              contactNumber,
+              createdAt: {
+                gte: new Date(Date.now() - 60000), // Últimos 60 segundos
+              },
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+          })
+          
+          if (recentConfirmedAppointment) {
+            console.log(`⚠️ Agendamento confirmado recentemente encontrado. Não criando novo agendamento para evitar loop.`)
+            return {
+              success: false,
+              error: 'Você acabou de confirmar um agendamento. Se precisar fazer outro agendamento, aguarde alguns instantes.',
             }
           }
           

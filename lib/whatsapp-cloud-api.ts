@@ -770,6 +770,56 @@ export async function processIncomingMessage(
   message: WhatsAppMessage
 ): Promise<void> {
   try {
+    // ⚠️⚠️⚠️ CRÍTICO: PRIMEIRA COISA - Verifica confirmação de agendamento ANTES de qualquer outra operação
+    // Isso garante que confirmações sejam processadas imediatamente, mesmo antes de salvar mensagem ou garantir status
+    console.log(`🔍 [processIncomingMessage] PRIMEIRA VERIFICAÇÃO: Confirmação de agendamento`)
+    
+    try {
+      // Busca userId da instância
+      const instance = await prisma.whatsAppInstance.findUnique({
+        where: { id: instanceId },
+        select: { userId: true },
+      })
+      
+      if (instance?.userId) {
+        // Importa função de processamento de agendamento
+        const workflowExecutor = await import('./workflow-executor')
+        
+        // Processa confirmação/cancelamento ANTES de qualquer outra coisa
+        const processedAppointment = await workflowExecutor.processAppointmentConfirmation(
+          instanceId,
+          message.from,
+          message.body, // Mensagem original
+          instance.userId,
+          message.contactName
+        )
+        
+        if (processedAppointment) {
+          console.log(`✅✅✅ [processIncomingMessage] Agendamento processado, RETORNANDO SEM PROCESSAR MENSAGEM ✅✅✅`)
+          // Salva a mensagem mesmo assim para histórico
+          await prisma.message.create({
+            data: {
+              instanceId,
+              from: message.from,
+              to: message.to,
+              body: message.body,
+              timestamp: new Date(message.timestamp * 1000),
+              isFromMe: false,
+              isGroup: false,
+              messageType: message.type || 'text',
+              messageId: message.messageId,
+              mediaUrl: message.mediaUrl || null,
+              interactiveData: message.interactiveData || null,
+            },
+          })
+          return // CRÍTICO: Retorna aqui se processou confirmação - NÃO PROCESSA MAIS NADA
+        }
+      }
+    } catch (error) {
+      console.error(`❌ [processIncomingMessage] Erro ao verificar agendamento pendente:`, error)
+      // Continua processamento normal mesmo se houver erro
+    }
+
     // Salva o nome do contato se disponível
     if (message.contactName) {
       const { setContactInfo } = await import('./contacts')
@@ -777,6 +827,7 @@ export async function processIncomingMessage(
     }
 
     // Garante que a conversa tem um status (padrão: active)
+    // ⚠️ IMPORTANTE: ensureConversationStatus agora NÃO sobrescreve agendamentos pendentes
     const { ensureConversationStatus } = await import('./conversation-status')
     await ensureConversationStatus(instanceId, message.from)
 
