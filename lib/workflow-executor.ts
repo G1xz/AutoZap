@@ -834,9 +834,13 @@ export async function processAppointmentConfirmation(
   userId: string,
   contactName?: string
 ): Promise<boolean> {
+  // CRÍTICO: Normaliza o número ANTES de qualquer processamento
+  const normalizedContactNumber = contactNumber.replace(/\D/g, '')
+  
   console.log(`🔍🔍🔍 [processAppointmentConfirmation] ========== INICIANDO PROCESSAMENTO ==========`)
   console.log(`   instanceId: ${instanceId}`)
-  console.log(`   contactNumber: ${contactNumber}`)
+  console.log(`   contactNumber original: ${contactNumber}`)
+  console.log(`   contactNumber normalizado: ${normalizedContactNumber}`)
   console.log(`   userMessage: "${userMessage}"`)
   console.log(`   userId: ${userId}`)
   
@@ -866,7 +870,8 @@ export async function processAppointmentConfirmation(
     
     const maxSearchRetries = 3
     for (let attempt = 1; attempt <= maxSearchRetries; attempt++) {
-      pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
+      // Usa número normalizado para busca
+      pendingAppointment = await getPendingAppointment(instanceId, normalizedContactNumber)
       
       if (pendingAppointment) {
         console.log(`✅ [processAppointmentConfirmation] Agendamento pendente encontrado na tentativa ${attempt}/${maxSearchRetries}`)
@@ -1052,7 +1057,7 @@ export async function processAppointmentConfirmation(
     // CRÍTICO: Verifica novamente se o agendamento pendente ainda existe antes de processar
     // Isso evita race conditions quando múltiplas confirmações chegam simultaneamente
     const { getPendingAppointment: getPendingAppointmentFn } = await import('./pending-appointments')
-    const doubleCheckPending = await getPendingAppointmentFn(instanceId, contactNumber)
+    const doubleCheckPending = await getPendingAppointmentFn(instanceId, normalizedContactNumber)
     if (!doubleCheckPending) {
       console.log(`⚠️⚠️⚠️ [processAppointmentConfirmation] Agendamento pendente não encontrado na verificação dupla!`)
       console.log(`   Isso pode indicar que já foi confirmado por outra requisição simultânea.`)
@@ -1111,13 +1116,13 @@ export async function processAppointmentConfirmation(
       // Só remove o agendamento pendente APÓS criar o agendamento com sucesso
       // Verifica novamente antes de remover para evitar remover um que já foi removido
       const { getPendingAppointment: getPendingAppointmentFinal } = await import('./pending-appointments')
-      const finalCheck = await getPendingAppointmentFinal(instanceId, contactNumber)
+      const finalCheck = await getPendingAppointmentFinal(instanceId, normalizedContactNumber)
       if (finalCheck) {
         if (clearPendingAppointment) {
-          await clearPendingAppointment(instanceId, contactNumber)
+          await clearPendingAppointment(instanceId, normalizedContactNumber)
         } else {
           const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
-          await clearFn(instanceId, contactNumber)
+          await clearFn(instanceId, normalizedContactNumber)
         }
         console.log(`📅 Agendamento pendente removido APÓS criar agendamento com sucesso`)
       } else {
@@ -1154,10 +1159,10 @@ export async function processAppointmentConfirmation(
       if (isCancellation) {
     console.log(`❌ PROCESSANDO CANCELAMENTO DE AGENDAMENTO`)
         if (clearPendingAppointment) {
-          await clearPendingAppointment(instanceId, contactNumber)
+          await clearPendingAppointment(instanceId, normalizedContactNumber)
         } else {
           const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
-          await clearFn(instanceId, contactNumber)
+          await clearFn(instanceId, normalizedContactNumber)
         }
         const cancelMessage = `Agendamento cancelado. Se precisar de mais alguma coisa, estou à disposição!`
         const contactKey = `${instanceId}-${contactNumber}`

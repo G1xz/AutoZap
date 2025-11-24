@@ -24,7 +24,13 @@ export async function storePendingAppointment(
   userId: string
 ): Promise<void> {
   try {
+    // CRÍTICO: Normaliza o número para garantir consistência
+    // Remove tudo que não é dígito e garante formato consistente
+    const normalizedNumber = contactNumber.replace(/\D/g, '')
+    
     console.log(`📅 [storePendingAppointment] Armazenando agendamento pendente para ${instanceId}-${contactNumber}`)
+    console.log(`📅 [storePendingAppointment] Número original: "${contactNumber}"`)
+    console.log(`📅 [storePendingAppointment] Número normalizado: "${normalizedNumber}"`)
     console.log(`📅 [storePendingAppointment] Dados:`, JSON.stringify(data, null, 2))
     console.log(`📅 [storePendingAppointment] userId: ${userId}`)
     
@@ -34,11 +40,12 @@ export async function storePendingAppointment(
     
     // Usa upsert para garantir que só há um agendamento pendente por contato
     // Se já existir, atualiza; se não existir, cria
+    // CRÍTICO: Usa o número normalizado para garantir consistência
     const result = await prisma.pendingAppointment.upsert({
       where: {
         instanceId_contactNumber: {
           instanceId,
-          contactNumber,
+          contactNumber: normalizedNumber, // Usa número normalizado
         },
       },
       update: {
@@ -54,7 +61,7 @@ export async function storePendingAppointment(
       create: {
         userId,
         instanceId,
-        contactNumber,
+        contactNumber: normalizedNumber, // Usa número normalizado
         date: data.date,
         time: data.time,
         duration: data.duration || null,
@@ -68,8 +75,8 @@ export async function storePendingAppointment(
     console.log(`✅ [storePendingAppointment] ID: ${result.id}`)
     console.log(`✅ [storePendingAppointment] Expira em: ${expiresAt.toISOString()}`)
     
-    // Verifica se foi salvo corretamente
-    const verification = await getPendingAppointment(instanceId, contactNumber)
+    // Verifica se foi salvo corretamente (usa número normalizado)
+    const verification = await getPendingAppointment(instanceId, normalizedNumber)
     if (verification) {
       console.log(`✅ [storePendingAppointment] VERIFICAÇÃO: Agendamento pendente confirmado no banco`)
       console.log(`✅ [storePendingAppointment] Dados verificados:`, JSON.stringify(verification, null, 2))
@@ -92,68 +99,126 @@ export async function getPendingAppointment(
   contactNumber: string
 ): Promise<PendingAppointmentData | null> {
   try {
+    // CRÍTICO: Normaliza o número ANTES de qualquer busca para garantir consistência
+    const normalizedNumber = contactNumber.replace(/\D/g, '') // Remove tudo que não é dígito
+    
     console.log(`🔍🔍🔍 [getPendingAppointment] ========== BUSCANDO AGENDAMENTO PENDENTE ==========`)
     console.log(`   instanceId: ${instanceId}`)
-    console.log(`   contactNumber: ${contactNumber}`)
+    console.log(`   contactNumber original: "${contactNumber}"`)
+    console.log(`   contactNumber normalizado: "${normalizedNumber}"`)
+    const withCountryCode = normalizedNumber.startsWith('55') ? normalizedNumber : `55${normalizedNumber}`
+    const withoutCountryCode = normalizedNumber.startsWith('55') ? normalizedNumber.substring(2) : normalizedNumber
     
-    // Busca TODOS os agendamentos pendentes para este contato (para debug)
-    const allPending = await prisma.pendingAppointment.findMany({
+    console.log(`🔍 [getPendingAppointment] Formatos de número a tentar:`)
+    console.log(`   Original: "${contactNumber}"`)
+    console.log(`   Normalizado: "${normalizedNumber}"`)
+    console.log(`   Com código país: "${withCountryCode}"`)
+    console.log(`   Sem código país: "${withoutCountryCode}"`)
+    
+    // Busca TODOS os agendamentos pendentes para esta instância (para debug completo)
+    const allPendingForInstance = await prisma.pendingAppointment.findMany({
       where: {
         instanceId,
-        contactNumber,
       },
     })
-    console.log(`🔍 [getPendingAppointment] Total de agendamentos pendentes encontrados: ${allPending.length}`)
-    if (allPending.length > 0) {
-      allPending.forEach((p, i) => {
-        console.log(`   [${i + 1}] ID: ${p.id}, Data: ${p.date}, Hora: ${p.time}, Expira: ${p.expiresAt.toISOString()}`)
+    console.log(`🔍 [getPendingAppointment] Total de agendamentos pendentes para esta instância: ${allPendingForInstance.length}`)
+    if (allPendingForInstance.length > 0) {
+      allPendingForInstance.forEach((p, i) => {
+        console.log(`   [${i + 1}] contactNumber: "${p.contactNumber}", Data: ${p.date}, Hora: ${p.time}, Expira: ${p.expiresAt.toISOString()}`)
       })
     }
     
-    // Tenta primeiro com findUnique (mais eficiente)
+    // Busca TODOS os agendamentos pendentes para este contato (para debug) - usa número normalizado
+    const allPending = await prisma.pendingAppointment.findMany({
+      where: {
+        instanceId,
+        contactNumber: normalizedNumber, // Usa número normalizado
+      },
+    })
+    console.log(`🔍 [getPendingAppointment] Total de agendamentos pendentes encontrados com contactNumber exato: ${allPending.length}`)
+    
+    // Tenta primeiro com findUnique usando o número normalizado (formato padrão)
     let pending = await prisma.pendingAppointment.findUnique({
       where: {
         instanceId_contactNumber: {
           instanceId,
-          contactNumber,
+          contactNumber: normalizedNumber, // Usa número normalizado
         },
       },
     })
 
-    // Se não encontrou com findUnique, tenta com findFirst (pode haver problemas de formatação)
+    // Se não encontrou, tenta com diferentes formatos do número
     if (!pending) {
-      console.log(`⚠️ [getPendingAppointment] Não encontrado com findUnique, tentando findFirst...`)
-      pending = await prisma.pendingAppointment.findFirst({
-        where: {
-          instanceId,
-          contactNumber,
-        },
-      })
+      console.log(`⚠️ [getPendingAppointment] Não encontrado com número original, tentando formatos alternativos...`)
       
-      if (pending) {
-        console.log(`✅ [getPendingAppointment] Encontrado com findFirst!`)
-      } else {
-        console.log(`❌❌❌ [getPendingAppointment] NENHUM agendamento pendente encontrado`)
-        console.log(`❌❌❌ [getPendingAppointment] Parâmetros usados:`)
-        console.log(`   instanceId: "${instanceId}"`)
-        console.log(`   contactNumber: "${contactNumber}"`)
-        
-        // Tenta buscar com busca parcial para debug
-        const anyPending = await prisma.pendingAppointment.findFirst({
+      // Se ainda não encontrou, tenta com outros formatos (para compatibilidade com dados antigos)
+      // Tenta com código do país
+      if (!pending && withCountryCode !== normalizedNumber) {
+        pending = await prisma.pendingAppointment.findFirst({
           where: {
-            instanceId: {
-              contains: instanceId,
-            },
-            contactNumber: {
-              contains: contactNumber,
-            },
+            instanceId,
+            contactNumber: withCountryCode,
           },
         })
+        if (pending) {
+          console.log(`✅ [getPendingAppointment] Encontrado com código do país!`)
+        }
+      }
+      
+      // Tenta sem código do país
+      if (!pending && withoutCountryCode !== normalizedNumber && withoutCountryCode !== withCountryCode) {
+        pending = await prisma.pendingAppointment.findFirst({
+          where: {
+            instanceId,
+            contactNumber: withoutCountryCode,
+          },
+        })
+        if (pending) {
+          console.log(`✅ [getPendingAppointment] Encontrado sem código do país!`)
+        }
+      }
+      
+      // Tenta com número original (caso tenha sido salvo com formatação)
+      if (!pending && contactNumber !== normalizedNumber) {
+        pending = await prisma.pendingAppointment.findFirst({
+          where: {
+            instanceId,
+            contactNumber: contactNumber,
+          },
+        })
+        if (pending) {
+          console.log(`✅ [getPendingAppointment] Encontrado com número original!`)
+        }
+      }
+      
+      if (!pending) {
+        console.log(`❌❌❌ [getPendingAppointment] NENHUM agendamento pendente encontrado após tentar todos os formatos`)
+        console.log(`❌❌❌ [getPendingAppointment] Parâmetros usados:`)
+        console.log(`   instanceId: "${instanceId}"`)
+        console.log(`   contactNumber original: "${contactNumber}"`)
+        console.log(`   contactNumber normalizado: "${normalizedNumber}"`)
+        console.log(`   contactNumber com código: "${withCountryCode}"`)
+        console.log(`   contactNumber sem código: "${withoutCountryCode}"`)
         
-        if (anyPending) {
-          console.log(`⚠️⚠️⚠️ [getPendingAppointment] Encontrado agendamento com busca parcial:`)
-          console.log(`   instanceId esperado: "${instanceId}", encontrado: "${anyPending.instanceId}"`)
-          console.log(`   contactNumber esperado: "${contactNumber}", encontrado: "${anyPending.contactNumber}"`)
+        // Busca todos os agendamentos pendentes da instância para comparar
+        if (allPendingForInstance.length > 0) {
+          console.log(`⚠️⚠️⚠️ [getPendingAppointment] Agendamentos pendentes encontrados para esta instância (mas com contactNumber diferente):`)
+          allPendingForInstance.forEach((p, i) => {
+            const pNormalized = p.contactNumber.replace(/\D/g, '')
+            const pWithCode = pNormalized.startsWith('55') ? pNormalized : `55${pNormalized}`
+            const pWithoutCode = pNormalized.startsWith('55') ? pNormalized.substring(2) : pNormalized
+            
+            const matches = 
+              p.contactNumber === contactNumber ||
+              p.contactNumber === normalizedNumber ||
+              p.contactNumber === withCountryCode ||
+              p.contactNumber === withoutCountryCode ||
+              pNormalized === normalizedNumber ||
+              pWithCode === withCountryCode ||
+              pWithoutCode === withoutCountryCode
+            
+            console.log(`   [${i + 1}] contactNumber: "${p.contactNumber}" (normalizado: "${pNormalized}") ${matches ? '✅ PODE SER O MESMO!' : '❌'}`)
+          })
         }
         
         return null
@@ -201,14 +266,19 @@ export async function clearPendingAppointment(
   contactNumber: string
 ): Promise<void> {
   try {
-    console.log(`🗑️ [clearPendingAppointment] Removendo agendamento pendente para ${instanceId}-${contactNumber}`)
+    // CRÍTICO: Normaliza o número para garantir consistência
+    const normalizedNumber = contactNumber.replace(/\D/g, '')
     
-    // Verifica se existe antes de remover
+    console.log(`🗑️ [clearPendingAppointment] Removendo agendamento pendente para ${instanceId}-${contactNumber}`)
+    console.log(`🗑️ [clearPendingAppointment] Número original: "${contactNumber}"`)
+    console.log(`🗑️ [clearPendingAppointment] Número normalizado: "${normalizedNumber}"`)
+    
+    // Verifica se existe antes de remover (usa número normalizado)
     const before = await prisma.pendingAppointment.findUnique({
       where: {
         instanceId_contactNumber: {
           instanceId,
-          contactNumber,
+          contactNumber: normalizedNumber, // Usa número normalizado
         },
       },
     })
@@ -228,17 +298,17 @@ export async function clearPendingAppointment(
       where: {
         instanceId_contactNumber: {
           instanceId,
-          contactNumber,
+          contactNumber: normalizedNumber, // Usa número normalizado
         },
       },
     })
     
-    // Verifica se foi removido corretamente
+    // Verifica se foi removido corretamente (usa número normalizado)
     const after = await prisma.pendingAppointment.findUnique({
       where: {
         instanceId_contactNumber: {
           instanceId,
-          contactNumber,
+          contactNumber: normalizedNumber, // Usa número normalizado
         },
       },
     })
