@@ -1338,53 +1338,87 @@ async function executeAIOnlyWorkflow(
       
       // Datas relativas em português (usando horário do Brasil)
       if (lower.includes('amanhã') || lower.includes('amanha')) {
-        // Calcula amanhã usando os componentes brasileiros diretamente
-        const currentYear = nowBrazilian.getFullYear()
-        const currentMonth = nowBrazilian.getMonth()
-        const currentDay = nowBrazilian.getDate()
+        // Obtém a data atual no fuso do Brasil usando Intl para garantir precisão
+        const now = new Date()
+        const brazilianParts = new Intl.DateTimeFormat('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).formatToParts(now)
+        
+        const currentYear = parseInt(brazilianParts.find(p => p.type === 'year')!.value)
+        const currentMonth = parseInt(brazilianParts.find(p => p.type === 'month')!.value) - 1 // JavaScript usa 0-11
+        const currentDay = parseInt(brazilianParts.find(p => p.type === 'day')!.value)
         
         // Cria uma data temporária para calcular amanhã corretamente
+        // Usa os componentes brasileiros diretamente
         const tempDate = new Date(currentYear, currentMonth, currentDay)
         tempDate.setDate(tempDate.getDate() + 1)
         
         const year = tempDate.getFullYear()
-        const month = tempDate.getMonth()
+        const month = tempDate.getMonth() // 0-11
         const day = tempDate.getDate()
         
         console.log(`📅 Parseado "amanhã" (Brasil):`)
-        console.log(`   Hoje: ${currentDay}/${currentMonth + 1}/${currentYear}`)
-        console.log(`   Amanhã: ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
+        console.log(`   Data atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear}`)
+        console.log(`   Amanhã calculado: ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
         
         const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
         console.log(`📅 Convertido para UTC: ${utcDate.toISOString()}`)
         const brazilianCheck = utcToBrazilianComponents(utcDate)
         console.log(`📅 UTC convertido de volta para Brasil: ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year} às ${brazilianCheck.hour}:${brazilianCheck.minute.toString().padStart(2, '0')}`)
         
+        // Validação: verifica se o mês está correto após conversão
+        if (brazilianCheck.month + 1 !== month + 1 || brazilianCheck.day !== day || brazilianCheck.year !== year) {
+          console.error(`⚠️ AVISO: Data pode estar incorreta após conversão! Esperado: ${day}/${month + 1}/${year}, Obtido: ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year}`)
+        }
+        
         return utcDate
       }
       if (lower.includes('hoje')) {
-        const year = nowBrazilian.getFullYear()
-        const month = nowBrazilian.getMonth()
-        const day = nowBrazilian.getDate()
+        // Obtém a data atual no fuso do Brasil usando Intl para garantir precisão
+        const now = new Date()
+        const brazilianParts = new Intl.DateTimeFormat('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).formatToParts(now)
+        
+        const year = parseInt(brazilianParts.find(p => p.type === 'year')!.value)
+        const month = parseInt(brazilianParts.find(p => p.type === 'month')!.value) - 1 // JavaScript usa 0-11
+        const day = parseInt(brazilianParts.find(p => p.type === 'day')!.value)
+        
         console.log(`📅 Parseado "hoje" (Brasil): ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
         const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
         return utcDate
       }
       if (lower.includes('depois de amanhã') || lower.includes('depois de amanha')) {
-        // Calcula depois de amanhã usando os componentes brasileiros diretamente
-        const currentYear = nowBrazilian.getFullYear()
-        const currentMonth = nowBrazilian.getMonth()
-        const currentDay = nowBrazilian.getDate()
+        // Obtém a data atual no fuso do Brasil usando Intl para garantir precisão
+        const now = new Date()
+        const brazilianParts = new Intl.DateTimeFormat('pt-BR', {
+          timeZone: 'America/Sao_Paulo',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).formatToParts(now)
+        
+        const currentYear = parseInt(brazilianParts.find(p => p.type === 'year')!.value)
+        const currentMonth = parseInt(brazilianParts.find(p => p.type === 'month')!.value) - 1 // JavaScript usa 0-11
+        const currentDay = parseInt(brazilianParts.find(p => p.type === 'day')!.value)
         
         // Cria uma data temporária para calcular depois de amanhã corretamente
         const tempDate = new Date(currentYear, currentMonth, currentDay)
         tempDate.setDate(tempDate.getDate() + 2)
         
         const year = tempDate.getFullYear()
-        const month = tempDate.getMonth()
+        const month = tempDate.getMonth() // 0-11
         const day = tempDate.getDate()
         
-        console.log(`📅 Parseado "depois de amanhã" (Brasil): ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
+        console.log(`📅 Parseado "depois de amanhã" (Brasil):`)
+        console.log(`   Data atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear}`)
+        console.log(`   Depois de amanhã calculado: ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
         const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
         return utcDate
       }
@@ -1799,11 +1833,36 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   
   const toneDescription = toneDescriptions[tone] || 'amigável e prestativo'
 
+  // Obtém a data atual no fuso horário do Brasil
+  const now = new Date()
+  const brazilianDateParts = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    weekday: 'long',
+  }).formatToParts(now)
+  
+  const currentYear = parseInt(brazilianDateParts.find(p => p.type === 'year')!.value)
+  const currentMonth = parseInt(brazilianDateParts.find(p => p.type === 'month')!.value)
+  const currentDay = parseInt(brazilianDateParts.find(p => p.type === 'day')!.value)
+  const currentWeekday = brazilianDateParts.find(p => p.type === 'weekday')!.value
+  
+  const currentDateFormatted = `${currentDay.toString().padStart(2, '0')}/${currentMonth.toString().padStart(2, '0')}/${currentYear}`
+
   // Determina o que o negócio oferece
   const sellsProducts = businessType === 'products' || businessType === 'both'
   const sellsServices = businessType === 'services' || businessType === 'both'
 
-  let prompt = `Você é um ASSISTENTE DE VENDAS da ${businessName}. Seu objetivo é APRESENTAR e VENDER os produtos/serviços do negócio de forma natural e persuasiva. Você NÃO é um chatbot genérico - você é um VENDEDOR especializado. `
+  let prompt = `Você é um ASSISTENTE DE VENDAS da ${businessName}. Seu objetivo é APRESENTAR e VENDER os produtos/serviços do negócio de forma natural e persuasiva. Você NÃO é um chatbot genérico - você é um VENDEDOR especializado.\n\n`
+  
+  // Adiciona informação sobre a data atual
+  prompt += `📅 INFORMAÇÃO IMPORTANTE SOBRE A DATA ATUAL:\n`
+  prompt += `- Hoje é ${currentWeekday}, dia ${currentDay} de ${getMonthName(currentMonth)} de ${currentYear} (${currentDateFormatted})\n`
+  prompt += `- Quando o cliente perguntar "que dia é hoje?", "que dia é amanhã?", "que mês estamos?", etc., use esta informação\n`
+  prompt += `- Ao calcular "amanhã", use: ${getTomorrowDate(currentDay, currentMonth, currentYear)}\n`
+  prompt += `- Ao calcular "depois de amanhã", use: ${getDayAfterTomorrowDate(currentDay, currentMonth, currentYear)}\n`
+  prompt += `- ⚠️ CRÍTICO: SEMPRE use o ano ${currentYear} e o mês ${currentMonth} ao calcular datas relativas\n\n`
 
   // Descrição detalhada do negócio - CRÍTICO para explicar o negócio
   if (businessDescription) {
@@ -2046,5 +2105,34 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `⚠️ OBRIGATÓRIO: Sempre se comporte como um VENDEDOR, não como um chatbot genérico\n`
 
   return prompt
+}
+
+// Função auxiliar para obter nome do mês em português
+function getMonthName(month: number): string {
+  const months = [
+    'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+    'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
+  ]
+  return months[month - 1] || 'desconhecido'
+}
+
+// Função auxiliar para calcular amanhã
+function getTomorrowDate(day: number, month: number, year: number): string {
+  const tempDate = new Date(year, month - 1, day)
+  tempDate.setDate(tempDate.getDate() + 1)
+  const tomorrowDay = tempDate.getDate()
+  const tomorrowMonth = tempDate.getMonth() + 1
+  const tomorrowYear = tempDate.getFullYear()
+  return `${tomorrowDay.toString().padStart(2, '0')}/${tomorrowMonth.toString().padStart(2, '0')}/${tomorrowYear}`
+}
+
+// Função auxiliar para calcular depois de amanhã
+function getDayAfterTomorrowDate(day: number, month: number, year: number): string {
+  const tempDate = new Date(year, month - 1, day)
+  tempDate.setDate(tempDate.getDate() + 2)
+  const dayAfterDay = tempDate.getDate()
+  const dayAfterMonth = tempDate.getMonth() + 1
+  const dayAfterYear = tempDate.getFullYear()
+  return `${dayAfterDay.toString().padStart(2, '0')}/${dayAfterMonth.toString().padStart(2, '0')}/${dayAfterYear}`
 }
 
