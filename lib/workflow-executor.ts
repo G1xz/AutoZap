@@ -1247,14 +1247,22 @@ async function executeAIOnlyWorkflow(
       
       // Datas relativas em português (usando horário do Brasil)
       if (lower.includes('amanhã') || lower.includes('amanha')) {
-        const tomorrow = new Date(nowBrazilian)
-        tomorrow.setDate(tomorrow.getDate() + 1)
-        const year = tomorrow.getFullYear()
-        const month = tomorrow.getMonth()
-        const day = tomorrow.getDate()
+        // Calcula amanhã usando os componentes brasileiros diretamente
+        const currentYear = nowBrazilian.getFullYear()
+        const currentMonth = nowBrazilian.getMonth()
+        const currentDay = nowBrazilian.getDate()
         
-        console.log(`📅 Parseado "amanhã" (Brasil): ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
-        console.log(`📅 Data/hora atual (Brasil): ${nowBrazilian.getDate()}/${nowBrazilian.getMonth() + 1}/${nowBrazilian.getFullYear()} às ${nowBrazilian.getHours()}:${nowBrazilian.getMinutes().toString().padStart(2, '0')}`)
+        // Cria uma data temporária para calcular amanhã corretamente
+        const tempDate = new Date(currentYear, currentMonth, currentDay)
+        tempDate.setDate(tempDate.getDate() + 1)
+        
+        const year = tempDate.getFullYear()
+        const month = tempDate.getMonth()
+        const day = tempDate.getDate()
+        
+        console.log(`📅 Parseado "amanhã" (Brasil):`)
+        console.log(`   Hoje: ${currentDay}/${currentMonth + 1}/${currentYear}`)
+        console.log(`   Amanhã: ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
         
         const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
         console.log(`📅 Convertido para UTC: ${utcDate.toISOString()}`)
@@ -1267,15 +1275,25 @@ async function executeAIOnlyWorkflow(
         const year = nowBrazilian.getFullYear()
         const month = nowBrazilian.getMonth()
         const day = nowBrazilian.getDate()
+        console.log(`📅 Parseado "hoje" (Brasil): ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
         const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
         return utcDate
       }
       if (lower.includes('depois de amanhã') || lower.includes('depois de amanha')) {
-        const dayAfterTomorrow = new Date(nowBrazilian)
-        dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2)
-        const year = dayAfterTomorrow.getFullYear()
-        const month = dayAfterTomorrow.getMonth()
-        const day = dayAfterTomorrow.getDate()
+        // Calcula depois de amanhã usando os componentes brasileiros diretamente
+        const currentYear = nowBrazilian.getFullYear()
+        const currentMonth = nowBrazilian.getMonth()
+        const currentDay = nowBrazilian.getDate()
+        
+        // Cria uma data temporária para calcular depois de amanhã corretamente
+        const tempDate = new Date(currentYear, currentMonth, currentDay)
+        tempDate.setDate(tempDate.getDate() + 2)
+        
+        const year = tempDate.getFullYear()
+        const month = tempDate.getMonth()
+        const day = tempDate.getDate()
+        
+        console.log(`📅 Parseado "depois de amanhã" (Brasil): ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
         const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
         return utcDate
       }
