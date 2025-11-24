@@ -1260,9 +1260,26 @@ async function executeAIOnlyWorkflow(
     }
 
     // Função auxiliar para calcular a próxima ocorrência de um dia da semana
-    const getNextWeekday = (targetDayOfWeek: number, now: Date): Date => {
+    const getNextWeekday = (targetDayOfWeek: number): Date => {
       // targetDayOfWeek: 0 = domingo, 1 = segunda, ..., 6 = sábado
-      const currentDayOfWeek = now.getDay()
+      // Obtém a data atual no fuso do Brasil usando Intl para garantir precisão
+      const now = new Date()
+      const brazilianParts = new Intl.DateTimeFormat('pt-BR', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        weekday: 'long',
+      }).formatToParts(now)
+      
+      const currentYear = parseInt(brazilianParts.find(p => p.type === 'year')!.value)
+      const currentMonth = parseInt(brazilianParts.find(p => p.type === 'month')!.value) - 1 // JavaScript usa 0-11
+      const currentDay = parseInt(brazilianParts.find(p => p.type === 'day')!.value)
+      
+      // Obtém o dia da semana atual (0 = domingo, 1 = segunda, ..., 6 = sábado)
+      const currentDate = new Date(currentYear, currentMonth, currentDay)
+      const currentDayOfWeek = currentDate.getDay()
+      
       let daysToAdd = targetDayOfWeek - currentDayOfWeek
       
       // Se o dia já passou esta semana, pega a próxima semana
@@ -1270,8 +1287,15 @@ async function executeAIOnlyWorkflow(
         daysToAdd += 7
       }
       
-      const nextDate = new Date(now)
-      nextDate.setDate(now.getDate() + daysToAdd)
+      const nextDate = new Date(currentYear, currentMonth, currentDay)
+      nextDate.setDate(nextDate.getDate() + daysToAdd)
+      
+      console.log(`📅 Cálculo de dia da semana:`)
+      console.log(`   Data atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} (dia da semana: ${currentDayOfWeek})`)
+      console.log(`   Dia da semana desejado: ${targetDayOfWeek}`)
+      console.log(`   Dias a adicionar: ${daysToAdd}`)
+      console.log(`   Próxima ocorrência: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
+      
       return nextDate
     }
 
@@ -1326,12 +1350,20 @@ async function executeAIOnlyWorkflow(
       
       for (const [dayName, dayOfWeek] of Object.entries(weekdays)) {
         if (lower.includes(dayName)) {
-          const nextDate = getNextWeekday(dayOfWeek, nowBrazilian)
+          const nextDate = getNextWeekday(dayOfWeek)
           const year = nextDate.getFullYear()
           const month = nextDate.getMonth()
           const day = nextDate.getDate()
           console.log(`📅 Parseado "${dayName}" → próxima ocorrência: ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
           const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
+          
+          // Validação: verifica se a data está correta após conversão
+          const brazilianCheck = utcToBrazilianComponents(utcDate)
+          console.log(`📅 Validação (UTC→Brasil): ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year}`)
+          if (brazilianCheck.month + 1 !== month + 1 || brazilianCheck.day !== day || brazilianCheck.year !== year) {
+            console.error(`⚠️ AVISO: Data pode estar incorreta após conversão! Esperado: ${day}/${month + 1}/${year}, Obtido: ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year}`)
+          }
+          
           return utcDate
         }
       }
