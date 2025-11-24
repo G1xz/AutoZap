@@ -1000,26 +1000,44 @@ async function executeAIOnlyWorkflow(
       return
     }
 
-    // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
-    // Se processou algo, retorna imediatamente SEM chamar a IA
-    console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
+    // PRIMEIRO: Verifica se já há um agendamento pendente ANTES de processar qualquer coisa
+    // Se houver, bloqueia completamente a IA para evitar criar duplicados
+    const { getPendingAppointment } = await import('./pending-appointments')
+    const existingPendingBeforeProcessing = await getPendingAppointment(instanceId, contactNumber)
+    
+    console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente ANTES de processar`)
     console.log(`   Mensagem do usuário: "${userMessage}"`)
+    console.log(`   Agendamento pendente existente:`, existingPendingBeforeProcessing ? 'SIM' : 'NÃO')
     
-    const processedAppointment = await processAppointmentConfirmation(
-      instanceId,
-      contactNumber,
-      userMessage,
-      userId,
-      contactNameFinal
-    )
-    
-    console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
-    
-    if (processedAppointment) {
-      console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
-      console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
-      return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO CHAMA IA
+    // Se há agendamento pendente, processa confirmação/cancelamento PRIMEIRO
+    if (existingPendingBeforeProcessing) {
+      console.log(`📅 [executeAIOnlyWorkflow] Agendamento pendente encontrado. Processando confirmação/cancelamento...`)
+      
+      const processedAppointment = await processAppointmentConfirmation(
+        instanceId,
+        contactNumber,
+        userMessage,
+        userId,
+        contactNameFinal
+      )
+      
+      console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
+      
+      if (processedAppointment) {
+        console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
+        console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
+        return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO CHAMA IA
+      }
+      
+      // Se não processou (não é confirmação nem cancelamento), ainda há agendamento pendente
+      // Nesse caso, também não deve chamar IA para evitar criar duplicado
+      console.log(`⚠️⚠️⚠️ [executeAIOnlyWorkflow] Há agendamento pendente mas mensagem não é confirmação/cancelamento`)
+      console.log(`⚠️⚠️⚠️ [executeAIOnlyWorkflow] BLOQUEANDO IA para evitar criar agendamento duplicado`)
+      return // Não chama IA se há agendamento pendente
     }
+    
+    // Se não há agendamento pendente, continua normalmente
+    console.log(`📝 [executeAIOnlyWorkflow] Nenhum agendamento pendente. Continuando com processamento normal...`)
     
     // PROTEÇÃO CRÍTICA: Verifica se acabou de confirmar um agendamento
     // Mesmo que processAppointmentConfirmation retornou false, pode ser que o agendamento
@@ -1707,19 +1725,26 @@ async function executeAIOnlyWorkflow(
       
       if (functionName === 'create_appointment' && userId) {
         try {
-          console.log(`📅 Tentando criar agendamento com args:`, args)
-          console.log(`📅 Contexto: userId=${userId}, instanceId=${instanceId}, contactNumber=${contactNumber}`)
+          console.log(`📅 [handleFunctionCall] Tentando criar agendamento com args:`, args)
+          console.log(`📅 [handleFunctionCall] Contexto: userId=${userId}, instanceId=${instanceId}, contactNumber=${contactNumber}`)
           
           // CRÍTICO: Verifica se já há um agendamento pendente antes de criar um novo
           const { getPendingAppointment } = await import('./pending-appointments')
           const existingPending = await getPendingAppointment(instanceId, contactNumber)
+          
+          console.log(`🔍 [handleFunctionCall] Verificando agendamento pendente existente:`, existingPending ? 'ENCONTRADO' : 'NÃO ENCONTRADO')
+          
           if (existingPending) {
-            console.log(`⚠️ Já existe um agendamento pendente. Não criando novo. Retornando mensagem de relembrança.`)
+            console.log(`⚠️⚠️⚠️ [handleFunctionCall] BLOQUEADO: Já existe um agendamento pendente!`)
+            console.log(`⚠️⚠️⚠️ [handleFunctionCall] Agendamento existente:`, existingPending)
+            console.log(`⚠️⚠️⚠️ [handleFunctionCall] NÃO criando novo agendamento. Retornando mensagem de relembrança.`)
+            
             let reminderMessage = `Você já tem um agendamento pendente de confirmação:\n\n📅 Data: ${existingPending.date}\n🕐 Hora: ${existingPending.time}`
             if (existingPending.duration) {
               reminderMessage += `\n⏱️ Duração: ${existingPending.duration} minutos`
             }
             reminderMessage += `\n🛠️ Serviço: ${existingPending.service}\n\nDigite "confirmar" para confirmar ou "cancelar" para cancelar.`
+            
             return {
               success: false,
               pending: true,
@@ -1727,6 +1752,8 @@ async function executeAIOnlyWorkflow(
               message: reminderMessage,
             }
           }
+          
+          console.log(`✅ [handleFunctionCall] Nenhum agendamento pendente encontrado. Prosseguindo com criação...`)
           
           // Validações iniciais
           if (!userId) {
