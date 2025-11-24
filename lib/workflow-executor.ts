@@ -832,19 +832,29 @@ async function executeAIOnlyWorkflow(
       console.log(`📝 Mensagem do usuário: "${userMessage}" (lowercase: "${userMessageLower}")`)
       console.log(`📝 Agendamento pendente encontrado:`, pendingAppointment)
       
-      // Verifica se o usuário confirmou PRIMEIRO - verificação mais ampla
-      const isConfirmation = userMessageLower === 'confirmar' || 
-                            userMessageLower === 'sim' || 
-                            userMessageLower === 'confirmo' ||
-                            userMessageLower === 'ok' ||
-                            userMessageLower === 'tá certo' ||
-                            userMessageLower === 'ta certo' ||
-                            userMessageLower === 'esta certo' ||
-                            userMessageLower === 'está certo' ||
-                            (userMessageLower.includes('confirmar') && userMessageLower.length <= 20) ||
-                            (userMessageLower.includes('confirm') && userMessageLower.length <= 20)
+      // Verifica se o usuário confirmou PRIMEIRO - verificação mais ampla e direta
+      // Remove espaços extras e caracteres especiais para comparação mais robusta
+      const normalizedMessage = userMessageLower.replace(/\s+/g, '').replace(/[.,!?]/g, '')
       
-      console.log(`✅ É confirmação? ${isConfirmation} (mensagem: "${userMessageLower}")`)
+      const isConfirmation = 
+        userMessageLower === 'confirmar' || 
+        normalizedMessage === 'confirmar' ||
+        userMessageLower === 'sim' || 
+        userMessageLower === 'confirmo' ||
+        userMessageLower === 'ok' ||
+        userMessageLower === 'tá certo' ||
+        userMessageLower === 'ta certo' ||
+        userMessageLower === 'esta certo' ||
+        userMessageLower === 'está certo' ||
+        userMessageLower.includes('confirmar') ||
+        userMessageLower.includes('confirm') ||
+        normalizedMessage.includes('confirmar') ||
+        normalizedMessage.includes('confirm')
+      
+      console.log(`✅ É confirmação? ${isConfirmation}`)
+      console.log(`   Mensagem original: "${userMessage}"`)
+      console.log(`   Mensagem lowercase: "${userMessageLower}"`)
+      console.log(`   Mensagem normalizada: "${normalizedMessage}"`)
       
       if (isConfirmation) {
         console.log(`✅ PROCESSANDO CONFIRMAÇÃO - não chamará IA`)
@@ -892,16 +902,20 @@ async function executeAIOnlyWorkflow(
           await queueMessage(contactKey, async () => {
             await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service')
           })
-          console.log(`✅ Mensagem de confirmação enviada`)
-          return
+          console.log(`✅ Mensagem de confirmação enviada - RETORNANDO SEM CHAMAR IA`)
+          return // CRÍTICO: Retorna aqui para não chamar a IA
         } else {
+          console.error(`❌ Erro ao confirmar agendamento:`, result)
           const errorMessage = `❌ Erro ao confirmar agendamento: ${result.error}. Por favor, tente novamente.`
           const contactKey = `${instanceId}-${contactNumber}`
           await queueMessage(contactKey, async () => {
             await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
           })
-          return
+          console.log(`❌ Mensagem de erro enviada - RETORNANDO SEM CHAMAR IA`)
+          return // CRÍTICO: Retorna aqui para não chamar a IA
         }
+      } else {
+        console.log(`⚠️ Mensagem não é confirmação, mas há agendamento pendente`)
       }
       
       // Verifica se o usuário cancelou
