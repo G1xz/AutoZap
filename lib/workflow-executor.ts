@@ -1604,6 +1604,8 @@ async function executeAIOnlyWorkflow(
           console.log(`📅 Agendamento pendente armazenado: ${formattedDate} às ${formattedTime}`)
 
           // Retorna mensagem de confirmação para o usuário
+          // IMPORTANTE: Retorna success: false para que a IA não confirme automaticamente
+          // A mensagem será exibida diretamente ao usuário
           let confirmationMessage = `Por favor, confirme os dados do agendamento:\n\n`
           confirmationMessage += `📅 Data: ${formattedDate}\n`
           confirmationMessage += `🕐 Hora: ${formattedTime}\n`
@@ -1613,10 +1615,15 @@ async function executeAIOnlyWorkflow(
           confirmationMessage += `🛠️ Serviço: ${args.description || 'Serviço não especificado'}\n\n`
           confirmationMessage += `Digite "confirmar" para confirmar o agendamento ou "cancelar" para cancelar.`
 
+          // Retorna como erro (success: false) para que a IA não confirme automaticamente
+          // Mas com uma mensagem amigável que será exibida ao usuário
+          // A mensagem inclui instruções claras para a IA repassar sem modificar
           return {
-            success: true,
+            success: false,
             pending: true,
+            error: `CONFIRMAÇÃO_PENDENTE: ${confirmationMessage}`,
             message: confirmationMessage,
+            instruction: 'Repasse esta mensagem EXATAMENTE ao cliente. NÃO confirme o agendamento. Apenas mostre os dados e aguarde confirmação.',
             appointmentData: {
               date: formattedDate,
               time: formattedTime,
@@ -1640,6 +1647,25 @@ async function executeAIOnlyWorkflow(
       }
     }
     
+    // Intercepta chamadas de função para verificar se há agendamento pendente
+    let pendingAppointmentResponse: string | null = null
+    
+    const interceptedFunctionCall = async (functionName: string, args: any) => {
+      const result = await handleFunctionCall(functionName, args)
+      
+      // Se retornou um agendamento pendente, intercepta a resposta
+      if (result && typeof result === 'object' && 'pending' in result && result.pending === true) {
+        pendingAppointmentResponse = result.message || result.error || 'Por favor, confirme os dados do agendamento.'
+        // Retorna erro para que a IA não confirme automaticamente
+        return {
+          success: false,
+          error: pendingAppointmentResponse,
+        }
+      }
+      
+      return result
+    }
+    
     const aiResponse = await generateAIResponse(userMessageWithContext, {
       systemPrompt,
       conversationHistory: finalConversationHistory,
@@ -1651,8 +1677,18 @@ async function executeAIOnlyWorkflow(
       temperature,
       maxTokens: 600,
       functions: [appointmentFunction],
-      onFunctionCall: handleFunctionCall,
+      onFunctionCall: interceptedFunctionCall,
     })
+    
+    // Se há uma resposta de agendamento pendente, usa ela diretamente em vez da resposta da IA
+    if (pendingAppointmentResponse) {
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, pendingAppointmentResponse!, 'service')
+      })
+      console.log(`📅 Mensagem de confirmação de agendamento enviada diretamente`)
+      return
+    }
     
     // Validação CRÍTICA: Se a resposta não mencionar o negócio, força mencionar
     if (businessDetails.businessName && !aiResponse.toLowerCase().includes(businessDetails.businessName.toLowerCase())) {
@@ -1898,7 +1934,20 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `    * date: formato DD/MM/YYYY (ex: "24/11/2025") - você converte internamente da linguagem natural\n`
   prompt += `    * time: formato HH:MM (ex: "16:00", "19:00") - você converte internamente da linguagem natural\n`
   prompt += `    * description: descrição do agendamento\n`
-  prompt += `- Após criar o agendamento com sucesso, confirme de forma NATURAL e ENTHUSIASTIC usando a linguagem natural: "Perfeito! Agendei para amanhã às 7 da manhã. Está tudo certo!" ou "Pronto! Seu agendamento está confirmado para depois de amanhã às 4 da tarde"\n`
+  prompt += `- ⚠️ CRÍTICO SOBRE CONFIRMAÇÃO DE AGENDAMENTOS:\n`
+  prompt += `  Quando você chamar a função create_appointment, ela SEMPRE retornará uma mensagem pedindo confirmação.\n`
+  prompt += `  A função NÃO cria o agendamento automaticamente - ela apenas armazena os dados temporariamente.\n`
+  prompt += `  Você DEVE:\n`
+  prompt += `  1. Repassar EXATAMENTE a mensagem retornada pela função ao cliente\n`
+  prompt += `  2. NÃO dizer que o agendamento foi criado, confirmado ou agendado\n`
+  prompt += `  3. NÃO adicionar frases como "está confirmado", "agendei", "pronto", "criado com sucesso"\n`
+  prompt += `  4. Apenas mostrar os dados e aguardar o cliente confirmar digitando "confirmar"\n`
+  prompt += `  Exemplo CORRETO de resposta:\n`
+  prompt += `  "Por favor, confirme os dados do agendamento:\n\n📅 Data: XX/XX/XXXX\n🕐 Hora: XX:XX\n🛠️ Serviço: Nome do serviço\n\nDigite 'confirmar' para confirmar o agendamento ou 'cancelar' para cancelar."\n`
+  prompt += `  Exemplo INCORRETO (NÃO faça isso):\n`
+  prompt += `  "Entendi! O agendamento está confirmado para amanhã às 4 da tarde." ❌\n`
+  prompt += `  "Pronto! Agendei para amanhã às 16:00." ❌\n`
+  prompt += `- ⚠️ CRÍTICO: Só confirme o agendamento quando o cliente responder "confirmar" ou "sim" explicitamente\n`
   prompt += `- Se houver erro ao criar o agendamento, informe o cliente de forma amigável e peça para tentar novamente, mas SEM mencionar formatos técnicos - apenas peça para repetir de forma natural\n`
   prompt += `- Lembre-se: você é um VENDEDOR, não um robô. Seja NATURAL, PERSUASIVO e VARIE suas respostas\n`
   prompt += `- Seja NATURAL e CONVERSACIONAL - evite ser muito formal ou repetitivo\n`
