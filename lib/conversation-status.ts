@@ -22,10 +22,12 @@ export async function updateConversationStatus(
       },
     })
 
-    // ⚠️ CRÍTICO: Se há agendamento pendente e não estamos explicitamente limpando para 'active', não sobrescreve
-    if (existing?.status?.startsWith('pending_appointment:') && status !== 'active') {
-      console.log(`⚠️ [updateConversationStatus] Agendamento pendente encontrado, NÃO sobrescrevendo com status "${status}"!`)
-      return // Mantém o agendamento pendente intacto
+    // ⚠️ CRÍTICO: Se há agendamento pendente, NUNCA sobrescreve, independente do status solicitado
+    // O agendamento pendente só pode ser removido explicitamente por clearPendingAppointment
+    if (existing?.status?.startsWith('pending_appointment:')) {
+      console.log(`⚠️⚠️⚠️ [updateConversationStatus] Agendamento pendente encontrado, NÃO sobrescrevendo com status "${status}"!`)
+      console.log(`⚠️⚠️⚠️ [updateConversationStatus] Mantendo agendamento pendente intacto. Use clearPendingAppointment para remover.`)
+      return // Mantém o agendamento pendente intacto - SEMPRE
     }
 
     await prisma.conversationStatus.upsert({

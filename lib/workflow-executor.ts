@@ -2043,7 +2043,7 @@ async function executeAIOnlyWorkflow(
           }
           
           // Armazena temporariamente o agendamento pendente
-          const { storePendingAppointment } = await import('./pending-appointments')
+          const { storePendingAppointment, getPendingAppointment: verifyPending } = await import('./pending-appointments')
           await storePendingAppointment(instanceId, contactNumber, {
             date: formattedDate,
             time: formattedTime,
@@ -2053,6 +2053,16 @@ async function executeAIOnlyWorkflow(
           })
           
           console.log(`📅 Agendamento pendente armazenado: ${formattedDate} às ${formattedTime}`)
+          
+          // CRÍTICO: Verifica se foi salvo corretamente ANTES de retornar
+          const verification = await verifyPending(instanceId, contactNumber)
+          if (verification) {
+            console.log(`✅✅✅ [handleFunctionCall] VERIFICAÇÃO: Agendamento pendente confirmado no banco após salvar`)
+            console.log(`✅✅✅ [handleFunctionCall] Dados verificados:`, JSON.stringify(verification, null, 2))
+          } else {
+            console.error(`❌❌❌ [handleFunctionCall] ERRO CRÍTICO: Agendamento pendente NÃO encontrado após salvar!`)
+            console.error(`❌❌❌ [handleFunctionCall] Isso pode causar problemas na confirmação!`)
+          }
 
           // Retorna mensagem de confirmação para o usuário
           // IMPORTANTE: Retorna success: false para que a IA não confirme automaticamente
