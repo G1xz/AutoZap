@@ -836,6 +836,7 @@ async function executeAIOnlyWorkflow(
       // Remove espaços extras e caracteres especiais para comparação mais robusta
       const normalizedMessage = userMessageLower.replace(/\s+/g, '').replace(/[.,!?]/g, '')
       
+      // Verificação mais simples e direta - se contém "confirmar" ou variações, é confirmação
       const isConfirmation = 
         userMessageLower === 'confirmar' || 
         normalizedMessage === 'confirmar' ||
@@ -846,15 +847,19 @@ async function executeAIOnlyWorkflow(
         userMessageLower === 'ta certo' ||
         userMessageLower === 'esta certo' ||
         userMessageLower === 'está certo' ||
-        userMessageLower.includes('confirmar') ||
-        userMessageLower.includes('confirm') ||
-        normalizedMessage.includes('confirmar') ||
-        normalizedMessage.includes('confirm')
+        userMessageLower.startsWith('confirmar') ||
+        normalizedMessage.startsWith('confirmar') ||
+        (userMessageLower.length <= 15 && userMessageLower.includes('confirm'))
       
-      console.log(`✅ É confirmação? ${isConfirmation}`)
+      console.log(`🔍 VERIFICAÇÃO DE CONFIRMAÇÃO:`)
       console.log(`   Mensagem original: "${userMessage}"`)
       console.log(`   Mensagem lowercase: "${userMessageLower}"`)
       console.log(`   Mensagem normalizada: "${normalizedMessage}"`)
+      console.log(`   É confirmação? ${isConfirmation}`)
+      console.log(`   Comparações:`)
+      console.log(`     - userMessageLower === 'confirmar': ${userMessageLower === 'confirmar'}`)
+      console.log(`     - normalizedMessage === 'confirmar': ${normalizedMessage === 'confirmar'}`)
+      console.log(`     - userMessageLower.startsWith('confirmar'): ${userMessageLower.startsWith('confirmar')}`)
       
       if (isConfirmation) {
         console.log(`✅ PROCESSANDO CONFIRMAÇÃO - não chamará IA`)
@@ -914,23 +919,30 @@ async function executeAIOnlyWorkflow(
           console.log(`❌ Mensagem de erro enviada - RETORNANDO SEM CHAMAR IA`)
           return // CRÍTICO: Retorna aqui para não chamar a IA
         }
-      } else {
-        console.log(`⚠️ Mensagem não é confirmação, mas há agendamento pendente`)
       }
       
       // Verifica se o usuário cancelou
-      if (userMessageLower.includes('cancelar') || userMessageLower.includes('não') || userMessageLower.includes('nao')) {
+      const isCancellation = userMessageLower.includes('cancelar') || 
+                            userMessageLower.includes('não') || 
+                            userMessageLower.includes('nao') ||
+                            userMessageLower === 'cancelar' ||
+                            normalizedMessage === 'cancelar'
+      
+      if (isCancellation) {
+        console.log(`❌ Usuário cancelou agendamento pendente`)
         await clearPendingAppointment(instanceId, contactNumber)
         const cancelMessage = `Agendamento cancelado. Se precisar de mais alguma coisa, estou à disposição!`
         const contactKey = `${instanceId}-${contactNumber}`
         await queueMessage(contactKey, async () => {
           await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
         })
-        return
+        console.log(`❌ Mensagem de cancelamento enviada - RETORNANDO SEM CHAMAR IA`)
+        return // CRÍTICO: Retorna aqui para não chamar a IA
       }
       
       // Se há agendamento pendente mas não confirmou nem cancelou, relembra
-      // IMPORTANTE: Retorna aqui para não chamar a IA
+      // IMPORTANTE: Retorna aqui para não chamar a IA - SEMPRE retorna quando há agendamento pendente
+      console.log(`⚠️ Há agendamento pendente mas mensagem não é confirmação nem cancelamento`)
       let reminderMessage = `Você tem um agendamento pendente de confirmação:\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
       if (pendingAppointment.duration) {
         reminderMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
@@ -941,8 +953,8 @@ async function executeAIOnlyWorkflow(
       await queueMessage(contactKey, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, reminderMessage, 'service')
       })
-      console.log(`📅 Relembrando agendamento pendente - retornando sem chamar IA`)
-      return
+      console.log(`📅 Relembrando agendamento pendente - RETORNANDO SEM CHAMAR IA`)
+      return // CRÍTICO: Retorna aqui para não chamar a IA
     }
     
     console.log(`📝 Não há agendamento pendente, continuando com processamento normal`)
