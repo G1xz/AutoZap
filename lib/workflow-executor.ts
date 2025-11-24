@@ -830,16 +830,24 @@ async function executeAIOnlyWorkflow(
     if (pendingAppointment) {
       const userMessageLower = userMessage.toLowerCase().trim()
       console.log(`📝 Mensagem do usuário: "${userMessage}" (lowercase: "${userMessageLower}")`)
+      console.log(`📝 Agendamento pendente encontrado:`, pendingAppointment)
       
-      // Verifica se o usuário confirmou PRIMEIRO
+      // Verifica se o usuário confirmou PRIMEIRO - verificação mais ampla
       const isConfirmation = userMessageLower === 'confirmar' || 
                             userMessageLower === 'sim' || 
-                            userMessageLower === 'confirmo' || 
-                            (userMessageLower.includes('confirmar') && userMessageLower.length <= 15)
+                            userMessageLower === 'confirmo' ||
+                            userMessageLower === 'ok' ||
+                            userMessageLower === 'tá certo' ||
+                            userMessageLower === 'ta certo' ||
+                            userMessageLower === 'esta certo' ||
+                            userMessageLower === 'está certo' ||
+                            (userMessageLower.includes('confirmar') && userMessageLower.length <= 20) ||
+                            (userMessageLower.includes('confirm') && userMessageLower.length <= 20)
       
-      console.log(`✅ É confirmação? ${isConfirmation}`)
+      console.log(`✅ É confirmação? ${isConfirmation} (mensagem: "${userMessageLower}")`)
       
       if (isConfirmation) {
+        console.log(`✅ PROCESSANDO CONFIRMAÇÃO - não chamará IA`)
         console.log(`✅ Usuário confirmou agendamento pendente`)
         
         // Converte a data formatada de volta para Date
@@ -908,6 +916,7 @@ async function executeAIOnlyWorkflow(
       }
       
       // Se há agendamento pendente mas não confirmou nem cancelou, relembra
+      // IMPORTANTE: Retorna aqui para não chamar a IA
       let reminderMessage = `Você tem um agendamento pendente de confirmação:\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
       if (pendingAppointment.duration) {
         reminderMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
@@ -918,8 +927,11 @@ async function executeAIOnlyWorkflow(
       await queueMessage(contactKey, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, reminderMessage, 'service')
       })
+      console.log(`📅 Relembrando agendamento pendente - retornando sem chamar IA`)
       return
     }
+    
+    console.log(`📝 Não há agendamento pendente, continuando com processamento normal`)
 
     // Busca histórico recente da conversa
     const recentMessages = await prisma.message.findMany({
@@ -2221,4 +2233,3 @@ function getDayAfterTomorrowDate(day: number, month: number, year: number): stri
   const dayAfterYear = tempDate.getFullYear()
   return `${dayAfterDay.toString().padStart(2, '0')}/${dayAfterMonth.toString().padStart(2, '0')}/${dayAfterYear}`
 }
-
