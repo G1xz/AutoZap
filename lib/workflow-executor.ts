@@ -959,6 +959,40 @@ async function executeAIOnlyWorkflow(
     
     console.log(`📝 Não há agendamento pendente, continuando com processamento normal`)
 
+    // Verifica novamente se não há agendamento pendente (double-check para evitar race conditions)
+    // Se a mensagem do usuário é "confirmar" mas não há agendamento pendente, pode ser que acabou de confirmar
+    // Nesse caso, não deve chamar a IA para evitar criar um novo agendamento
+    const userMessageLower = userMessage.toLowerCase().trim()
+    const normalizedMessage = userMessageLower.replace(/\s+/g, '').replace(/[.,!?]/g, '')
+    const isConfirmationMessage = 
+      userMessageLower === 'confirmar' || 
+      normalizedMessage === 'confirmar' ||
+      userMessageLower === 'sim' || 
+      userMessageLower === 'confirmo' ||
+      (userMessageLower.length <= 15 && userMessageLower.includes('confirm'))
+    
+    if (isConfirmationMessage && !pendingAppointment) {
+      console.log(`⚠️ Mensagem de confirmação detectada mas não há agendamento pendente. Pode ter acabado de confirmar. Ignorando para evitar criar novo agendamento.`)
+      // Verifica se há um agendamento recente criado (nos últimos 30 segundos)
+      const recentAppointment = await prisma.appointment.findFirst({
+        where: {
+          instanceId,
+          contactNumber,
+          createdAt: {
+            gte: new Date(Date.now() - 30000), // Últimos 30 segundos
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      })
+      
+      if (recentAppointment) {
+        console.log(`✅ Agendamento recente encontrado. Não chamará IA para evitar duplicação.`)
+        return
+      }
+    }
+
     // Busca histórico recente da conversa
     const recentMessages = await prisma.message.findMany({
       where: {
@@ -2125,6 +2159,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- ⚠️ CRÍTICO: NUNCA peça ao cliente para usar formatos técnicos como "DD/MM/YYYY" ou "HH:MM" - você deve entender a linguagem natural dele\n`
   prompt += `- ⚠️ CRÍTICO: NUNCA seja repetitivo ou genérico ao responder sobre agendamento\n`
   prompt += `- ⚠️ CRÍTICO: NÃO diga sempre "Para agendar um horário, basta me informar a data e hora desejados" - seja NATURAL e DIRETO\n`
+  prompt += `- ⚠️ CRÍTICO: Se o cliente acabou de confirmar um agendamento (disse "confirmar", "sim", "ok"), NÃO tente criar um novo agendamento. Apenas confirme que recebeu a confirmação e agradeça.\n`
   prompt += `- PROCESSO DE COLETA (CONVERSA NATURAL):\n`
   prompt += `  1. Se o cliente já mencionou data E hora completa (ex: "amanhã às 7 da manhã", "próxima terça-feira às 3 da tarde"), você DEVE:\n`
   prompt += `     - Entender a linguagem natural do cliente\n`
