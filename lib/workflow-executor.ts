@@ -796,17 +796,31 @@ async function processAppointmentConfirmation(
   userId: string,
   contactName?: string
 ): Promise<boolean> {
+  console.log(`🔍 [processAppointmentConfirmation] Iniciando processamento`)
+  console.log(`   instanceId: ${instanceId}`)
+  console.log(`   contactNumber: ${contactNumber}`)
+  console.log(`   userMessage: "${userMessage}"`)
+  console.log(`   userId: ${userId}`)
+  
   const { getPendingAppointment, clearPendingAppointment } = await import('./pending-appointments')
   const pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
+  
+  console.log(`🔍 [processAppointmentConfirmation] Agendamento pendente:`, pendingAppointment ? 'ENCONTRADO' : 'NÃO ENCONTRADO')
   
   if (!pendingAppointment) {
     return false // Não há agendamento pendente, não processou nada
   }
 
+  // Normaliza a mensagem para comparação (remove espaços extras e caracteres especiais)
   const userMessageLower = userMessage.toLowerCase().trim()
   const normalizedMessage = userMessageLower.replace(/\s+/g, '').replace(/[.,!?]/g, '')
   
-  // Detecção robusta de confirmação
+  console.log(`🔍 [processAppointmentConfirmation] Analisando mensagem:`)
+  console.log(`   Mensagem original: "${userMessage}"`)
+  console.log(`   Mensagem lowercase: "${userMessageLower}"`)
+  console.log(`   Mensagem normalizada: "${normalizedMessage}"`)
+  
+  // Detecção robusta de confirmação - verifica múltiplas variações
   const isConfirmation = 
     userMessageLower === 'confirmar' || 
     normalizedMessage === 'confirmar' ||
@@ -825,18 +839,18 @@ async function processAppointmentConfirmation(
   const isCancellation = 
     userMessageLower === 'cancelar' ||
     normalizedMessage === 'cancelar' ||
-    userMessageLower.includes('cancelar') ||
-    (userMessageLower.includes('não') && userMessageLower.length <= 10) ||
-    (userMessageLower.includes('nao') && userMessageLower.length <= 10)
+    (userMessageLower.includes('cancelar') && userMessageLower.length <= 20) ||
+    (userMessageLower === 'não' && userMessageLower.length <= 5) ||
+    (userMessageLower === 'nao' && userMessageLower.length <= 5)
 
-  console.log(`🔍 Processando agendamento pendente:`)
-  console.log(`   Mensagem: "${userMessage}"`)
+  console.log(`🔍 [processAppointmentConfirmation] Resultado da análise:`)
   console.log(`   É confirmação? ${isConfirmation}`)
   console.log(`   É cancelamento? ${isCancellation}`)
 
   // Processa confirmação
   if (isConfirmation) {
-    console.log(`✅ PROCESSANDO CONFIRMAÇÃO DE AGENDAMENTO`)
+    console.log(`✅ [processAppointmentConfirmation] PROCESSANDO CONFIRMAÇÃO DE AGENDAMENTO`)
+    console.log(`   Dados do agendamento pendente:`, JSON.stringify(pendingAppointment, null, 2))
     
     // Converte a data formatada de volta para Date
     const [day, month, year] = pendingAppointment.date.split('/').map(Number)
@@ -962,6 +976,9 @@ async function executeAIOnlyWorkflow(
 
     // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
     // Se processou algo, retorna imediatamente SEM chamar a IA
+    console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
+    console.log(`   Mensagem do usuário: "${userMessage}"`)
+    
     const processedAppointment = await processAppointmentConfirmation(
       instanceId,
       contactNumber,
@@ -970,12 +987,46 @@ async function executeAIOnlyWorkflow(
       contactNameFinal
     )
     
+    console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
+    
     if (processedAppointment) {
-      console.log(`📅 Agendamento processado, retornando SEM chamar IA`)
-      return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento
+      console.log(`✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA`)
+      return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO CHAMA IA
     }
     
-    console.log(`📝 Continuando com processamento normal da IA`)
+    // Verificação adicional: se a mensagem é "confirmar" mas não há agendamento pendente,
+    // pode ser que acabou de confirmar. Não deve chamar IA para evitar criar novo agendamento
+    const userMessageLower = userMessage.toLowerCase().trim()
+    const normalizedMsg = userMessageLower.replace(/\s+/g, '').replace(/[.,!?]/g, '')
+    const looksLikeConfirmation = 
+      userMessageLower === 'confirmar' || 
+      normalizedMsg === 'confirmar' ||
+      userMessageLower === 'sim' ||
+      (userMessageLower.length <= 15 && userMessageLower.includes('confirm'))
+    
+    if (looksLikeConfirmation) {
+      console.log(`⚠️ [executeAIOnlyWorkflow] Mensagem parece confirmação mas não há agendamento pendente`)
+      // Verifica se há um agendamento criado recentemente (últimos 60 segundos)
+      const recentAppointment = await prisma.appointment.findFirst({
+        where: {
+          instanceId,
+          contactNumber,
+          createdAt: {
+            gte: new Date(Date.now() - 60000), // Últimos 60 segundos
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      })
+      
+      if (recentAppointment) {
+        console.log(`✅ [executeAIOnlyWorkflow] Agendamento recente encontrado. NÃO CHAMARÁ IA para evitar duplicação`)
+        return // Não chama IA se acabou de confirmar um agendamento
+      }
+    }
+    
+    console.log(`📝 [executeAIOnlyWorkflow] Continuando com processamento normal da IA`)
 
     // Busca histórico recente da conversa
     const recentMessages = await prisma.message.findMany({
