@@ -110,7 +110,8 @@ export async function getPendingAppointment(
       })
     }
     
-    const pending = await prisma.pendingAppointment.findUnique({
+    // Tenta primeiro com findUnique (mais eficiente)
+    let pending = await prisma.pendingAppointment.findUnique({
       where: {
         instanceId_contactNumber: {
           instanceId,
@@ -119,29 +120,44 @@ export async function getPendingAppointment(
       },
     })
 
+    // Se não encontrou com findUnique, tenta com findFirst (pode haver problemas de formatação)
     if (!pending) {
-      console.log(`❌❌❌ [getPendingAppointment] NENHUM agendamento pendente encontrado na busca única`)
-      console.log(`❌❌❌ [getPendingAppointment] Verificando se há algum problema com os parâmetros...`)
-      
-      // Tenta buscar sem o índice único para ver se encontra algo
-      const anyPending = await prisma.pendingAppointment.findFirst({
+      console.log(`⚠️ [getPendingAppointment] Não encontrado com findUnique, tentando findFirst...`)
+      pending = await prisma.pendingAppointment.findFirst({
         where: {
-          instanceId: {
-            contains: instanceId,
-          },
-          contactNumber: {
-            contains: contactNumber,
-          },
+          instanceId,
+          contactNumber,
         },
       })
       
-      if (anyPending) {
-        console.log(`⚠️⚠️⚠️ [getPendingAppointment] Encontrado agendamento com busca parcial:`)
-        console.log(`   instanceId esperado: ${instanceId}, encontrado: ${anyPending.instanceId}`)
-        console.log(`   contactNumber esperado: ${contactNumber}, encontrado: ${anyPending.contactNumber}`)
+      if (pending) {
+        console.log(`✅ [getPendingAppointment] Encontrado com findFirst!`)
+      } else {
+        console.log(`❌❌❌ [getPendingAppointment] NENHUM agendamento pendente encontrado`)
+        console.log(`❌❌❌ [getPendingAppointment] Parâmetros usados:`)
+        console.log(`   instanceId: "${instanceId}"`)
+        console.log(`   contactNumber: "${contactNumber}"`)
+        
+        // Tenta buscar com busca parcial para debug
+        const anyPending = await prisma.pendingAppointment.findFirst({
+          where: {
+            instanceId: {
+              contains: instanceId,
+            },
+            contactNumber: {
+              contains: contactNumber,
+            },
+          },
+        })
+        
+        if (anyPending) {
+          console.log(`⚠️⚠️⚠️ [getPendingAppointment] Encontrado agendamento com busca parcial:`)
+          console.log(`   instanceId esperado: "${instanceId}", encontrado: "${anyPending.instanceId}"`)
+          console.log(`   contactNumber esperado: "${contactNumber}", encontrado: "${anyPending.contactNumber}"`)
+        }
+        
+        return null
       }
-      
-      return null
     }
 
     // Verifica se expirou

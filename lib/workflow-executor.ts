@@ -858,12 +858,24 @@ export async function processAppointmentConfirmation(
     clearPendingAppointment = pendingAppointmentsModule.clearPendingAppointment
     
     // Busca agendamento pendente na tabela dedicada PendingAppointment
+    // Tenta múltiplas vezes com delays para lidar com problemas de sincronização
     console.log(`🔍 [processAppointmentConfirmation] Buscando agendamento pendente...`)
     console.log(`   Parâmetros de busca:`)
     console.log(`   - instanceId: "${instanceId}"`)
     console.log(`   - contactNumber: "${contactNumber}"`)
     
-    pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
+    const maxSearchRetries = 3
+    for (let attempt = 1; attempt <= maxSearchRetries; attempt++) {
+      pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
+      
+      if (pendingAppointment) {
+        console.log(`✅ [processAppointmentConfirmation] Agendamento pendente encontrado na tentativa ${attempt}/${maxSearchRetries}`)
+        break
+      } else if (attempt < maxSearchRetries) {
+        console.log(`⚠️ [processAppointmentConfirmation] Tentativa ${attempt}/${maxSearchRetries} não encontrou agendamento, tentando novamente...`)
+        await new Promise(resolve => setTimeout(resolve, 150 * attempt)) // Delay crescente
+      }
+    }
     
     console.log(`🔍 [processAppointmentConfirmation] Resultado da busca:`)
     console.log(`   Agendamento pendente:`, pendingAppointment ? '✅ ENCONTRADO' : '❌ NÃO ENCONTRADO')
@@ -902,6 +914,10 @@ export async function processAppointmentConfirmation(
       userMessageLower === 'sim' || 
       userMessageLower === 'confirmo' ||
       userMessageLower === 'ok' ||
+      userMessageLower === 'tá certo' ||
+      userMessageLower === 'ta certo' ||
+      userMessageLower === 'esta certo' ||
+      userMessageLower === 'está certo' ||
       userMessageLower.startsWith('confirmar') ||
       normalizedMessage.startsWith('confirmar') ||
       (userMessageLower.length <= 20 && (userMessageLower.includes('confirm') || normalizedMessage.includes('confirm')))
@@ -909,6 +925,37 @@ export async function processAppointmentConfirmation(
     if (!pendingAppointment) {
       if (looksLikeConfirmation) {
         console.log(`⚠️⚠️⚠️ [processAppointmentConfirmation] Mensagem parece confirmação mas NÃO há agendamento pendente!`)
+        console.log(`   Verificando se há agendamento criado recentemente...`)
+        
+        // Verifica se há um agendamento criado recentemente (últimos 5 minutos)
+        // Isso pode indicar que o agendamento já foi confirmado
+        try {
+          const recentAppointment = await prisma.appointment.findFirst({
+            where: {
+              instanceId,
+              contactNumber,
+              createdAt: {
+                gte: new Date(Date.now() - 300000), // Últimos 5 minutos
+              },
+            },
+            orderBy: {
+              createdAt: 'desc',
+            },
+          })
+          
+          if (recentAppointment) {
+            console.log(`✅ Agendamento criado recentemente encontrado (há ${Math.round((Date.now() - recentAppointment.createdAt.getTime()) / 1000)}s)`)
+            const infoMessage = `✅ Seu agendamento já foi confirmado com sucesso! Se precisar de mais alguma coisa, estou à disposição.`
+            const contactKey = `${instanceId}-${contactNumber}`
+            await queueMessage(contactKey, async () => {
+              await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service')
+            })
+            return true
+          }
+        } catch (error) {
+          console.error(`❌ Erro ao verificar agendamento recente:`, error)
+        }
+        
         console.log(`   Isso pode indicar que o agendamento foi confirmado ou cancelado anteriormente.`)
         console.log(`   Enviando mensagem informativa e RETORNANDO TRUE para evitar loop.`)
         
@@ -1002,48 +1049,102 @@ export async function processAppointmentConfirmation(
         const appointmentDateUTC = createBrazilianDateAsUTC(year, month - 1, day, hour, minute)
         console.log(`📅 Data UTC criada: ${appointmentDateUTC.toISOString()}`)
         
-    // Limpa o agendamento pendente ANTES de criar o agendamento (evita race conditions)
-    if (clearPendingAppointment) {
-      await clearPendingAppointment(instanceId, contactNumber)
-    } else {
-      const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
-      await clearFn(instanceId, contactNumber)
-    }
-    console.log(`📅 Agendamento pendente removido ANTES de criar agendamento`)
-    
-    // Cria o agendamento no banco
-        const { createAppointment } = await import('./appointments')
-        const result = await createAppointment({
-          userId,
-          instanceId,
-          contactNumber,
-          contactName: contactName,
-          date: appointmentDateUTC,
-          description: pendingAppointment.description || `Agendamento para ${pendingAppointment.service}`,
+    // CRÍTICO: Verifica novamente se o agendamento pendente ainda existe antes de processar
+    // Isso evita race conditions quando múltiplas confirmações chegam simultaneamente
+    const { getPendingAppointment: getPendingAppointmentFn } = await import('./pending-appointments')
+    const doubleCheckPending = await getPendingAppointmentFn(instanceId, contactNumber)
+    if (!doubleCheckPending) {
+      console.log(`⚠️⚠️⚠️ [processAppointmentConfirmation] Agendamento pendente não encontrado na verificação dupla!`)
+      console.log(`   Isso pode indicar que já foi confirmado por outra requisição simultânea.`)
+      
+      // Verifica se há um agendamento criado recentemente
+      try {
+        const recentAppointment = await prisma.appointment.findFirst({
+          where: {
+            instanceId,
+            contactNumber,
+            createdAt: {
+              gte: new Date(Date.now() - 10000), // Últimos 10 segundos
+            },
+          },
+          orderBy: {
+            createdAt: 'desc',
+          },
         })
         
-        console.log(`📅 Resultado do createAppointment:`, result)
-        
-        if (result.success) {
-          let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
-          if (pendingAppointment.duration) {
-            confirmationMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
-          }
-          confirmationMessage += `\n🛠️ Serviço: ${pendingAppointment.service}`
-          
+        if (recentAppointment) {
+          console.log(`✅ Agendamento já foi confirmado recentemente!`)
+          const infoMessage = `✅ Seu agendamento já foi confirmado com sucesso! Se precisar de mais alguma coisa, estou à disposição.`
           const contactKey = `${instanceId}-${contactNumber}`
           await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service')
+            await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service')
           })
+          return true
+        }
+      } catch (error) {
+        console.error(`❌ Erro ao verificar agendamento recente:`, error)
+      }
+      
+      const infoMessage = `Não há agendamento pendente para confirmar no momento. Se você acabou de confirmar um agendamento, ele já foi processado. Se precisar de mais alguma coisa, estou à disposição.`
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service')
+      })
+      return true
+    }
+    
+    // CRÍTICO: Cria o agendamento PRIMEIRO, só remove o pendente depois de sucesso
+    // Isso evita perder o agendamento pendente se houver erro na criação
+    const { createAppointment } = await import('./appointments')
+    const result = await createAppointment({
+      userId,
+      instanceId,
+      contactNumber,
+      contactName: contactName,
+      date: appointmentDateUTC,
+      description: pendingAppointment.description || `Agendamento para ${pendingAppointment.service}`,
+    })
+    
+    console.log(`📅 Resultado do createAppointment:`, result)
+    
+    if (result.success) {
+      // Só remove o agendamento pendente APÓS criar o agendamento com sucesso
+      // Verifica novamente antes de remover para evitar remover um que já foi removido
+      const { getPendingAppointment: getPendingAppointmentFinal } = await import('./pending-appointments')
+      const finalCheck = await getPendingAppointmentFinal(instanceId, contactNumber)
+      if (finalCheck) {
+        if (clearPendingAppointment) {
+          await clearPendingAppointment(instanceId, contactNumber)
+        } else {
+          const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
+          await clearFn(instanceId, contactNumber)
+        }
+        console.log(`📅 Agendamento pendente removido APÓS criar agendamento com sucesso`)
+      } else {
+        console.log(`⚠️ Agendamento pendente já foi removido (possível race condition)`)
+      }
+      
+      let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
+      if (pendingAppointment.duration) {
+        confirmationMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
+      }
+      confirmationMessage += `\n🛠️ Serviço: ${pendingAppointment.service}`
+      
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service')
+      })
       console.log(`✅ Confirmação processada e mensagem enviada - RETORNANDO TRUE`)
       return true // Processou confirmação, não deve chamar IA
-        } else {
-          console.error(`❌ Erro ao confirmar agendamento:`, result)
-          const errorMessage = `❌ Erro ao confirmar agendamento: ${result.error}. Por favor, tente novamente.`
-          const contactKey = `${instanceId}-${contactNumber}`
-          await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
-          })
+    } else {
+      // Se houve erro, mantém o agendamento pendente para que o usuário possa tentar novamente
+      console.error(`❌ Erro ao confirmar agendamento:`, result)
+      console.error(`⚠️ Agendamento pendente MANTIDO para nova tentativa`)
+      const errorMessage = `❌ Erro ao confirmar agendamento: ${result.error}. Por favor, tente novamente.`
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+      })
       console.log(`❌ Erro ao confirmar - RETORNANDO TRUE`)
       return true // Processou (mesmo com erro), não deve chamar IA
     }
@@ -2087,19 +2188,28 @@ async function executeAIOnlyWorkflow(
             throw storeError // Propaga o erro
           }
           
-          // CRÍTICO: Aguarda um pouco e verifica se foi salvo corretamente ANTES de retornar
-          // Pequeno delay para garantir que o banco processou
-          await new Promise(resolve => setTimeout(resolve, 100))
+          // CRÍTICO: Aguarda e verifica se foi salvo corretamente ANTES de retornar
+          // Tenta múltiplas vezes com delays crescentes para garantir sincronização
+          let verification: any = null
+          const maxRetries = 3
+          for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            await new Promise(resolve => setTimeout(resolve, 100 * attempt)) // Delay crescente: 100ms, 200ms, 300ms
+            
+            verification = await verifyPending(instanceId, contactNumber)
+            if (verification) {
+              console.log(`✅✅✅ [handleFunctionCall] VERIFICAÇÃO (tentativa ${attempt}/${maxRetries}): Agendamento pendente confirmado no banco`)
+              console.log(`✅✅✅ [handleFunctionCall] Dados verificados:`, JSON.stringify(verification, null, 2))
+              break
+            } else if (attempt < maxRetries) {
+              console.log(`⚠️ [handleFunctionCall] Tentativa ${attempt}/${maxRetries} falhou, tentando novamente...`)
+            }
+          }
           
-          const verification = await verifyPending(instanceId, contactNumber)
-          if (verification) {
-            console.log(`✅✅✅ [handleFunctionCall] VERIFICAÇÃO: Agendamento pendente confirmado no banco após salvar`)
-            console.log(`✅✅✅ [handleFunctionCall] Dados verificados:`, JSON.stringify(verification, null, 2))
-          } else {
-            console.error(`❌❌❌ [handleFunctionCall] ERRO CRÍTICO: Agendamento pendente NÃO encontrado após salvar!`)
+          if (!verification) {
+            console.error(`❌❌❌ [handleFunctionCall] ERRO CRÍTICO: Agendamento pendente NÃO encontrado após ${maxRetries} tentativas!`)
             console.error(`❌❌❌ [handleFunctionCall] instanceId usado: ${instanceId}`)
             console.error(`❌❌❌ [handleFunctionCall] contactNumber usado: ${contactNumber}`)
-            console.error(`❌❌❌ [handleFunctionCall] Isso vai causar problemas na confirmação!`)
+            console.error(`❌❌❌ [handleFunctionCall] Isso pode causar problemas na confirmação!`)
             
             // Tenta buscar diretamente no banco para debug
             try {
@@ -2110,11 +2220,14 @@ async function executeAIOnlyWorkflow(
               })
               console.error(`❌❌❌ [handleFunctionCall] Agendamentos pendentes para esta instância: ${directCheck.length}`)
               directCheck.forEach((p: any, i: number) => {
-                console.error(`   [${i + 1}] contactNumber: ${p.contactNumber}, date: ${p.date}, time: ${p.time}`)
+                console.error(`   [${i + 1}] contactNumber: "${p.contactNumber}" (esperado: "${contactNumber}"), date: ${p.date}, time: ${p.time}`)
               })
             } catch (dbError) {
               console.error(`❌❌❌ [handleFunctionCall] Erro ao buscar diretamente no banco:`, dbError)
             }
+            
+            // Mesmo assim continua - o agendamento pode ter sido salvo mas não está sincronizado ainda
+            // A verificação na confirmação vai tentar novamente
           }
 
           // Retorna mensagem de confirmação para o usuário
