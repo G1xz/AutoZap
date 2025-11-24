@@ -114,6 +114,44 @@ export async function executeWorkflows(
     const contactNumber = message.from
     const messageBody = message.body.toLowerCase().trim()
 
+    // ⚠️ CRÍTICO: Processa confirmação/cancelamento de agendamento ANTES de qualquer lógica de workflow
+    // Isso garante que confirmações sejam processadas imediatamente e não entrem em loop
+    console.log(`🔍 [executeWorkflows] Verificando confirmação de agendamento ANTES de processar workflows`)
+    
+    try {
+      // Busca userId da instância para processar agendamento
+      const instance = await prisma.whatsAppInstance.findUnique({
+        where: { id: instanceId },
+        select: { userId: true },
+      })
+      
+      if (instance?.userId) {
+        console.log(`🔍 [executeWorkflows] userId encontrado: ${instance.userId}`)
+        
+        // Processa confirmação/cancelamento de agendamento pendente
+        // Usa a mensagem ORIGINAL (não lowercase) para melhor detecção
+        const processedAppointment = await processAppointmentConfirmation(
+          instanceId,
+          contactNumber,
+          message.body, // Mensagem original, não lowercase
+          instance.userId,
+          message.contactName
+        )
+        
+        if (processedAppointment) {
+          console.log(`✅✅✅ [executeWorkflows] Agendamento processado, RETORNANDO SEM PROCESSAR WORKFLOWS ✅✅✅`)
+          return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO PROCESSA WORKFLOWS
+        } else {
+          console.log(`📝 [executeWorkflows] Nenhum agendamento pendente processado, continuando com workflows`)
+        }
+      } else {
+        console.log(`⚠️ [executeWorkflows] userId não encontrado para instância ${instanceId}, pulando verificação de agendamento`)
+      }
+    } catch (error) {
+      console.error(`❌ [executeWorkflows] Erro ao verificar agendamento pendente:`, error)
+      // Continua com workflows mesmo se houver erro na verificação de agendamento
+    }
+
     // Busca workflows ativos para esta instância
     const workflows = await prisma.workflow.findMany({
       where: {
