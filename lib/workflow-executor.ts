@@ -1353,56 +1353,7 @@ async function executeAIOnlyWorkflow(
             }
           }
           
-          // Tenta primeiro parsear como data em português (dias da semana, "amanhã", etc)
-          let appointmentDateUTC: Date | null = null
-          const parsedPortugueseDate = parsePortugueseDate(args.date)
-          
-          if (parsedPortugueseDate) {
-            // Se conseguiu parsear como data em português, já vem em UTC
-            appointmentDateUTC = parsedPortugueseDate
-            const brazilianCheck = utcToBrazilianComponents(appointmentDateUTC)
-            console.log(`📅 Data parseada do português (UTC): ${appointmentDateUTC.toISOString()}`)
-            console.log(`📅 Data parseada do português (Brasil): ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year}`)
-          }
-          
-          // Se não conseguiu parsear como português, tenta formato DD/MM/YYYY
-          if (!appointmentDateUTC) {
-            const dateMatch = args.date.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-            if (!dateMatch) {
-              return {
-                success: false,
-                error: `Data inválida: "${args.date}". Use o formato DD/MM/YYYY (ex: 24/11/2025) ou linguagem natural (ex: "terça-feira", "amanhã").`,
-              }
-            }
-            
-            const day = parseInt(dateMatch[1])
-            const month = parseInt(dateMatch[2]) - 1 // JavaScript usa meses 0-11
-            let year = parseInt(dateMatch[3])
-            
-            // Cria a data no horário do Brasil
-            const nowBrazilian = getBrazilianDate()
-            const currentYear = nowBrazilian.getFullYear()
-            
-            // Corrige o ano se necessário
-            if (year < currentYear) {
-              year = currentYear
-              console.log(`⚠️ Ano ${year} é menor que o atual (${currentYear}), corrigindo para ${year}`)
-            } else if (year > currentYear + 1) {
-              year = currentYear
-              console.log(`⚠️ Ano ${year} é muito no futuro, corrigindo para ${year}`)
-            }
-            
-            // Cria a data no fuso do Brasil e converte para UTC (hora será definida depois)
-            appointmentDateUTC = createBrazilianDateAsUTC(year, month, day, 0, 0)
-          }
-          
-          // Obtém componentes brasileiros para validação
-          const brazilianComponents = utcToBrazilianComponents(appointmentDateUTC)
-          const day = brazilianComponents.day
-          const month = brazilianComponents.month
-          const year = brazilianComponents.year
-          
-          // Processa a hora (formato HH:MM ou "meio-dia")
+          // Processa a hora primeiro (formato HH:MM ou "meio-dia")
           let hour: number
           let minute: number
           
@@ -1434,8 +1385,69 @@ async function executeAIOnlyWorkflow(
             }
           }
           
-          // Recria a data UTC com a hora correta no fuso do Brasil
-          appointmentDateUTC = createBrazilianDateAsUTC(year, month, day, hour, minute)
+          // Tenta primeiro parsear como data em português (dias da semana, "amanhã", etc)
+          // Mas agora passamos a hora também para parsePortugueseDate considerar
+          let appointmentDateUTC: Date | null = null
+          
+          // Cria uma string combinada de data e hora para parsePortugueseDate processar
+          const dateTimeStr = `${args.date} ${args.time}`
+          const parsedPortugueseDate = parsePortugueseDate(dateTimeStr)
+          
+          if (parsedPortugueseDate) {
+            // Se conseguiu parsear como data em português, já vem em UTC com hora
+            appointmentDateUTC = parsedPortugueseDate
+            const brazilianCheck = utcToBrazilianComponents(appointmentDateUTC)
+            console.log(`📅 Data parseada do português (UTC): ${appointmentDateUTC.toISOString()}`)
+            console.log(`📅 Data parseada do português (Brasil): ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year} às ${brazilianCheck.hour}:${brazilianCheck.minute.toString().padStart(2, '0')}`)
+          }
+          
+          // Se não conseguiu parsear como português, tenta formato DD/MM/YYYY
+          if (!appointmentDateUTC) {
+            const dateMatch = args.date.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+            if (!dateMatch) {
+              return {
+                success: false,
+                error: `Data inválida: "${args.date}". Use o formato DD/MM/YYYY (ex: 24/11/2025) ou linguagem natural (ex: "terça-feira", "amanhã").`,
+              }
+            }
+            
+            const day = parseInt(dateMatch[1])
+            const month = parseInt(dateMatch[2]) - 1 // JavaScript usa meses 0-11
+            let year = parseInt(dateMatch[3])
+            
+            // Cria a data no horário do Brasil
+            const nowBrazilian = getBrazilianDate()
+            const currentYear = nowBrazilian.getFullYear()
+            
+            // Corrige o ano se necessário
+            if (year < currentYear) {
+              year = currentYear
+              console.log(`⚠️ Ano ${year} é menor que o atual (${currentYear}), corrigindo para ${year}`)
+            } else if (year > currentYear + 1) {
+              year = currentYear
+              console.log(`⚠️ Ano ${year} é muito no futuro, corrigindo para ${year}`)
+            }
+            
+            // Cria a data no fuso do Brasil e converte para UTC com a hora correta
+            appointmentDateUTC = createBrazilianDateAsUTC(year, month, day, hour, minute)
+          } else {
+            // Se já parseou do português mas a hora pode estar errada, recria com a hora correta
+            const brazilianComponents = utcToBrazilianComponents(appointmentDateUTC)
+            appointmentDateUTC = createBrazilianDateAsUTC(
+              brazilianComponents.year,
+              brazilianComponents.month,
+              brazilianComponents.day,
+              hour,
+              minute
+            )
+          }
+          
+          // Obtém componentes brasileiros para validação
+          const brazilianComponents = utcToBrazilianComponents(appointmentDateUTC)
+          const day = brazilianComponents.day
+          const month = brazilianComponents.month
+          const year = brazilianComponents.year
+          
           
           // Cria a data no horário do Brasil para comparação
           const nowBrazilian = getBrazilianDate()
@@ -1482,6 +1494,10 @@ async function executeAIOnlyWorkflow(
             console.error(`❌ ERRO: Hora não corresponde após conversão! Esperado: ${hour}:${minute.toString().padStart(2, '0')}, Obtido: ${verificationBrazilian.hour}:${verificationBrazilian.minute.toString().padStart(2, '0')}`)
           }
 
+          console.log(`📅 Criando agendamento no banco de dados...`)
+          console.log(`📅 appointmentDateUTC: ${appointmentDateUTC.toISOString()}`)
+          console.log(`📅 userId: ${userId}, instanceId: ${instanceId}, contactNumber: ${contactNumber}`)
+          
           const result = await createAppointment({
             userId,
             instanceId,
@@ -1490,6 +1506,8 @@ async function executeAIOnlyWorkflow(
             date: appointmentDateUTC,
             description: args.description || `Agendamento solicitado via WhatsApp`,
           })
+
+          console.log(`📅 Resultado do createAppointment:`, result)
 
           if (result.success) {
             const formattedDate = appointmentDateUTC.toLocaleString('pt-BR', {
@@ -1501,19 +1519,23 @@ async function executeAIOnlyWorkflow(
               timeZone: 'America/Sao_Paulo',
             })
 
+            console.log(`✅ Agendamento criado com sucesso: ${formattedDate}`)
+
             return {
               success: true,
               message: `Agendamento criado com sucesso para ${formattedDate}.`,
               appointment: result.appointment,
             }
           } else {
+            console.error(`❌ Erro ao criar agendamento: ${result.error}`)
             return {
               success: false,
               error: result.error || 'Erro ao criar agendamento.',
             }
           }
         } catch (error) {
-          console.error('Erro ao criar agendamento:', error)
+          console.error('❌ Erro ao criar agendamento (catch):', error)
+          console.error('❌ Stack trace:', error instanceof Error ? error.stack : 'N/A')
           return {
             success: false,
             error: 'Ocorreu um erro ao criar o agendamento. Por favor, tente novamente.',
