@@ -819,8 +819,64 @@ async function executeAIOnlyWorkflow(
     if (pendingAppointment) {
       const userMessageLower = userMessage.toLowerCase().trim()
       
-      // A confirmação será processada depois que as funções de data forem definidas
-      // Por enquanto, só processa cancelamento e relembra
+      // Verifica se o usuário confirmou PRIMEIRO
+      if (userMessageLower === 'confirmar' || userMessageLower === 'sim' || userMessageLower === 'confirmo' || 
+          (userMessageLower.includes('confirmar') && userMessageLower.length <= 15)) {
+        console.log(`✅ Usuário confirmou agendamento pendente`)
+        
+        // Converte a data formatada de volta para Date
+        const [day, month, year] = pendingAppointment.date.split('/').map(Number)
+        const [hour, minute] = pendingAppointment.time.split(':').map(Number)
+        
+        console.log(`📅 Convertendo dados do agendamento: ${day}/${month}/${year} às ${hour}:${minute}`)
+        
+        // Define funções de data temporariamente aqui (serão redefinidas depois, mas precisamos aqui)
+        const createBrazilianDateAsUTC = (year: number, month: number, day: number, hour: number, minute: number): Date => {
+          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00-03:00`
+          return new Date(dateStr)
+        }
+        
+        const appointmentDateUTC = createBrazilianDateAsUTC(year, month - 1, day, hour, minute)
+        console.log(`📅 Data UTC criada: ${appointmentDateUTC.toISOString()}`)
+        
+        const { createAppointment } = await import('./appointments')
+        const result = await createAppointment({
+          userId,
+          instanceId,
+          contactNumber,
+          contactName: contactName,
+          date: appointmentDateUTC,
+          description: pendingAppointment.description || `Agendamento para ${pendingAppointment.service}`,
+        })
+        
+        console.log(`📅 Resultado do createAppointment:`, result)
+        
+        // Limpa o agendamento pendente ANTES de enviar a resposta
+        await clearPendingAppointment(instanceId, contactNumber)
+        console.log(`📅 Agendamento pendente removido`)
+        
+        if (result.success) {
+          let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
+          if (pendingAppointment.duration) {
+            confirmationMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
+          }
+          confirmationMessage += `\n🛠️ Serviço: ${pendingAppointment.service}`
+          
+          const contactKey = `${instanceId}-${contactNumber}`
+          await queueMessage(contactKey, async () => {
+            await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service')
+          })
+          console.log(`✅ Mensagem de confirmação enviada`)
+          return
+        } else {
+          const errorMessage = `❌ Erro ao confirmar agendamento: ${result.error}. Por favor, tente novamente.`
+          const contactKey = `${instanceId}-${contactNumber}`
+          await queueMessage(contactKey, async () => {
+            await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+          })
+          return
+        }
+      }
       
       // Verifica se o usuário cancelou
       if (userMessageLower.includes('cancelar') || userMessageLower.includes('não') || userMessageLower.includes('nao')) {
@@ -1233,26 +1289,26 @@ async function executeAIOnlyWorkflow(
         targetHour = 12
         targetMinute = 0
       } else {
-        // Procura por padrões de hora
-        const hourPatterns = [
-          /(\d{1,2})\s*(?:da\s*)?(?:tarde|manhã|manha|noite)/i, // "5 da tarde", "17 da tarde"
-          /(\d{1,2}):(\d{2})/, // "17:30"
-          /(\d{1,2})h/i, // "17h"
-        ]
-        
-        for (const pattern of hourPatterns) {
-          const match = lower.match(pattern)
-          if (match) {
-            targetHour = parseInt(match[1])
-            if (match[2]) {
-              targetMinute = parseInt(match[2])
-            }
-            
-            // Se mencionou "tarde" e hora < 12, adiciona 12 (ex: "5 da tarde" = 17h)
-            if ((lower.includes('tarde') || lower.includes('noite')) && targetHour < 12) {
-              targetHour += 12
-            }
-            break
+      // Procura por padrões de hora
+      const hourPatterns = [
+        /(\d{1,2})\s*(?:da\s*)?(?:tarde|manhã|manha|noite)/i, // "5 da tarde", "17 da tarde"
+        /(\d{1,2}):(\d{2})/, // "17:30"
+        /(\d{1,2})h/i, // "17h"
+      ]
+      
+      for (const pattern of hourPatterns) {
+        const match = lower.match(pattern)
+        if (match) {
+          targetHour = parseInt(match[1])
+          if (match[2]) {
+            targetMinute = parseInt(match[2])
+          }
+          
+          // Se mencionou "tarde" e hora < 12, adiciona 12 (ex: "5 da tarde" = 17h)
+          if ((lower.includes('tarde') || lower.includes('noite')) && targetHour < 12) {
+            targetHour += 12
+          }
+          break
           }
         }
       }
@@ -1446,21 +1502,21 @@ async function executeAIOnlyWorkflow(
             minute = 0
           } else {
             // Tenta formato HH:MM
-            const timeMatch = args.time.match(/(\d{1,2}):(\d{2})/)
-            if (!timeMatch) {
-              return {
-                success: false,
+          const timeMatch = args.time.match(/(\d{1,2}):(\d{2})/)
+          if (!timeMatch) {
+            return {
+              success: false,
                 error: `Hora inválida: "${args.time}". Use o formato HH:MM (ex: 16:00) ou "meio-dia".`,
-              }
             }
-            
+          }
+          
             hour = parseInt(timeMatch[1])
             minute = parseInt(timeMatch[2])
-            
-            // Valida valores
+          
+          // Valida valores
             if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-              return {
-                success: false,
+            return {
+              success: false,
                 error: 'Hora inválida. Verifique os valores informados.',
               }
             }
@@ -1489,26 +1545,26 @@ async function executeAIOnlyWorkflow(
               return {
                 success: false,
                 error: `Data inválida: "${args.date}". Use o formato DD/MM/YYYY (ex: 24/11/2025) ou linguagem natural (ex: "terça-feira", "amanhã").`,
-              }
             }
+          }
             
             const day = parseInt(dateMatch[1])
             const month = parseInt(dateMatch[2]) - 1 // JavaScript usa meses 0-11
             let year = parseInt(dateMatch[3])
-            
-            // Cria a data no horário do Brasil
-            const nowBrazilian = getBrazilianDate()
-            const currentYear = nowBrazilian.getFullYear()
-            
-            // Corrige o ano se necessário
-            if (year < currentYear) {
+          
+          // Cria a data no horário do Brasil
+          const nowBrazilian = getBrazilianDate()
+          const currentYear = nowBrazilian.getFullYear()
+          
+          // Corrige o ano se necessário
+          if (year < currentYear) {
               year = currentYear
               console.log(`⚠️ Ano ${year} é menor que o atual (${currentYear}), corrigindo para ${year}`)
-            } else if (year > currentYear + 1) {
+          } else if (year > currentYear + 1) {
               year = currentYear
               console.log(`⚠️ Ano ${year} é muito no futuro, corrigindo para ${year}`)
-            }
-            
+          }
+          
             // Cria a data no fuso do Brasil e converte para UTC com a hora correta
             appointmentDateUTC = createBrazilianDateAsUTC(year, month, day, hour, minute)
           } else {
@@ -1618,8 +1674,8 @@ async function executeAIOnlyWorkflow(
           // Retorna como erro (success: false) para que a IA não confirme automaticamente
           // Mas com uma mensagem amigável que será exibida ao usuário
           // A mensagem inclui instruções claras para a IA repassar sem modificar
-          return {
-            success: false,
+            return {
+              success: false,
             pending: true,
             error: `CONFIRMAÇÃO_PENDENTE: ${confirmationMessage}`,
             message: confirmationMessage,
