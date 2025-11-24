@@ -834,31 +834,84 @@ export async function processAppointmentConfirmation(
   userId: string,
   contactName?: string
 ): Promise<boolean> {
-  console.log(`🔍 [processAppointmentConfirmation] Iniciando processamento`)
+  console.log(`🔍🔍🔍 [processAppointmentConfirmation] ========== INICIANDO PROCESSAMENTO ==========`)
   console.log(`   instanceId: ${instanceId}`)
   console.log(`   contactNumber: ${contactNumber}`)
   console.log(`   userMessage: "${userMessage}"`)
   console.log(`   userId: ${userId}`)
   
-    const { getPendingAppointment, clearPendingAppointment } = await import('./pending-appointments')
-    const pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
-    
-  console.log(`🔍 [processAppointmentConfirmation] Agendamento pendente:`, pendingAppointment ? 'ENCONTRADO' : 'NÃO ENCONTRADO')
-    
-  if (!pendingAppointment) {
-    return false // Não há agendamento pendente, não processou nada
-  }
-
   // Normaliza a mensagem para comparação (remove espaços extras e caracteres especiais)
   // Remove todos os espaços, acentos e caracteres especiais para comparação mais robusta
-      const userMessageLower = userMessage.toLowerCase().trim()
+  const userMessageLower = userMessage.toLowerCase().trim()
   const normalizedMessage = userMessageLower
     .replace(/\s+/g, '') // Remove todos os espaços
     .replace(/[.,!?;:]/g, '') // Remove pontuação
     .normalize('NFD') // Normaliza caracteres Unicode
     .replace(/[\u0300-\u036f]/g, '') // Remove acentos
   
-  console.log(`🔍 [processAppointmentConfirmation] Analisando mensagem:`)
+  let pendingAppointment: any = null
+  let clearPendingAppointment: any = null
+  
+  try {
+    const pendingAppointmentsModule = await import('./pending-appointments')
+    const { getPendingAppointment } = pendingAppointmentsModule
+    clearPendingAppointment = pendingAppointmentsModule.clearPendingAppointment
+    
+    // Verifica também diretamente no banco para debug
+    const directCheck = await prisma.conversationStatus.findUnique({
+      where: {
+        instanceId_contactNumber: {
+          instanceId,
+          contactNumber,
+        },
+      },
+    })
+    console.log(`🔍 [processAppointmentConfirmation] Verificação direta no banco:`)
+    console.log(`   Status encontrado:`, directCheck ? `"${directCheck.status?.substring(0, 100)}..."` : 'NÃO ENCONTRADO')
+    console.log(`   É agendamento pendente?`, directCheck?.status?.startsWith('pending_appointment:') ? 'SIM' : 'NÃO')
+    
+    pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
+    
+    console.log(`🔍 [processAppointmentConfirmation] Agendamento pendente:`, pendingAppointment ? 'ENCONTRADO' : 'NÃO ENCONTRADO')
+    if (pendingAppointment) {
+      console.log(`   Dados do agendamento pendente:`, JSON.stringify(pendingAppointment, null, 2))
+    }
+    
+    // Verifica se a mensagem parece confirmação ANTES de verificar se há agendamento pendente
+    const looksLikeConfirmation = 
+      userMessageLower === 'confirmar' || 
+      normalizedMessage === 'confirmar' ||
+      userMessageLower === 'sim' || 
+      userMessageLower === 'confirmo' ||
+      userMessageLower === 'ok' ||
+      userMessageLower.startsWith('confirmar') ||
+      normalizedMessage.startsWith('confirmar') ||
+      (userMessageLower.length <= 20 && (userMessageLower.includes('confirm') || normalizedMessage.includes('confirm')))
+    
+    if (!pendingAppointment) {
+      if (looksLikeConfirmation) {
+        console.log(`⚠️⚠️⚠️ [processAppointmentConfirmation] Mensagem parece confirmação mas NÃO há agendamento pendente!`)
+        console.log(`   Isso pode indicar que o agendamento foi confirmado ou cancelado anteriormente.`)
+        console.log(`   Enviando mensagem informativa e RETORNANDO TRUE para evitar loop.`)
+        
+        const infoMessage = `Não há agendamento pendente para confirmar. Se você acabou de confirmar um agendamento, ele já foi processado com sucesso! Se precisar de mais alguma coisa, estou à disposição.`
+        const contactKey = `${instanceId}-${contactNumber}`
+        await queueMessage(contactKey, async () => {
+          await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service')
+        })
+        return true // Retorna true para evitar que a IA seja chamada e cause loop
+      }
+      
+      console.log(`❌ [processAppointmentConfirmation] Nenhum agendamento pendente encontrado - RETORNANDO FALSE`)
+      return false // Não há agendamento pendente e não parece confirmação, não processou nada
+    }
+  } catch (error) {
+    console.error(`❌ [processAppointmentConfirmation] ERRO ao buscar agendamento pendente:`, error)
+    return false
+  }
+
+  // Se chegou aqui, há agendamento pendente - continua processamento
+  console.log(`🔍 [processAppointmentConfirmation] Analisando mensagem (há agendamento pendente):`)
   console.log(`   Mensagem original: "${userMessage}"`)
   console.log(`   Mensagem lowercase: "${userMessageLower}"`)
   console.log(`   Mensagem normalizada: "${normalizedMessage}"`)
@@ -932,7 +985,12 @@ export async function processAppointmentConfirmation(
         console.log(`📅 Data UTC criada: ${appointmentDateUTC.toISOString()}`)
         
     // Limpa o agendamento pendente ANTES de criar o agendamento (evita race conditions)
-    await clearPendingAppointment(instanceId, contactNumber)
+    if (clearPendingAppointment) {
+      await clearPendingAppointment(instanceId, contactNumber)
+    } else {
+      const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
+      await clearFn(instanceId, contactNumber)
+    }
     console.log(`📅 Agendamento pendente removido ANTES de criar agendamento`)
     
     // Cria o agendamento no banco
@@ -976,7 +1034,12 @@ export async function processAppointmentConfirmation(
   // Processa cancelamento
       if (isCancellation) {
     console.log(`❌ PROCESSANDO CANCELAMENTO DE AGENDAMENTO`)
-        await clearPendingAppointment(instanceId, contactNumber)
+        if (clearPendingAppointment) {
+          await clearPendingAppointment(instanceId, contactNumber)
+        } else {
+          const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
+          await clearFn(instanceId, contactNumber)
+        }
         const cancelMessage = `Agendamento cancelado. Se precisar de mais alguma coisa, estou à disposição!`
         const contactKey = `${instanceId}-${contactNumber}`
         await queueMessage(contactKey, async () => {
