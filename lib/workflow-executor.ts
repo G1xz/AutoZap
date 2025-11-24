@@ -128,7 +128,16 @@ export async function executeWorkflows(
         connections: true,
       },
       orderBy: { createdAt: 'desc' },
-    })
+    }) as unknown as Array<{
+      id: string
+      name: string
+      trigger: string
+      isActive: boolean
+      isAIOnly: boolean
+      aiBusinessDetails: string | null
+      nodes: any[]
+      connections: any[]
+    }>
 
     // Verifica se há uma execução em andamento para este contato
     const executionKey = `${instanceId}-${contactNumber}`
@@ -2068,27 +2077,31 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- ⚠️ CRÍTICO: NUNCA seja repetitivo ou genérico ao responder sobre agendamento\n`
   prompt += `- ⚠️ CRÍTICO: NÃO diga sempre "Para agendar um horário, basta me informar a data e hora desejados" - seja NATURAL e DIRETO\n`
   prompt += `- PROCESSO DE COLETA (CONVERSA NATURAL):\n`
-  prompt += `  1. Se o cliente já mencionou data E hora completa (ex: "amanhã às 7 da manhã", "depois de amanhã às 4 da tarde"), você DEVE:\n`
+  prompt += `  1. Se o cliente já mencionou data E hora completa (ex: "amanhã às 7 da manhã", "próxima terça-feira às 3 da tarde"), você DEVE:\n`
   prompt += `     - Entender a linguagem natural do cliente\n`
-  prompt += `     - Converter internamente: "amanhã" → calcular data DD/MM/YYYY, "7 da manhã" → "07:00"\n`
-  prompt += `     - Chamar a função create_appointment IMEDIATAMENTE com os formatos corretos (date: "DD/MM/YYYY", time: "HH:MM")\n`
+  prompt += `     - ⚠️ CRÍTICO: Para datas em linguagem natural (ex: "amanhã", "próxima terça-feira"), passe a STRING ORIGINAL no parâmetro "date"\n`
+  prompt += `     - Converter apenas a hora: "7 da manhã" → "07:00", "3 da tarde" → "15:00"\n`
+  prompt += `     - Chamar a função create_appointment IMEDIATAMENTE:\n`
+  prompt += `       * date: passe a string original (ex: "amanhã", "próxima terça-feira", "segunda-feira")\n`
+  prompt += `       * time: formato HH:MM (ex: "07:00", "15:00")\n`
   prompt += `     - NUNCA perguntar novamente ou pedir formatos técnicos ao cliente\n`
   prompt += `  2. Se o cliente só disse "quero agendar", seja PERSUASIVO e NATURAL: "Perfeito! Qual dia funciona melhor para você?" ou "Claro! Que dia você prefere?"\n`
   prompt += `  3. Depois de coletar a data, pergunte pela hora de forma natural: "E que horário seria melhor?" ou "Qual horário você prefere?"\n`
   prompt += `  4. Varie suas perguntas: às vezes pergunte "Que dia funciona melhor?", outras vezes "Qual horário você prefere?", seja CONVERSACIONAL\n`
   prompt += `  5. Aceite qualquer forma que o cliente responder: "amanhã", "24/11", "quinta-feira", "7 da manhã", "16h", "4 da tarde", etc.\n`
-  prompt += `- CONVERSÃO INTERNA DE DATAS (você faz isso internamente, não pede ao cliente):\n`
-  prompt += `  - "hoje" → calcule a data de hoje no formato DD/MM/YYYY usando o ANO ATUAL\n`
-  prompt += `  - "amanhã" → calcule a data de amanhã no formato DD/MM/YYYY usando o ANO ATUAL\n`
-  prompt += `  - "depois de amanhã" → calcule a data correspondente no formato DD/MM/YYYY usando o ANO ATUAL\n`
-  prompt += `  - "24/11" ou "24/11/2025" → use "24/11/YYYY" onde YYYY é o ANO ATUAL (não use anos passados ou muito futuros)\n`
-  prompt += `  - DIAS DA SEMANA (SEMPRE calcule a PRÓXIMA ocorrência):\n`
-  prompt += `    * "segunda-feira", "terça-feira", "quarta-feira", "quinta-feira", "sexta-feira", "sábado", "domingo" → calcule a PRÓXIMA ocorrência desse dia\n`
-  prompt += `    * Exemplo: Se hoje é quarta-feira e o cliente diz "terça-feira", calcule a PRÓXIMA terça-feira (não a que já passou)\n`
-  prompt += `    * Exemplo: Se hoje é segunda-feira e o cliente diz "segunda-feira", calcule a PRÓXIMA segunda-feira (que seria daqui a 7 dias)\n`
-  prompt += `  - ⚠️ CRÍTICO: SEMPRE use o ANO ATUAL (2025) ao calcular datas relativas como "amanhã" ou "hoje"\n`
-  prompt += `  - ⚠️ CRÍTICO: Para dias da semana, SEMPRE calcule a PRÓXIMA ocorrência, nunca a que já passou\n`
-  prompt += `  - Exemplo: Se hoje é 22/11/2025 e o cliente diz "amanhã", você internamente converte para "23/11/2025" (não "23/11/2024" ou "23/11/2026")\n`
+  prompt += `- ⚠️ CRÍTICO SOBRE DATAS EM LINGUAGEM NATURAL:\n`
+  prompt += `  Quando o cliente mencionar datas em linguagem natural, você DEVE passar a STRING ORIGINAL para a função:\n`
+  prompt += `  - "hoje" → passe "hoje" (NÃO calcule DD/MM/YYYY)\n`
+  prompt += `  - "amanhã" → passe "amanhã" (NÃO calcule DD/MM/YYYY)\n`
+  prompt += `  - "depois de amanhã" → passe "depois de amanhã" (NÃO calcule DD/MM/YYYY)\n`
+  prompt += `  - "segunda-feira", "terça-feira", etc. → passe "segunda-feira", "terça-feira", etc. (NÃO calcule DD/MM/YYYY)\n`
+  prompt += `  - "próxima segunda-feira", "próxima terça-feira", etc. → passe "próxima segunda-feira", "próxima terça-feira", etc.\n`
+  prompt += `  - A função parsePortugueseDate fará o cálculo correto internamente usando a data atual do Brasil\n`
+  prompt += `  - Só use formato DD/MM/YYYY se o cliente fornecer explicitamente uma data numérica (ex: "24/11", "24/11/2025")\n`
+  prompt += `  - Exemplos CORRETOS de chamada da função:\n`
+  prompt += `    * Cliente: "próxima terça-feira às 3 da tarde" → create_appointment(date: "próxima terça-feira", time: "15:00")\n`
+  prompt += `    * Cliente: "amanhã às 7 da manhã" → create_appointment(date: "amanhã", time: "07:00")\n`
+  prompt += `    * Cliente: "25/11 às 14h" → create_appointment(date: "25/11/2025", time: "14:00")\n`
   prompt += `- CONVERSÃO INTERNA DE HORAS (você faz isso internamente, não pede ao cliente):\n`
   prompt += `  - "7 da manhã" ou "7h da manhã" → "07:00"\n`
   prompt += `  - "4 da tarde" ou "4h da tarde" → "16:00"\n`
@@ -2098,8 +2111,9 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `  - Se não especificar hora, use "14:00" como padrão\n`
   prompt += `- FORMATO DA FUNÇÃO (você usa internamente, não menciona ao cliente):\n`
   prompt += `  - A função create_appointment espera:\n`
-  prompt += `    * date: formato DD/MM/YYYY (ex: "24/11/2025") - você converte internamente da linguagem natural\n`
-  prompt += `    * time: formato HH:MM (ex: "16:00", "19:00") - você converte internamente da linguagem natural\n`
+  prompt += `    * date: pode ser linguagem natural (ex: "amanhã", "próxima terça-feira") OU formato DD/MM/YYYY (ex: "24/11/2025")\n`
+  prompt += `      ⚠️ IMPORTANTE: Para linguagem natural, passe a string original SEM converter para DD/MM/YYYY\n`
+  prompt += `    * time: formato HH:MM (ex: "16:00", "19:00") - você converte da linguagem natural (ex: "3 da tarde" → "15:00")\n`
   prompt += `    * description: descrição do agendamento\n`
   prompt += `- ⚠️ CRÍTICO SOBRE CONFIRMAÇÃO DE AGENDAMENTOS:\n`
   prompt += `  Quando você chamar a função create_appointment, ela SEMPRE retornará uma mensagem pedindo confirmação.\n`
