@@ -786,6 +786,145 @@ export async function processQuestionnaireResponse(
 }
 
 /**
+ * Processa confirmação ou cancelamento de agendamento pendente
+ * Retorna true se processou algo (confirmação ou cancelamento), false caso contrário
+ */
+async function processAppointmentConfirmation(
+  instanceId: string,
+  contactNumber: string,
+  userMessage: string,
+  userId: string,
+  contactName?: string
+): Promise<boolean> {
+  const { getPendingAppointment, clearPendingAppointment } = await import('./pending-appointments')
+  const pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
+  
+  if (!pendingAppointment) {
+    return false // Não há agendamento pendente, não processou nada
+  }
+
+  const userMessageLower = userMessage.toLowerCase().trim()
+  const normalizedMessage = userMessageLower.replace(/\s+/g, '').replace(/[.,!?]/g, '')
+  
+  // Detecção robusta de confirmação
+  const isConfirmation = 
+    userMessageLower === 'confirmar' || 
+    normalizedMessage === 'confirmar' ||
+    userMessageLower === 'sim' || 
+    userMessageLower === 'confirmo' ||
+    userMessageLower === 'ok' ||
+    userMessageLower === 'tá certo' ||
+    userMessageLower === 'ta certo' ||
+    userMessageLower === 'esta certo' ||
+    userMessageLower === 'está certo' ||
+    userMessageLower.startsWith('confirmar') ||
+    normalizedMessage.startsWith('confirmar') ||
+    (userMessageLower.length <= 15 && userMessageLower.includes('confirm'))
+  
+  // Detecção de cancelamento
+  const isCancellation = 
+    userMessageLower === 'cancelar' ||
+    normalizedMessage === 'cancelar' ||
+    userMessageLower.includes('cancelar') ||
+    (userMessageLower.includes('não') && userMessageLower.length <= 10) ||
+    (userMessageLower.includes('nao') && userMessageLower.length <= 10)
+
+  console.log(`🔍 Processando agendamento pendente:`)
+  console.log(`   Mensagem: "${userMessage}"`)
+  console.log(`   É confirmação? ${isConfirmation}`)
+  console.log(`   É cancelamento? ${isCancellation}`)
+
+  // Processa confirmação
+  if (isConfirmation) {
+    console.log(`✅ PROCESSANDO CONFIRMAÇÃO DE AGENDAMENTO`)
+    
+    // Converte a data formatada de volta para Date
+    const [day, month, year] = pendingAppointment.date.split('/').map(Number)
+    const [hour, minute] = pendingAppointment.time.split(':').map(Number)
+    
+    console.log(`📅 Convertendo dados: ${day}/${month}/${year} às ${hour}:${minute}`)
+    
+    // Função auxiliar para criar data UTC no fuso do Brasil
+    const createBrazilianDateAsUTC = (year: number, month: number, day: number, hour: number, minute: number): Date => {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00-03:00`
+      return new Date(dateStr)
+    }
+    
+    const appointmentDateUTC = createBrazilianDateAsUTC(year, month - 1, day, hour, minute)
+    console.log(`📅 Data UTC criada: ${appointmentDateUTC.toISOString()}`)
+    
+    // Limpa o agendamento pendente ANTES de criar o agendamento (evita race conditions)
+    await clearPendingAppointment(instanceId, contactNumber)
+    console.log(`📅 Agendamento pendente removido ANTES de criar agendamento`)
+    
+    // Cria o agendamento no banco
+    const { createAppointment } = await import('./appointments')
+    const result = await createAppointment({
+      userId,
+      instanceId,
+      contactNumber,
+      contactName: contactName,
+      date: appointmentDateUTC,
+      description: pendingAppointment.description || `Agendamento para ${pendingAppointment.service}`,
+    })
+    
+    console.log(`📅 Resultado do createAppointment:`, result)
+    
+    if (result.success) {
+      let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
+      if (pendingAppointment.duration) {
+        confirmationMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
+      }
+      confirmationMessage += `\n🛠️ Serviço: ${pendingAppointment.service}`
+      
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service')
+      })
+      console.log(`✅ Confirmação processada e mensagem enviada - RETORNANDO TRUE`)
+      return true // Processou confirmação, não deve chamar IA
+    } else {
+      console.error(`❌ Erro ao confirmar agendamento:`, result)
+      const errorMessage = `❌ Erro ao confirmar agendamento: ${result.error}. Por favor, tente novamente.`
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+      })
+      console.log(`❌ Erro ao confirmar - RETORNANDO TRUE`)
+      return true // Processou (mesmo com erro), não deve chamar IA
+    }
+  }
+  
+  // Processa cancelamento
+  if (isCancellation) {
+    console.log(`❌ PROCESSANDO CANCELAMENTO DE AGENDAMENTO`)
+    await clearPendingAppointment(instanceId, contactNumber)
+    const cancelMessage = `Agendamento cancelado. Se precisar de mais alguma coisa, estou à disposição!`
+    const contactKey = `${instanceId}-${contactNumber}`
+    await queueMessage(contactKey, async () => {
+      await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
+    })
+    console.log(`❌ Cancelamento processado - RETORNANDO TRUE`)
+    return true // Processou cancelamento, não deve chamar IA
+  }
+  
+  // Se há agendamento pendente mas não confirmou nem cancelou, relembra
+  console.log(`⚠️ Há agendamento pendente mas mensagem não é confirmação nem cancelamento`)
+  let reminderMessage = `Você tem um agendamento pendente de confirmação:\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
+  if (pendingAppointment.duration) {
+    reminderMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
+  }
+  reminderMessage += `\n🛠️ Serviço: ${pendingAppointment.service}\n\nDigite "confirmar" para confirmar ou "cancelar" para cancelar.`
+  
+  const contactKey = `${instanceId}-${contactNumber}`
+  await queueMessage(contactKey, async () => {
+    await sendWhatsAppMessage(instanceId, contactNumber, reminderMessage, 'service')
+  })
+  console.log(`📅 Relembrando agendamento pendente - RETORNANDO TRUE`)
+  return true // Relembrou, não deve chamar IA
+}
+
+/**
  * Executa um workflow IA-only de forma autônoma
  * A IA conversa diretamente com o cliente usando os detalhes do negócio
  */
@@ -821,177 +960,22 @@ async function executeAIOnlyWorkflow(
       return
     }
 
-    // Verifica se há agendamento pendente e processa confirmação/cancelamento
-    const { getPendingAppointment, clearPendingAppointment } = await import('./pending-appointments')
-    const pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
+    // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
+    // Se processou algo, retorna imediatamente SEM chamar a IA
+    const processedAppointment = await processAppointmentConfirmation(
+      instanceId,
+      contactNumber,
+      userMessage,
+      userId,
+      contactNameFinal
+    )
     
-    console.log(`🔍 Verificando agendamento pendente para ${instanceId}-${contactNumber}:`, pendingAppointment ? 'ENCONTRADO' : 'NÃO ENCONTRADO')
-    
-    if (pendingAppointment) {
-      const userMessageLower = userMessage.toLowerCase().trim()
-      console.log(`📝 Mensagem do usuário: "${userMessage}" (lowercase: "${userMessageLower}")`)
-      console.log(`📝 Agendamento pendente encontrado:`, pendingAppointment)
-      
-      // Verifica se o usuário confirmou PRIMEIRO - verificação mais ampla e direta
-      // Remove espaços extras e caracteres especiais para comparação mais robusta
-      const normalizedMessage = userMessageLower.replace(/\s+/g, '').replace(/[.,!?]/g, '')
-      
-      // Verificação mais simples e direta - se contém "confirmar" ou variações, é confirmação
-      const isConfirmation = 
-        userMessageLower === 'confirmar' || 
-        normalizedMessage === 'confirmar' ||
-        userMessageLower === 'sim' || 
-        userMessageLower === 'confirmo' ||
-        userMessageLower === 'ok' ||
-        userMessageLower === 'tá certo' ||
-        userMessageLower === 'ta certo' ||
-        userMessageLower === 'esta certo' ||
-        userMessageLower === 'está certo' ||
-        userMessageLower.startsWith('confirmar') ||
-        normalizedMessage.startsWith('confirmar') ||
-        (userMessageLower.length <= 15 && userMessageLower.includes('confirm'))
-      
-      console.log(`🔍 VERIFICAÇÃO DE CONFIRMAÇÃO:`)
-      console.log(`   Mensagem original: "${userMessage}"`)
-      console.log(`   Mensagem lowercase: "${userMessageLower}"`)
-      console.log(`   Mensagem normalizada: "${normalizedMessage}"`)
-      console.log(`   É confirmação? ${isConfirmation}`)
-      console.log(`   Comparações:`)
-      console.log(`     - userMessageLower === 'confirmar': ${userMessageLower === 'confirmar'}`)
-      console.log(`     - normalizedMessage === 'confirmar': ${normalizedMessage === 'confirmar'}`)
-      console.log(`     - userMessageLower.startsWith('confirmar'): ${userMessageLower.startsWith('confirmar')}`)
-      
-      if (isConfirmation) {
-        console.log(`✅ PROCESSANDO CONFIRMAÇÃO - não chamará IA`)
-        console.log(`✅ Usuário confirmou agendamento pendente`)
-        
-        // Converte a data formatada de volta para Date
-        const [day, month, year] = pendingAppointment.date.split('/').map(Number)
-        const [hour, minute] = pendingAppointment.time.split(':').map(Number)
-        
-        console.log(`📅 Convertendo dados do agendamento: ${day}/${month}/${year} às ${hour}:${minute}`)
-        
-        // Define funções de data temporariamente aqui (serão redefinidas depois, mas precisamos aqui)
-        const createBrazilianDateAsUTC = (year: number, month: number, day: number, hour: number, minute: number): Date => {
-          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00-03:00`
-          return new Date(dateStr)
-        }
-        
-        const appointmentDateUTC = createBrazilianDateAsUTC(year, month - 1, day, hour, minute)
-        console.log(`📅 Data UTC criada: ${appointmentDateUTC.toISOString()}`)
-        
-        const { createAppointment } = await import('./appointments')
-        const result = await createAppointment({
-          userId,
-          instanceId,
-          contactNumber,
-          contactName: contactName,
-          date: appointmentDateUTC,
-          description: pendingAppointment.description || `Agendamento para ${pendingAppointment.service}`,
-        })
-        
-        console.log(`📅 Resultado do createAppointment:`, result)
-        
-        // Limpa o agendamento pendente ANTES de enviar a resposta
-        await clearPendingAppointment(instanceId, contactNumber)
-        console.log(`📅 Agendamento pendente removido`)
-        
-        if (result.success) {
-          let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
-          if (pendingAppointment.duration) {
-            confirmationMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
-          }
-          confirmationMessage += `\n🛠️ Serviço: ${pendingAppointment.service}`
-          
-          const contactKey = `${instanceId}-${contactNumber}`
-          await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service')
-          })
-          console.log(`✅ Mensagem de confirmação enviada - RETORNANDO SEM CHAMAR IA`)
-          return // CRÍTICO: Retorna aqui para não chamar a IA
-        } else {
-          console.error(`❌ Erro ao confirmar agendamento:`, result)
-          const errorMessage = `❌ Erro ao confirmar agendamento: ${result.error}. Por favor, tente novamente.`
-          const contactKey = `${instanceId}-${contactNumber}`
-          await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
-          })
-          console.log(`❌ Mensagem de erro enviada - RETORNANDO SEM CHAMAR IA`)
-          return // CRÍTICO: Retorna aqui para não chamar a IA
-        }
-      }
-      
-      // Verifica se o usuário cancelou
-      const isCancellation = userMessageLower.includes('cancelar') || 
-                            userMessageLower.includes('não') || 
-                            userMessageLower.includes('nao') ||
-                            userMessageLower === 'cancelar' ||
-                            normalizedMessage === 'cancelar'
-      
-      if (isCancellation) {
-        console.log(`❌ Usuário cancelou agendamento pendente`)
-        await clearPendingAppointment(instanceId, contactNumber)
-        const cancelMessage = `Agendamento cancelado. Se precisar de mais alguma coisa, estou à disposição!`
-        const contactKey = `${instanceId}-${contactNumber}`
-        await queueMessage(contactKey, async () => {
-          await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
-        })
-        console.log(`❌ Mensagem de cancelamento enviada - RETORNANDO SEM CHAMAR IA`)
-        return // CRÍTICO: Retorna aqui para não chamar a IA
-      }
-      
-      // Se há agendamento pendente mas não confirmou nem cancelou, relembra
-      // IMPORTANTE: Retorna aqui para não chamar a IA - SEMPRE retorna quando há agendamento pendente
-      console.log(`⚠️ Há agendamento pendente mas mensagem não é confirmação nem cancelamento`)
-      let reminderMessage = `Você tem um agendamento pendente de confirmação:\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
-      if (pendingAppointment.duration) {
-        reminderMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
-      }
-      reminderMessage += `\n🛠️ Serviço: ${pendingAppointment.service}\n\nDigite "confirmar" para confirmar ou "cancelar" para cancelar.`
-      
-      const contactKey = `${instanceId}-${contactNumber}`
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, reminderMessage, 'service')
-      })
-      console.log(`📅 Relembrando agendamento pendente - RETORNANDO SEM CHAMAR IA`)
-      return // CRÍTICO: Retorna aqui para não chamar a IA
+    if (processedAppointment) {
+      console.log(`📅 Agendamento processado, retornando SEM chamar IA`)
+      return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento
     }
     
-    console.log(`📝 Não há agendamento pendente, continuando com processamento normal`)
-
-    // Verifica novamente se não há agendamento pendente (double-check para evitar race conditions)
-    // Se a mensagem do usuário é "confirmar" mas não há agendamento pendente, pode ser que acabou de confirmar
-    // Nesse caso, não deve chamar a IA para evitar criar um novo agendamento
-    const userMessageLower = userMessage.toLowerCase().trim()
-    const normalizedMessage = userMessageLower.replace(/\s+/g, '').replace(/[.,!?]/g, '')
-    const isConfirmationMessage = 
-      userMessageLower === 'confirmar' || 
-      normalizedMessage === 'confirmar' ||
-      userMessageLower === 'sim' || 
-      userMessageLower === 'confirmo' ||
-      (userMessageLower.length <= 15 && userMessageLower.includes('confirm'))
-    
-    if (isConfirmationMessage && !pendingAppointment) {
-      console.log(`⚠️ Mensagem de confirmação detectada mas não há agendamento pendente. Pode ter acabado de confirmar. Ignorando para evitar criar novo agendamento.`)
-      // Verifica se há um agendamento recente criado (nos últimos 30 segundos)
-      const recentAppointment = await prisma.appointment.findFirst({
-        where: {
-          instanceId,
-          contactNumber,
-          createdAt: {
-            gte: new Date(Date.now() - 30000), // Últimos 30 segundos
-          },
-        },
-        orderBy: {
-          createdAt: 'desc',
-        },
-      })
-      
-      if (recentAppointment) {
-        console.log(`✅ Agendamento recente encontrado. Não chamará IA para evitar duplicação.`)
-        return
-      }
-    }
+    console.log(`📝 Continuando com processamento normal da IA`)
 
     // Busca histórico recente da conversa
     const recentMessages = await prisma.message.findMany({
@@ -1632,6 +1616,24 @@ async function executeAIOnlyWorkflow(
         try {
           console.log(`📅 Tentando criar agendamento com args:`, args)
           console.log(`📅 Contexto: userId=${userId}, instanceId=${instanceId}, contactNumber=${contactNumber}`)
+          
+          // CRÍTICO: Verifica se já há um agendamento pendente antes de criar um novo
+          const { getPendingAppointment } = await import('./pending-appointments')
+          const existingPending = await getPendingAppointment(instanceId, contactNumber)
+          if (existingPending) {
+            console.log(`⚠️ Já existe um agendamento pendente. Não criando novo. Retornando mensagem de relembrança.`)
+            let reminderMessage = `Você já tem um agendamento pendente de confirmação:\n\n📅 Data: ${existingPending.date}\n🕐 Hora: ${existingPending.time}`
+            if (existingPending.duration) {
+              reminderMessage += `\n⏱️ Duração: ${existingPending.duration} minutos`
+            }
+            reminderMessage += `\n🛠️ Serviço: ${existingPending.service}\n\nDigite "confirmar" para confirmar ou "cancelar" para cancelar.`
+            return {
+              success: false,
+              pending: true,
+              error: reminderMessage,
+              message: reminderMessage,
+            }
+          }
           
           // Validações iniciais
           if (!userId) {
