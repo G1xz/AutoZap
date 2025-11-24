@@ -857,19 +857,7 @@ export async function processAppointmentConfirmation(
     const { getPendingAppointment } = pendingAppointmentsModule
     clearPendingAppointment = pendingAppointmentsModule.clearPendingAppointment
     
-    // Verifica também diretamente no banco para debug
-    const directCheck = await prisma.conversationStatus.findUnique({
-      where: {
-        instanceId_contactNumber: {
-          instanceId,
-          contactNumber,
-        },
-      },
-    })
-    console.log(`🔍 [processAppointmentConfirmation] Verificação direta no banco:`)
-    console.log(`   Status encontrado:`, directCheck ? `"${directCheck.status?.substring(0, 100)}..."` : 'NÃO ENCONTRADO')
-    console.log(`   É agendamento pendente?`, directCheck?.status?.startsWith('pending_appointment:') ? 'SIM' : 'NÃO')
-    
+    // Busca agendamento pendente na tabela dedicada PendingAppointment
     pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
     
     console.log(`🔍 [processAppointmentConfirmation] Agendamento pendente:`, pendingAppointment ? 'ENCONTRADO' : 'NÃO ENCONTRADO')
@@ -2050,7 +2038,7 @@ async function executeAIOnlyWorkflow(
             duration: serviceDuration,
             service: args.description || 'Serviço não especificado',
             description: args.description,
-          })
+          }, userId) // Passa userId como parâmetro obrigatório
           
           console.log(`📅 Agendamento pendente armazenado: ${formattedDate} às ${formattedTime}`)
           

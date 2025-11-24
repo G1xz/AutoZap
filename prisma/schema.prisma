@@ -23,6 +23,7 @@ model User {
   workflows         Workflow[]
   services          Service[]
   appointments      Appointment[]
+  pendingAppointments PendingAppointment[]
   catalogs          Catalog[]
 }
 
@@ -51,6 +52,7 @@ model WhatsAppInstance {
   workflows            Workflow[]
   conversationStatuses ConversationStatus[]
   appointments         Appointment[]
+  pendingAppointments   PendingAppointment[]
   contacts             Contact[]
 }
 
@@ -264,4 +266,27 @@ model Appointment {
   @@index([userId, date])
   @@index([instanceId, date])
   @@index([status])
+}
+
+model PendingAppointment {
+  id            String   @id @default(cuid())
+  userId        String
+  instanceId    String
+  contactNumber String
+  contactName   String?
+  date          String // Data formatada DD/MM/YYYY
+  time          String // Hora formatada HH:MM
+  duration      Int? // Duração em minutos
+  service       String // Nome do serviço
+  description   String? // Descrição completa
+  expiresAt     DateTime // Quando expira (ex: 1 hora após criação)
+  createdAt     DateTime @default(now())
+
+  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, contactNumber]) // Apenas um agendamento pendente por contato
+  @@index([userId])
+  @@index([instanceId, contactNumber])
+  @@index([expiresAt]) // Para limpar agendamentos expirados
 }
