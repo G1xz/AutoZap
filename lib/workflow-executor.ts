@@ -800,6 +800,53 @@ async function executeAIOnlyWorkflow(
       ? formattedPhone.replace(/^55(\d{2})(\d{4,5})(\d{4})$/, '+55 ($1) $2-$3')
       : formattedPhone.replace(/^(\d{2})(\d{4,5})(\d{4})$/, '($1) $2-$3')
 
+    // Buscar userId do workflow primeiro (precisa para confirmar agendamentos e buscar catálogo)
+    const fullWorkflow = await prisma.workflow.findUnique({
+      where: { id: workflow.id },
+      select: { userId: true },
+    })
+    const userId = fullWorkflow?.userId
+
+    if (!userId) {
+      console.error('❌ userId não encontrado para o workflow')
+      return
+    }
+
+    // Verifica se há agendamento pendente e processa confirmação/cancelamento
+    const { getPendingAppointment, clearPendingAppointment } = await import('./pending-appointments')
+    const pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
+    
+    if (pendingAppointment) {
+      const userMessageLower = userMessage.toLowerCase().trim()
+      
+      // A confirmação será processada depois que as funções de data forem definidas
+      // Por enquanto, só processa cancelamento e relembra
+      
+      // Verifica se o usuário cancelou
+      if (userMessageLower.includes('cancelar') || userMessageLower.includes('não') || userMessageLower.includes('nao')) {
+        await clearPendingAppointment(instanceId, contactNumber)
+        const cancelMessage = `Agendamento cancelado. Se precisar de mais alguma coisa, estou à disposição!`
+        const contactKey = `${instanceId}-${contactNumber}`
+        await queueMessage(contactKey, async () => {
+          await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
+        })
+        return
+      }
+      
+      // Se há agendamento pendente mas não confirmou nem cancelou, relembra
+      let reminderMessage = `Você tem um agendamento pendente de confirmação:\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
+      if (pendingAppointment.duration) {
+        reminderMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
+      }
+      reminderMessage += `\n🛠️ Serviço: ${pendingAppointment.service}\n\nDigite "confirmar" para confirmar ou "cancelar" para cancelar.`
+      
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, reminderMessage, 'service')
+      })
+      return
+    }
+
     // Busca histórico recente da conversa
     const recentMessages = await prisma.message.findMany({
       where: {
@@ -820,18 +867,6 @@ async function executeAIOnlyWorkflow(
         role: msg.isFromMe ? 'assistant' : 'user' as 'user' | 'assistant',
         content: msg.body,
       }))
-
-    // Buscar userId do workflow para criar agendamentos e buscar catálogo
-    const fullWorkflow = await prisma.workflow.findUnique({
-      where: { id: workflow.id },
-      select: { userId: true },
-    })
-    const userId = fullWorkflow?.userId
-
-    if (!userId) {
-      console.error('❌ userId não encontrado para o workflow')
-      return
-    }
 
     // Parse dos detalhes do negócio
     let businessDetails: any = {}
@@ -1540,49 +1575,54 @@ async function executeAIOnlyWorkflow(
             console.error(`❌ ERRO: Hora não corresponde após conversão! Esperado: ${hour}:${minute.toString().padStart(2, '0')}, Obtido: ${verificationBrazilian.hour}:${verificationBrazilian.minute.toString().padStart(2, '0')}`)
           }
 
-          console.log(`📅 Criando agendamento no banco de dados...`)
-          console.log(`📅 appointmentDateUTC: ${appointmentDateUTC.toISOString()}`)
-          console.log(`📅 userId: ${userId}, instanceId: ${instanceId}, contactNumber: ${contactNumber}`)
+          // Formata data e hora para exibição
+          const formattedDate = `${day.toString().padStart(2, '0')}/${(month + 1).toString().padStart(2, '0')}/${year}`
+          const formattedTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
           
-          const result = await createAppointment({
-            userId,
-            instanceId,
-            contactNumber,
-            contactName: contactNameFinal,
-            date: appointmentDateUTC,
-            description: args.description || `Agendamento solicitado via WhatsApp`,
+          // Busca informações do serviço para obter duração
+          let serviceDuration: number | undefined
+          const servicesWithAppointment = businessDetails.servicesWithAppointment || []
+          const serviceName = args.description?.toLowerCase() || ''
+          
+          for (const service of servicesWithAppointment) {
+            if (serviceName.includes(service.name.toLowerCase())) {
+              serviceDuration = service.duration
+              break
+            }
+          }
+          
+          // Armazena temporariamente o agendamento pendente
+          const { storePendingAppointment } = await import('./pending-appointments')
+          await storePendingAppointment(instanceId, contactNumber, {
+            date: formattedDate,
+            time: formattedTime,
+            duration: serviceDuration,
+            service: args.description || 'Serviço não especificado',
+            description: args.description,
           })
+          
+          console.log(`📅 Agendamento pendente armazenado: ${formattedDate} às ${formattedTime}`)
 
-          console.log(`📅 Resultado do createAppointment:`, JSON.stringify(result, null, 2))
+          // Retorna mensagem de confirmação para o usuário
+          let confirmationMessage = `Por favor, confirme os dados do agendamento:\n\n`
+          confirmationMessage += `📅 Data: ${formattedDate}\n`
+          confirmationMessage += `🕐 Hora: ${formattedTime}\n`
+          if (serviceDuration) {
+            confirmationMessage += `⏱️ Duração: ${serviceDuration} minutos\n`
+          }
+          confirmationMessage += `🛠️ Serviço: ${args.description || 'Serviço não especificado'}\n\n`
+          confirmationMessage += `Digite "confirmar" para confirmar o agendamento ou "cancelar" para cancelar.`
 
-          if (result.success && result.appointment) {
-            const formattedDate = appointmentDateUTC.toLocaleString('pt-BR', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit',
-              timeZone: 'America/Sao_Paulo',
-            })
-
-            console.log(`✅ Agendamento criado com sucesso: ${formattedDate}`)
-            console.log(`✅ ID do agendamento: ${result.appointment.id}`)
-
-            return {
-              success: true,
-              message: `Agendamento criado com sucesso para ${formattedDate}. ID: ${result.appointment.id}`,
-              appointment: result.appointment,
-            }
-          } else {
-            const errorMsg = result.error || 'Erro desconhecido ao criar agendamento'
-            console.error(`❌ Erro ao criar agendamento: ${errorMsg}`)
-            console.error(`❌ Result completo:`, result)
-            
-            return {
-              success: false,
-              error: `Não foi possível criar o agendamento: ${errorMsg}. Por favor, tente novamente.`,
-              details: result.error || 'Erro desconhecido',
-            }
+          return {
+            success: true,
+            pending: true,
+            message: confirmationMessage,
+            appointmentData: {
+              date: formattedDate,
+              time: formattedTime,
+              duration: serviceDuration,
+              service: args.description || 'Serviço não especificado',
+            },
           }
         } catch (error) {
           console.error('❌ Erro ao criar agendamento (catch):', error)
