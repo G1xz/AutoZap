@@ -47,8 +47,9 @@ export async function storePendingAppointment(
     console.log(`✅ [storePendingAppointment] Agendamento pendente armazenado com SUCESSO`)
     console.log(`✅ [storePendingAppointment] Status salvo: "${result.status?.substring(0, 100)}..."`)
     
-    // Verifica se foi salvo corretamente
-    const verification = await getPendingAppointment(instanceId, contactNumber)
+    // Verifica se foi salvo corretamente (importa a função aqui para evitar dependência circular)
+    const { getPendingAppointment: verifyGetPending } = await import('./pending-appointments')
+    const verification = await verifyGetPending(instanceId, contactNumber)
     if (verification) {
       console.log(`✅ [storePendingAppointment] VERIFICAÇÃO: Agendamento pendente confirmado no banco`)
     } else {
@@ -105,9 +106,19 @@ export async function clearPendingAppointment(
   try {
     console.log(`🗑️ [clearPendingAppointment] Removendo agendamento pendente para ${instanceId}-${contactNumber}`)
     
-    // Verifica se existe antes de remover
-    const before = await getPendingAppointment(instanceId, contactNumber)
-    if (before) {
+    // Verifica se existe antes de remover (usa função local para evitar dependência circular)
+    const statusBefore = await prisma.conversationStatus.findUnique({
+      where: {
+        instanceId_contactNumber: {
+          instanceId,
+          contactNumber,
+        },
+      },
+    })
+    
+    if (statusBefore?.status?.startsWith('pending_appointment:')) {
+      const dataStr = statusBefore.status.replace('pending_appointment:', '')
+      const before = JSON.parse(dataStr) as PendingAppointmentData
       console.log(`🗑️ [clearPendingAppointment] Agendamento pendente encontrado antes de remover:`, before)
     } else {
       console.log(`⚠️ [clearPendingAppointment] Nenhum agendamento pendente encontrado antes de remover`)
@@ -126,8 +137,16 @@ export async function clearPendingAppointment(
     })
     
     // Verifica se foi removido corretamente
-    const after = await getPendingAppointment(instanceId, contactNumber)
-    if (!after) {
+    const statusAfter = await prisma.conversationStatus.findUnique({
+      where: {
+        instanceId_contactNumber: {
+          instanceId,
+          contactNumber,
+        },
+      },
+    })
+    
+    if (!statusAfter?.status?.startsWith('pending_appointment:')) {
       console.log(`✅ [clearPendingAppointment] Agendamento pendente removido com SUCESSO`)
     } else {
       console.error(`❌ [clearPendingAppointment] ERRO: Agendamento pendente ainda existe após remover!`)
