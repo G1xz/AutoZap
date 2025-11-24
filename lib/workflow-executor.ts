@@ -825,12 +825,21 @@ async function executeAIOnlyWorkflow(
     const { getPendingAppointment, clearPendingAppointment } = await import('./pending-appointments')
     const pendingAppointment = await getPendingAppointment(instanceId, contactNumber)
     
+    console.log(`🔍 Verificando agendamento pendente para ${instanceId}-${contactNumber}:`, pendingAppointment ? 'ENCONTRADO' : 'NÃO ENCONTRADO')
+    
     if (pendingAppointment) {
       const userMessageLower = userMessage.toLowerCase().trim()
+      console.log(`📝 Mensagem do usuário: "${userMessage}" (lowercase: "${userMessageLower}")`)
       
       // Verifica se o usuário confirmou PRIMEIRO
-      if (userMessageLower === 'confirmar' || userMessageLower === 'sim' || userMessageLower === 'confirmo' || 
-          (userMessageLower.includes('confirmar') && userMessageLower.length <= 15)) {
+      const isConfirmation = userMessageLower === 'confirmar' || 
+                            userMessageLower === 'sim' || 
+                            userMessageLower === 'confirmo' || 
+                            (userMessageLower.includes('confirmar') && userMessageLower.length <= 15)
+      
+      console.log(`✅ É confirmação? ${isConfirmation}`)
+      
+      if (isConfirmation) {
         console.log(`✅ Usuário confirmou agendamento pendente`)
         
         // Converte a data formatada de volta para Date
@@ -1802,11 +1811,13 @@ async function executeAIOnlyWorkflow(
     let pendingAppointmentResponse: string | null = null
     
     const interceptedFunctionCall = async (functionName: string, args: any) => {
+      console.log(`🔧 Interceptando chamada de função: ${functionName}`, args)
       const result = await handleFunctionCall(functionName, args)
       
       // Se retornou um agendamento pendente, intercepta a resposta
       if (result && typeof result === 'object' && 'pending' in result && result.pending === true) {
         pendingAppointmentResponse = result.message || result.error || 'Por favor, confirme os dados do agendamento.'
+        console.log(`📅 Agendamento pendente interceptado:`, pendingAppointmentResponse)
         // Retorna erro para que a IA não confirme automaticamente
         return {
           success: false,
@@ -2089,19 +2100,28 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `  3. Depois de coletar a data, pergunte pela hora de forma natural: "E que horário seria melhor?" ou "Qual horário você prefere?"\n`
   prompt += `  4. Varie suas perguntas: às vezes pergunte "Que dia funciona melhor?", outras vezes "Qual horário você prefere?", seja CONVERSACIONAL\n`
   prompt += `  5. Aceite qualquer forma que o cliente responder: "amanhã", "24/11", "quinta-feira", "7 da manhã", "16h", "4 da tarde", etc.\n`
-  prompt += `- ⚠️ CRÍTICO SOBRE DATAS EM LINGUAGEM NATURAL:\n`
-  prompt += `  Quando o cliente mencionar datas em linguagem natural, você DEVE passar a STRING ORIGINAL para a função:\n`
-  prompt += `  - "hoje" → passe "hoje" (NÃO calcule DD/MM/YYYY)\n`
-  prompt += `  - "amanhã" → passe "amanhã" (NÃO calcule DD/MM/YYYY)\n`
-  prompt += `  - "depois de amanhã" → passe "depois de amanhã" (NÃO calcule DD/MM/YYYY)\n`
-  prompt += `  - "segunda-feira", "terça-feira", etc. → passe "segunda-feira", "terça-feira", etc. (NÃO calcule DD/MM/YYYY)\n`
-  prompt += `  - "próxima segunda-feira", "próxima terça-feira", etc. → passe "próxima segunda-feira", "próxima terça-feira", etc.\n`
+  prompt += `- ⚠️ CRÍTICO SOBRE DATAS EM LINGUAGEM NATURAL (LEIA COM ATENÇÃO):\n`
+  prompt += `  Quando o cliente mencionar datas em linguagem natural, você DEVE passar a STRING ORIGINAL EXATA para a função:\n`
+  prompt += `  - "hoje" → passe "hoje" (NÃO calcule DD/MM/YYYY, NÃO converta)\n`
+  prompt += `  - "amanhã" → passe "amanhã" (NÃO calcule DD/MM/YYYY, NÃO converta)\n`
+  prompt += `  - "depois de amanhã" → passe "depois de amanhã" (NÃO calcule DD/MM/YYYY, NÃO converta)\n`
+  prompt += `  - "segunda-feira" → passe "segunda-feira" (NÃO calcule DD/MM/YYYY, NÃO converta)\n`
+  prompt += `  - "terça-feira" → passe "terça-feira" (NÃO calcule DD/MM/YYYY, NÃO converta)\n`
+  prompt += `  - "próxima segunda-feira" → passe "próxima segunda-feira" (NÃO calcule DD/MM/YYYY, NÃO converta)\n`
+  prompt += `  - "próxima terça-feira" → passe "próxima terça-feira" (NÃO calcule DD/MM/YYYY, NÃO converta)\n`
+  prompt += `  - "próxima terça feira" → passe "próxima terça-feira" (normalize espaços, mas mantenha a string original)\n`
   prompt += `  - A função parsePortugueseDate fará o cálculo correto internamente usando a data atual do Brasil\n`
+  prompt += `  - ⚠️ PROIBIDO: NUNCA converta "próxima terça-feira" para "02/12/2025" ou qualquer data formatada\n`
+  prompt += `  - ⚠️ PROIBIDO: NUNCA calcule você mesmo a data - deixe a função fazer isso!\n`
   prompt += `  - Só use formato DD/MM/YYYY se o cliente fornecer explicitamente uma data numérica (ex: "24/11", "24/11/2025")\n`
   prompt += `  - Exemplos CORRETOS de chamada da função:\n`
   prompt += `    * Cliente: "próxima terça-feira às 3 da tarde" → create_appointment(date: "próxima terça-feira", time: "15:00")\n`
+  prompt += `    * Cliente: "próxima terca feira as 3 da tarde" → create_appointment(date: "próxima terça-feira", time: "15:00")\n`
   prompt += `    * Cliente: "amanhã às 7 da manhã" → create_appointment(date: "amanhã", time: "07:00")\n`
   prompt += `    * Cliente: "25/11 às 14h" → create_appointment(date: "25/11/2025", time: "14:00")\n`
+  prompt += `  - Exemplos INCORRETOS (NÃO faça isso):\n`
+  prompt += `    * Cliente: "próxima terça-feira" → create_appointment(date: "02/12/2025", ...) ❌ ERRADO!\n`
+  prompt += `    * Cliente: "amanhã" → create_appointment(date: "24/11/2025", ...) ❌ ERRADO!\n`
   prompt += `- CONVERSÃO INTERNA DE HORAS (você faz isso internamente, não pede ao cliente):\n`
   prompt += `  - "7 da manhã" ou "7h da manhã" → "07:00"\n`
   prompt += `  - "4 da tarde" ou "4h da tarde" → "16:00"\n`
