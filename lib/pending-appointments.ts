@@ -21,9 +21,12 @@ export async function storePendingAppointment(
   data: PendingAppointmentData
 ): Promise<void> {
   try {
+    console.log(`📅 [storePendingAppointment] Armazenando agendamento pendente para ${instanceId}-${contactNumber}`)
+    console.log(`📅 [storePendingAppointment] Dados:`, JSON.stringify(data, null, 2))
+    
     // Usa o ConversationStatus para armazenar dados temporários
     // Armazena no campo status como JSON (temporário até criar schema próprio)
-    await prisma.conversationStatus.upsert({
+    const result = await prisma.conversationStatus.upsert({
       where: {
         instanceId_contactNumber: {
           instanceId,
@@ -40,9 +43,20 @@ export async function storePendingAppointment(
         status: `pending_appointment:${JSON.stringify(data)}`,
       },
     })
-    console.log(`📅 Agendamento pendente armazenado para ${instanceId}-${contactNumber}`)
+    
+    console.log(`✅ [storePendingAppointment] Agendamento pendente armazenado com SUCESSO`)
+    console.log(`✅ [storePendingAppointment] Status salvo: "${result.status?.substring(0, 100)}..."`)
+    
+    // Verifica se foi salvo corretamente
+    const verification = await getPendingAppointment(instanceId, contactNumber)
+    if (verification) {
+      console.log(`✅ [storePendingAppointment] VERIFICAÇÃO: Agendamento pendente confirmado no banco`)
+    } else {
+      console.error(`❌ [storePendingAppointment] ERRO: Agendamento pendente NÃO encontrado após salvar!`)
+    }
   } catch (error) {
-    console.error('Erro ao armazenar agendamento pendente:', error)
+    console.error('❌ [storePendingAppointment] Erro ao armazenar agendamento pendente:', error)
+    console.error('❌ [storePendingAppointment] Stack trace:', error instanceof Error ? error.stack : 'N/A')
   }
 }
 
@@ -54,6 +68,7 @@ export async function getPendingAppointment(
   contactNumber: string
 ): Promise<PendingAppointmentData | null> {
   try {
+    console.log(`🔍 [getPendingAppointment] Buscando agendamento pendente para ${instanceId}-${contactNumber}`)
     const status = await prisma.conversationStatus.findUnique({
       where: {
         instanceId_contactNumber: {
@@ -63,14 +78,19 @@ export async function getPendingAppointment(
       },
     })
 
+    console.log(`🔍 [getPendingAppointment] Status encontrado:`, status ? `status="${status.status?.substring(0, 50)}..."` : 'NÃO ENCONTRADO')
+
     if (status?.status?.startsWith('pending_appointment:')) {
       const dataStr = status.status.replace('pending_appointment:', '')
-      return JSON.parse(dataStr) as PendingAppointmentData
+      const data = JSON.parse(dataStr) as PendingAppointmentData
+      console.log(`✅ [getPendingAppointment] Agendamento pendente encontrado:`, data)
+      return data
     }
 
+    console.log(`❌ [getPendingAppointment] Status não é agendamento pendente ou não existe`)
     return null
   } catch (error) {
-    console.error('Erro ao buscar agendamento pendente:', error)
+    console.error('❌ [getPendingAppointment] Erro ao buscar agendamento pendente:', error)
     return null
   }
 }
@@ -83,6 +103,16 @@ export async function clearPendingAppointment(
   contactNumber: string
 ): Promise<void> {
   try {
+    console.log(`🗑️ [clearPendingAppointment] Removendo agendamento pendente para ${instanceId}-${contactNumber}`)
+    
+    // Verifica se existe antes de remover
+    const before = await getPendingAppointment(instanceId, contactNumber)
+    if (before) {
+      console.log(`🗑️ [clearPendingAppointment] Agendamento pendente encontrado antes de remover:`, before)
+    } else {
+      console.log(`⚠️ [clearPendingAppointment] Nenhum agendamento pendente encontrado antes de remover`)
+    }
+    
     await prisma.conversationStatus.update({
       where: {
         instanceId_contactNumber: {
@@ -94,9 +124,17 @@ export async function clearPendingAppointment(
         status: 'active',
       },
     })
-    console.log(`📅 Agendamento pendente removido para ${instanceId}-${contactNumber}`)
+    
+    // Verifica se foi removido corretamente
+    const after = await getPendingAppointment(instanceId, contactNumber)
+    if (!after) {
+      console.log(`✅ [clearPendingAppointment] Agendamento pendente removido com SUCESSO`)
+    } else {
+      console.error(`❌ [clearPendingAppointment] ERRO: Agendamento pendente ainda existe após remover!`)
+    }
   } catch (error) {
-    console.error('Erro ao remover agendamento pendente:', error)
+    console.error('❌ [clearPendingAppointment] Erro ao remover agendamento pendente:', error)
+    console.error('❌ [clearPendingAppointment] Stack trace:', error instanceof Error ? error.stack : 'N/A')
   }
 }
 
