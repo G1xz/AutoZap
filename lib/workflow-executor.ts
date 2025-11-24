@@ -1341,9 +1341,37 @@ async function executeAIOnlyWorkflow(
     // Handler para quando a IA chamar a função de agendamento
     // Agora recebe data e hora separadamente para processamento mais simples e confiável
     const handleFunctionCall = async (functionName: string, args: any) => {
+      console.log(`🔧 handleFunctionCall chamado: functionName="${functionName}", userId=${userId}, instanceId=${instanceId}`)
+      
       if (functionName === 'create_appointment' && userId) {
         try {
           console.log(`📅 Tentando criar agendamento com args:`, args)
+          console.log(`📅 Contexto: userId=${userId}, instanceId=${instanceId}, contactNumber=${contactNumber}`)
+          
+          // Validações iniciais
+          if (!userId) {
+            console.error('❌ userId não está definido')
+            return {
+              success: false,
+              error: 'Erro interno: userId não está definido',
+            }
+          }
+          
+          if (!instanceId) {
+            console.error('❌ instanceId não está definido')
+            return {
+              success: false,
+              error: 'Erro interno: instanceId não está definido',
+            }
+          }
+          
+          if (!contactNumber) {
+            console.error('❌ contactNumber não está definido')
+            return {
+              success: false,
+              error: 'Erro interno: contactNumber não está definido',
+            }
+          }
           
           // Valida que temos data e hora
           if (!args.date || !args.time) {
@@ -1507,9 +1535,9 @@ async function executeAIOnlyWorkflow(
             description: args.description || `Agendamento solicitado via WhatsApp`,
           })
 
-          console.log(`📅 Resultado do createAppointment:`, result)
+          console.log(`📅 Resultado do createAppointment:`, JSON.stringify(result, null, 2))
 
-          if (result.success) {
+          if (result.success && result.appointment) {
             const formattedDate = appointmentDateUTC.toLocaleString('pt-BR', {
               day: '2-digit',
               month: '2-digit',
@@ -1520,17 +1548,22 @@ async function executeAIOnlyWorkflow(
             })
 
             console.log(`✅ Agendamento criado com sucesso: ${formattedDate}`)
+            console.log(`✅ ID do agendamento: ${result.appointment.id}`)
 
             return {
               success: true,
-              message: `Agendamento criado com sucesso para ${formattedDate}.`,
+              message: `Agendamento criado com sucesso para ${formattedDate}. ID: ${result.appointment.id}`,
               appointment: result.appointment,
             }
           } else {
-            console.error(`❌ Erro ao criar agendamento: ${result.error}`)
+            const errorMsg = result.error || 'Erro desconhecido ao criar agendamento'
+            console.error(`❌ Erro ao criar agendamento: ${errorMsg}`)
+            console.error(`❌ Result completo:`, result)
+            
             return {
               success: false,
-              error: result.error || 'Erro ao criar agendamento.',
+              error: `Não foi possível criar o agendamento: ${errorMsg}. Por favor, tente novamente.`,
+              details: result.error || 'Erro desconhecido',
             }
           }
         } catch (error) {
