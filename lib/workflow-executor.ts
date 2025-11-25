@@ -1100,19 +1100,19 @@ export async function processAppointmentConfirmation(
     
     // CRÍTICO: Cria o agendamento PRIMEIRO, só remove o pendente depois de sucesso
     // Isso evita perder o agendamento pendente se houver erro na criação
-    const { createAppointment } = await import('./appointments')
-    const result = await createAppointment({
-      userId,
-      instanceId,
-      contactNumber,
-      contactName: contactName,
-      date: appointmentDateUTC,
-      description: pendingAppointment.description || `Agendamento para ${pendingAppointment.service}`,
-    })
-    
-    console.log(`📅 Resultado do createAppointment:`, result)
-    
-    if (result.success) {
+        const { createAppointment } = await import('./appointments')
+        const result = await createAppointment({
+          userId,
+          instanceId,
+          contactNumber,
+          contactName: contactName,
+          date: appointmentDateUTC,
+          description: pendingAppointment.description || `Agendamento para ${pendingAppointment.service}`,
+        })
+        
+        console.log(`📅 Resultado do createAppointment:`, result)
+        
+        if (result.success) {
       // Só remove o agendamento pendente APÓS criar o agendamento com sucesso
       // Verifica novamente antes de remover para evitar remover um que já foi removido
       const { getPendingAppointment: getPendingAppointmentFinal } = await import('./pending-appointments')
@@ -1129,43 +1129,43 @@ export async function processAppointmentConfirmation(
         console.log(`⚠️ Agendamento pendente já foi removido (possível race condition)`)
       }
       
-      let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
-      if (pendingAppointment.duration) {
-        confirmationMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
-      }
-      confirmationMessage += `\n🛠️ Serviço: ${pendingAppointment.service}`
-      
-      const contactKey = `${instanceId}-${contactNumber}`
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service')
-      })
+          let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
+          if (pendingAppointment.duration) {
+            confirmationMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
+          }
+          confirmationMessage += `\n🛠️ Serviço: ${pendingAppointment.service}`
+          
+          const contactKey = `${instanceId}-${contactNumber}`
+          await queueMessage(contactKey, async () => {
+            await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service')
+          })
       console.log(`✅ Confirmação processada e mensagem enviada - RETORNANDO TRUE`)
       return true // Processou confirmação, não deve chamar IA
-    } else {
+        } else {
       // Se houve erro, mantém o agendamento pendente para que o usuário possa tentar novamente
-      console.error(`❌ Erro ao confirmar agendamento:`, result)
+          console.error(`❌ Erro ao confirmar agendamento:`, result)
       console.error(`⚠️ Agendamento pendente MANTIDO para nova tentativa`)
-      const errorMessage = `❌ Erro ao confirmar agendamento: ${result.error}. Por favor, tente novamente.`
-      const contactKey = `${instanceId}-${contactNumber}`
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
-      })
+          const errorMessage = `❌ Erro ao confirmar agendamento: ${result.error}. Por favor, tente novamente.`
+          const contactKey = `${instanceId}-${contactNumber}`
+          await queueMessage(contactKey, async () => {
+            await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+          })
       console.log(`❌ Erro ao confirmar - RETORNANDO TRUE`)
       return true // Processou (mesmo com erro), não deve chamar IA
     }
   }
   
   // Processa cancelamento
-  if (isCancellation) {
+      if (isCancellation) {
     console.log(`❌ PROCESSANDO CANCELAMENTO DE AGENDAMENTO`)
     
     // Primeiro tenta cancelar agendamento pendente
     let cancelledPending = false
     if (pendingAppointment) {
-      if (clearPendingAppointment) {
+        if (clearPendingAppointment) {
         await clearPendingAppointment(instanceId, normalizedContactNumber)
-      } else {
-        const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
+        } else {
+          const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
         await clearFn(instanceId, normalizedContactNumber)
       }
       cancelledPending = true
@@ -1213,10 +1213,10 @@ export async function processAppointmentConfirmation(
         ? `✅ Agendamento pendente cancelado e agendamento confirmado para ${formattedDate} às ${formattedTime} também foi cancelado. Se precisar de mais alguma coisa, estou à disposição!`
         : `✅ Agendamento confirmado para ${formattedDate} às ${formattedTime} foi cancelado. Se precisar de mais alguma coisa, estou à disposição!`
       
-      const contactKey = `${instanceId}-${contactNumber}`
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
-      })
+        const contactKey = `${instanceId}-${contactNumber}`
+        await queueMessage(contactKey, async () => {
+          await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
+        })
       console.log(`✅ Cancelamento de agendamento confirmado processado`)
     } else if (cancelledPending) {
       const cancelMessage = `✅ Agendamento pendente cancelado. Se precisar de mais alguma coisa, estou à disposição!`
@@ -1234,7 +1234,7 @@ export async function processAppointmentConfirmation(
     
     console.log(`❌ Cancelamento processado - RETORNANDO TRUE`)
     return true // Processou cancelamento, não deve chamar IA
-  }
+      }
       
       // Se há agendamento pendente mas não confirmou nem cancelou, relembra
       console.log(`⚠️ Há agendamento pendente mas mensagem não é confirmação nem cancelamento`)
@@ -2234,127 +2234,6 @@ async function executeAIOnlyWorkflow(
             }
           }
           
-          // CRÍTICO: Verifica disponibilidade do horário antes de criar agendamento pendente
-          console.log(`🔍 [handleFunctionCall] Verificando disponibilidade do horário...`)
-          console.log(`   Data: ${formattedDate}, Hora: ${formattedTime}`)
-          
-          // Calcula janela de tempo para verificar conflitos (considera duração do serviço ou 1 hora padrão)
-          const appointmentDuration = serviceDuration || 60 // Duração padrão de 1 hora se não especificada
-          const appointmentStart = appointmentDateUTC
-          const appointmentEnd = new Date(appointmentStart.getTime() + appointmentDuration * 60000)
-          
-          console.log(`🔍 [handleFunctionCall] Verificando conflitos:`)
-          console.log(`   Novo agendamento: ${appointmentStart.toISOString()} até ${appointmentEnd.toISOString()}`)
-          console.log(`   Duração: ${appointmentDuration} minutos`)
-          
-          // Busca agendamentos confirmados ou pendentes no mesmo dia
-          const startOfDay = new Date(appointmentStart)
-          startOfDay.setHours(0, 0, 0, 0)
-          const endOfDay = new Date(appointmentStart)
-          endOfDay.setHours(23, 59, 59, 999)
-          
-          const conflictingAppointments = await prisma.appointment.findMany({
-            where: {
-              userId,
-              instanceId,
-              status: {
-                in: ['pending', 'confirmed'],
-              },
-              date: {
-                gte: startOfDay,
-                lte: endOfDay,
-              },
-            },
-          })
-          
-          console.log(`🔍 [handleFunctionCall] Encontrados ${conflictingAppointments.length} agendamentos no mesmo dia`)
-          
-          // Verifica se há conflitos reais (sobreposição de horários)
-          let hasConflict = false
-          let conflictMessage = ''
-          
-          for (const existingAppt of conflictingAppointments) {
-            const existingStart = new Date(existingAppt.date)
-            // Assume duração padrão de 1 hora se não conseguir extrair da descrição
-            const existingDuration = 60 // Duração padrão
-            const existingEnd = new Date(existingStart.getTime() + existingDuration * 60000)
-            
-            console.log(`   Comparando com agendamento existente: ${existingStart.toISOString()} até ${existingEnd.toISOString()}`)
-            
-            // Verifica sobreposição: novo agendamento começa antes do existente terminar E termina depois do existente começar
-            if (appointmentStart < existingEnd && appointmentEnd > existingStart) {
-              hasConflict = true
-              const existingDate = new Date(existingAppt.date)
-              const existingFormattedDate = existingDate.toLocaleDateString('pt-BR', {
-                day: '2-digit',
-                month: '2-digit',
-                year: 'numeric',
-              })
-              const existingFormattedTime = existingDate.toLocaleTimeString('pt-BR', {
-                hour: '2-digit',
-                minute: '2-digit',
-              })
-              
-              conflictMessage = `❌ Este horário não está disponível!\n\nJá existe um agendamento para:\n📅 Data: ${existingFormattedDate}\n🕐 Hora: ${existingFormattedTime}`
-              if (existingAppt.description) {
-                conflictMessage += `\n🛠️ Serviço: ${existingAppt.description}`
-              }
-              conflictMessage += `\n\nPor favor, escolha outro horário.`
-              console.log(`⚠️ [handleFunctionCall] Conflito detectado com agendamento existente!`)
-              break
-            }
-          }
-          
-          // Também verifica agendamentos pendentes que possam conflitar
-          if (!hasConflict) {
-            const { getPendingAppointment } = await import('./pending-appointments')
-            // Busca todos os agendamentos pendentes da instância para verificar conflitos
-            const allPendingAppointments = await (prisma as any).pendingAppointment.findMany({
-              where: {
-                userId,
-                instanceId,
-                expiresAt: {
-                  gt: new Date(), // Apenas agendamentos não expirados
-                },
-              },
-            })
-            
-            for (const pendingAppt of allPendingAppointments) {
-              // Parse da data e hora do agendamento pendente
-              const [pendingDay, pendingMonth, pendingYear] = pendingAppt.date.split('/').map(Number)
-              const [pendingHour, pendingMinute] = pendingAppt.time.split(':').map(Number)
-              
-              // Cria data UTC do agendamento pendente
-              const pendingDateStr = `${pendingYear}-${String(pendingMonth).padStart(2, '0')}-${String(pendingDay).padStart(2, '0')}T${String(pendingHour).padStart(2, '0')}:${String(pendingMinute).padStart(2, '0')}:00-03:00`
-              const pendingStart = new Date(pendingDateStr)
-              const pendingDuration = pendingAppt.duration || 60
-              const pendingEnd = new Date(pendingStart.getTime() + pendingDuration * 60000)
-              
-              // Verifica sobreposição
-              if (appointmentStart < pendingEnd && appointmentEnd > pendingStart) {
-                hasConflict = true
-                conflictMessage = `❌ Este horário não está disponível!\n\nJá existe um agendamento pendente para:\n📅 Data: ${pendingAppt.date}\n🕐 Hora: ${pendingAppt.time}`
-                if (pendingAppt.service) {
-                  conflictMessage += `\n🛠️ Serviço: ${pendingAppt.service}`
-                }
-                conflictMessage += `\n\nPor favor, escolha outro horário.`
-                break
-              }
-            }
-          }
-          
-          if (hasConflict) {
-            console.log(`⚠️ [handleFunctionCall] Conflito de horário detectado!`)
-            console.log(`   Mensagem: ${conflictMessage}`)
-            return {
-              success: false,
-              error: conflictMessage,
-              message: conflictMessage,
-            }
-          }
-          
-          console.log(`✅ [handleFunctionCall] Horário disponível! Prosseguindo com criação do agendamento pendente.`)
-          
           // Armazena temporariamente o agendamento pendente
           console.log(`📅📅📅 [handleFunctionCall] ========== CRIANDO AGENDAMENTO PENDENTE ==========`)
           console.log(`   instanceId: ${instanceId}`)
@@ -2392,9 +2271,9 @@ async function executeAIOnlyWorkflow(
             
             // CRÍTICO: Usa número normalizado para verificação
             verification = await verifyPending(instanceId, normalizedContactNumber)
-            if (verification) {
+          if (verification) {
               console.log(`✅✅✅ [handleFunctionCall] VERIFICAÇÃO (tentativa ${attempt}/${maxRetries}): Agendamento pendente confirmado no banco`)
-              console.log(`✅✅✅ [handleFunctionCall] Dados verificados:`, JSON.stringify(verification, null, 2))
+            console.log(`✅✅✅ [handleFunctionCall] Dados verificados:`, JSON.stringify(verification, null, 2))
               break
             } else if (attempt < maxRetries) {
               console.log(`⚠️ [handleFunctionCall] Tentativa ${attempt}/${maxRetries} falhou, tentando novamente...`)
