@@ -1,7 +1,7 @@
 import { prisma } from './prisma'
 import { sendWhatsAppMessage, sendWhatsAppInteractiveMessage, sendWhatsAppImage, sendWhatsAppVideo, sendWhatsAppDocument, getUserProfileName } from './whatsapp-cloud-api'
 import { generateAIResponse } from './openai'
-import { createAppointment, checkAvailability } from './appointments'
+import { createAppointment, checkAvailability, getAvailableTimes, getUserAppointments, updateAppointment, cancelAppointment } from './appointments'
 
 export interface WhatsAppMessage {
   from: string
@@ -1630,11 +1630,11 @@ async function executeAIOnlyWorkflow(
     
     console.log(`🤖 Gerando resposta IA-only. Primeira interação: ${isFirstInteraction}, Histórico: ${finalConversationHistory.length} mensagens`)
     
-    // Define função de agendamento para a IA usar quando necessário
-    // Agora coleta data e hora separadamente para processamento mais confiável
+    // Define funções de agendamento para a IA usar quando necessário
+    // Função principal: criar agendamento
     const appointmentFunction = {
       name: 'create_appointment',
-      description: 'Cria um agendamento na agenda quando o cliente quer marcar um horário. Use esta função APENAS quando você tiver coletado tanto a DATA quanto a HORA do cliente. Se o cliente mencionar datas relativas como "amanhã", "hoje", "depois de amanhã", converta para formato DD/MM/YYYY antes de chamar esta função.',
+      description: 'Cria um agendamento na agenda quando o cliente quer marcar um horário. Use esta função APENAS quando você tiver coletado tanto a DATA quanto a HORA do cliente. A função verifica automaticamente se o horário está disponível antes de criar.',
       parameters: {
         type: 'object',
         properties: {
@@ -2234,6 +2234,57 @@ async function executeAIOnlyWorkflow(
             }
           }
           
+          // CRÍTICO: Verifica disponibilidade ANTES de criar agendamento pendente
+          console.log(`🔍 [handleFunctionCall] Verificando disponibilidade do horário...`)
+          const availabilityCheck = await checkAvailability(userId, appointmentDateUTC)
+          
+          if (availabilityCheck.success && availabilityCheck.appointments) {
+            // Verifica se há conflitos de horário
+            const appointmentDuration = serviceDuration || 60 // Duração padrão de 1 hora
+            const appointmentStart = appointmentDateUTC
+            const appointmentEnd = new Date(appointmentStart.getTime() + appointmentDuration * 60000)
+            
+            let hasConflict = false
+            let conflictMessage = ''
+            
+            for (const existingApt of availabilityCheck.appointments) {
+              const existingStart = new Date(existingApt.date)
+              const existingEnd = new Date(existingStart.getTime() + 60 * 60000) // Assume 1 hora padrão
+              
+              // Verifica sobreposição
+              if (appointmentStart < existingEnd && appointmentEnd > existingStart) {
+                hasConflict = true
+                const existingFormattedDate = existingStart.toLocaleDateString('pt-BR', {
+                  day: '2-digit',
+                  month: '2-digit',
+                  year: 'numeric',
+                })
+                const existingFormattedTime = existingStart.toLocaleTimeString('pt-BR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+                
+                conflictMessage = `❌ Este horário não está disponível!\n\nJá existe um agendamento para:\n📅 Data: ${existingFormattedDate}\n🕐 Hora: ${existingFormattedTime}`
+                if (existingApt.description) {
+                  conflictMessage += `\n🛠️ Serviço: ${existingApt.description}`
+                }
+                conflictMessage += `\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis.`
+                console.log(`⚠️ [handleFunctionCall] Conflito de horário detectado!`)
+                break
+              }
+            }
+            
+            if (hasConflict) {
+              return {
+                success: false,
+                error: conflictMessage,
+                message: conflictMessage,
+              }
+            }
+          }
+          
+          console.log(`✅ [handleFunctionCall] Horário disponível! Prosseguindo com criação do agendamento pendente.`)
+          
           // Armazena temporariamente o agendamento pendente
           console.log(`📅📅📅 [handleFunctionCall] ========== CRIANDO AGENDAMENTO PENDENTE ==========`)
           console.log(`   instanceId: ${instanceId}`)
@@ -2344,6 +2395,320 @@ async function executeAIOnlyWorkflow(
           }
         }
       }
+      
+      // Função para verificar disponibilidade em uma data
+      if (functionName === 'check_availability' && userId) {
+        try {
+          if (!args.date) {
+            return {
+              success: false,
+              error: 'Data é obrigatória para verificar disponibilidade.',
+            }
+          }
+          
+          // Parse da data
+          const dateStr = args.date
+          const parsedDate = parsePortugueseDate(dateStr)
+          if (!parsedDate) {
+            return {
+              success: false,
+              error: `Data inválida: "${dateStr}". Use formato DD/MM/YYYY ou linguagem natural.`,
+            }
+          }
+          
+          const result = await checkAvailability(userId, parsedDate)
+          
+          if (result.success) {
+            const formattedDate = parsedDate.toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            })
+            
+            if (result.appointments && result.appointments.length > 0) {
+              const appointmentsList = result.appointments.map((apt: any) => {
+                const aptDate = new Date(apt.date)
+                return `- ${aptDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - ${apt.description || 'Agendamento'}`
+              }).join('\n')
+              
+              return {
+                success: true,
+                message: `📅 Horários ocupados em ${formattedDate}:\n\n${appointmentsList}\n\nEstes horários já estão reservados. Escolha outro horário.`,
+              }
+            } else {
+              return {
+                success: true,
+                message: `✅ A data ${formattedDate} está completamente disponível! Você pode escolher qualquer horário.`,
+              }
+            }
+          } else {
+            return {
+              success: false,
+              error: result.error || 'Erro ao verificar disponibilidade.',
+            }
+          }
+        } catch (error) {
+          console.error('❌ Erro ao verificar disponibilidade:', error)
+          return {
+            success: false,
+            error: 'Erro ao verificar disponibilidade.',
+          }
+        }
+      }
+      
+      // Função para listar horários disponíveis em uma data
+      if (functionName === 'get_available_times' && userId) {
+        try {
+          if (!args.date) {
+            return {
+              success: false,
+              error: 'Data é obrigatória para listar horários disponíveis.',
+            }
+          }
+          
+          const dateStr = args.date
+          const parsedDate = parsePortugueseDate(dateStr)
+          if (!parsedDate) {
+            return {
+              success: false,
+              error: `Data inválida: "${dateStr}". Use formato DD/MM/YYYY ou linguagem natural.`,
+            }
+          }
+          
+          const duration = args.duration || 60 // Duração padrão de 1 hora
+          const result = await getAvailableTimes(userId, parsedDate, duration)
+          
+          if (result.success) {
+            if (result.availableTimes && result.availableTimes.length > 0) {
+              // Agrupa horários em grupos de 5 para melhor visualização
+              const timesList = result.availableTimes.slice(0, 20).join(', ') // Limita a 20 horários
+              const moreText = result.availableTimes.length > 20 ? `\n\n... e mais ${result.availableTimes.length - 20} horários disponíveis.` : ''
+              
+              return {
+                success: true,
+                message: `📅 Horários disponíveis em ${result.date}:\n\n${timesList}${moreText}\n\nQual horário você prefere?`,
+              }
+            } else {
+              return {
+                success: true,
+                message: `❌ Não há horários disponíveis em ${result.date}. Por favor, escolha outra data.`,
+              }
+            }
+          } else {
+            return {
+              success: false,
+              error: result.error || 'Erro ao buscar horários disponíveis.',
+            }
+          }
+        } catch (error) {
+          console.error('❌ Erro ao buscar horários disponíveis:', error)
+          return {
+            success: false,
+            error: 'Erro ao buscar horários disponíveis.',
+          }
+        }
+      }
+      
+      // Função para listar agendamentos do usuário
+      if (functionName === 'get_user_appointments' && userId) {
+        try {
+          const result = await getUserAppointments(userId, instanceId, normalizedContactNumber, args.include_past || false)
+          
+          if (result.success) {
+            if (result.appointments && result.appointments.length > 0) {
+              const appointmentsList = result.appointments.map((apt: any) => {
+                return `📅 ${apt.formattedDate} às ${apt.formattedTime} - ${apt.description || 'Agendamento'} (${apt.status === 'confirmed' ? 'Confirmado' : apt.status === 'pending' ? 'Pendente' : 'Cancelado'})`
+              }).join('\n')
+              
+              return {
+                success: true,
+                message: `📅 Seus agendamentos:\n\n${appointmentsList}\n\nVocê pode alterar ou cancelar qualquer um deles.`,
+              }
+            } else {
+              return {
+                success: true,
+                message: `Você não tem agendamentos no momento. Gostaria de agendar um horário?`,
+              }
+            }
+          } else {
+            return {
+              success: false,
+              error: result.error || 'Erro ao buscar agendamentos.',
+            }
+          }
+        } catch (error) {
+          console.error('❌ Erro ao buscar agendamentos:', error)
+          return {
+            success: false,
+            error: 'Erro ao buscar agendamentos.',
+          }
+        }
+      }
+      
+      // Função para alterar horário de um agendamento
+      if (functionName === 'update_appointment' && userId) {
+        try {
+          if (!args.new_date || !args.new_time) {
+            return {
+              success: false,
+              error: 'Nova data e hora são obrigatórias.',
+            }
+          }
+          
+          // Busca o agendamento primeiro para verificar se existe e pertence ao usuário
+          const userAppointments = await getUserAppointments(userId, instanceId, normalizedContactNumber, true)
+          
+          if (!userAppointments.success || !userAppointments.appointments) {
+            return {
+              success: false,
+              error: 'Erro ao buscar agendamentos.',
+            }
+          }
+          
+          // Tenta encontrar o agendamento pelo ID ou pela descrição/data
+          let appointmentToUpdate = userAppointments.appointments.find((apt: any) => apt.id === args.appointment_id)
+          
+          // Se não encontrou pelo ID, tenta encontrar pelo mais recente ou próximo
+          if (!appointmentToUpdate && userAppointments.appointments.length > 0) {
+            // Pega o agendamento mais próximo no futuro
+            const futureAppointments = userAppointments.appointments.filter((apt: any) => {
+              const aptDate = new Date(apt.date)
+              return aptDate >= new Date() && (apt.status === 'pending' || apt.status === 'confirmed')
+            })
+            
+            if (futureAppointments.length > 0) {
+              appointmentToUpdate = futureAppointments[0]
+            }
+          }
+          
+          if (!appointmentToUpdate) {
+            return {
+              success: false,
+              error: 'Agendamento não encontrado. Use get_user_appointments para ver seus agendamentos.',
+            }
+          }
+          
+          // Parse da nova data e hora
+          const dateTimeStr = `${args.new_date} ${args.new_time}`
+          const parsedNewDate = parsePortugueseDate(dateTimeStr)
+          
+          if (!parsedNewDate) {
+            return {
+              success: false,
+              error: `Data/hora inválida: "${args.new_date} ${args.new_time}". Use formato DD/MM/YYYY HH:MM ou linguagem natural.`,
+            }
+          }
+          
+          // Verifica disponibilidade do novo horário
+          const availabilityCheck = await checkAvailability(userId, parsedNewDate)
+          if (availabilityCheck.success && availabilityCheck.appointments) {
+            for (const existingApt of availabilityCheck.appointments) {
+              const existingStart = new Date(existingApt.date)
+              const existingEnd = new Date(existingStart.getTime() + 60 * 60000)
+              
+              if (parsedNewDate < existingEnd && new Date(parsedNewDate.getTime() + 60 * 60000) > existingStart) {
+                // Ignora o próprio agendamento que está sendo alterado
+                const existingAptDate = new Date(existingApt.date)
+                if (Math.abs(existingAptDate.getTime() - new Date(appointmentToUpdate.date).getTime()) > 60000) {
+                  return {
+                    success: false,
+                    error: 'Este horário já está ocupado. Escolha outro horário.',
+                  }
+                }
+              }
+            }
+          }
+          
+          const result = await updateAppointment(appointmentToUpdate.id, userId, parsedNewDate)
+          
+          if (result.success) {
+            const formattedDate = parsedNewDate.toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            })
+            const formattedTime = parsedNewDate.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+            
+            return {
+              success: true,
+              message: `✅ Agendamento alterado com sucesso!\n\nNovo horário:\n📅 Data: ${formattedDate}\n🕐 Hora: ${formattedTime}`,
+            }
+          } else {
+            return {
+              success: false,
+              error: result.error || 'Erro ao alterar agendamento.',
+            }
+          }
+        } catch (error) {
+          console.error('❌ Erro ao alterar agendamento:', error)
+          return {
+            success: false,
+            error: 'Erro ao alterar agendamento.',
+          }
+        }
+      }
+      
+      // Função para cancelar um agendamento específico
+      if (functionName === 'cancel_appointment' && userId) {
+        try {
+          // Busca agendamentos do usuário
+          const userAppointments = await getUserAppointments(userId, instanceId, normalizedContactNumber, false)
+          
+          if (!userAppointments.success || !userAppointments.appointments || userAppointments.appointments.length === 0) {
+            return {
+              success: false,
+              error: 'Você não tem agendamentos para cancelar.',
+            }
+          }
+          
+          // Se não especificou ID, cancela o mais próximo
+          let appointmentToCancel = userAppointments.appointments.find((apt: any) => apt.id === args.appointment_id)
+          
+          if (!appointmentToCancel && userAppointments.appointments.length > 0) {
+            appointmentToCancel = userAppointments.appointments[0] // Cancela o mais próximo
+          }
+          
+          if (!appointmentToCancel) {
+            return {
+              success: false,
+              error: 'Agendamento não encontrado.',
+            }
+          }
+          
+          const result = await cancelAppointment(appointmentToCancel.id, userId)
+          
+          if (result.success) {
+            const formattedDate = new Date(appointmentToCancel.date).toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            })
+            const formattedTime = new Date(appointmentToCancel.date).toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+            
+            return {
+              success: true,
+              message: `✅ Agendamento cancelado com sucesso!\n\nAgendamento cancelado:\n📅 Data: ${formattedDate}\n🕐 Hora: ${formattedTime}`,
+            }
+          } else {
+            return {
+              success: false,
+              error: result.error || 'Erro ao cancelar agendamento.',
+            }
+          }
+        } catch (error) {
+          console.error('❌ Erro ao cancelar agendamento:', error)
+          return {
+            success: false,
+            error: 'Erro ao cancelar agendamento.',
+          }
+        }
+      }
 
       return {
         success: false,
@@ -2382,7 +2747,91 @@ async function executeAIOnlyWorkflow(
       },
       temperature,
       maxTokens: 600,
-      functions: [appointmentFunction],
+      functions: [
+        appointmentFunction,
+        {
+          name: 'check_availability',
+          description: 'Verifica se uma data específica tem horários disponíveis. Use quando o cliente perguntar sobre disponibilidade ou quando quiser verificar antes de criar um agendamento.',
+          parameters: {
+            type: 'object',
+            properties: {
+              date: {
+                type: 'string',
+                description: 'Data para verificar disponibilidade. Pode ser formato DD/MM/YYYY ou linguagem natural (ex: "amanhã", "terça-feira", "25/11/2025").',
+              },
+            },
+            required: ['date'],
+          },
+        },
+        {
+          name: 'get_available_times',
+          description: 'Lista todos os horários disponíveis em uma data específica. Use quando o cliente perguntar "quais horários estão disponíveis" ou "que horários tem".',
+          parameters: {
+            type: 'object',
+            properties: {
+              date: {
+                type: 'string',
+                description: 'Data para listar horários disponíveis. Pode ser formato DD/MM/YYYY ou linguagem natural (ex: "amanhã", "terça-feira", "25/11/2025").',
+              },
+              duration: {
+                type: 'number',
+                description: 'Duração do agendamento em minutos (padrão: 60).',
+              },
+            },
+            required: ['date'],
+          },
+        },
+        {
+          name: 'get_user_appointments',
+          description: 'Lista todos os agendamentos do cliente. Use quando o cliente perguntar "quais são meus agendamentos", "meus horários", "quando tenho agendado" ou quando quiser ver os agendamentos antes de alterar/cancelar.',
+          parameters: {
+            type: 'object',
+            properties: {
+              include_past: {
+                type: 'boolean',
+                description: 'Se deve incluir agendamentos passados (padrão: false).',
+              },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'update_appointment',
+          description: 'Altera o horário de um agendamento existente. Use quando o cliente quiser mudar o horário de um agendamento (ex: "quero mudar para outro horário", "pode alterar para amanhã às 3h").',
+          parameters: {
+            type: 'object',
+            properties: {
+              appointment_id: {
+                type: 'string',
+                description: 'ID do agendamento a ser alterado (opcional - se não informado, altera o mais próximo).',
+              },
+              new_date: {
+                type: 'string',
+                description: 'Nova data do agendamento. Pode ser formato DD/MM/YYYY ou linguagem natural (ex: "amanhã", "terça-feira", "25/11/2025").',
+              },
+              new_time: {
+                type: 'string',
+                description: 'Nova hora do agendamento no formato HH:MM (ex: "14:00", "16:00") ou linguagem natural (ex: "3 da tarde", "7 da manhã").',
+              },
+            },
+            required: ['new_date', 'new_time'],
+          },
+        },
+        {
+          name: 'cancel_appointment',
+          description: 'Cancela um agendamento existente. Use quando o cliente quiser desmarcar ou cancelar um agendamento (ex: "quero cancelar", "desmarcar", "não vou mais").',
+          parameters: {
+            type: 'object',
+            properties: {
+              appointment_id: {
+                type: 'string',
+                description: 'ID do agendamento a ser cancelado (opcional - se não informado, cancela o mais próximo).',
+              },
+            },
+            required: [],
+          },
+        },
+      ],
       onFunctionCall: interceptedFunctionCall,
     })
     
@@ -2614,7 +3063,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- Mantenha o foco em VENDER e APRESENTAR ${businessName} de forma positiva\n`
   prompt += `- Você está conversando com ${contactName}\n`
   prompt += `- Lembre-se: você é um VENDEDOR, não um assistente genérico\n`
-  prompt += `\n\n📅 FUNCIONALIDADE DE AGENDAMENTO:\n`
+  prompt += `\n\n📅 FUNCIONALIDADE DE AGENDAMENTO (AUTONOMIA COMPLETA):\n`
   if (servicesWithAppointment.length > 0) {
     prompt += `- Os seguintes serviços REQUEREM agendamento:\n`
     servicesWithAppointment.forEach((service: { name: string; duration?: number }) => {
@@ -2627,11 +3076,38 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
     prompt += `- Quando o cliente mencionar interesse em algum desses serviços, você DEVE oferecer agendamento de forma natural e proativa\n`
     prompt += `- Se o cliente perguntar sobre um serviço que requer agendamento, mencione que é necessário agendar e ofereça ajuda para marcar\n`
   }
-  prompt += `- Quando o cliente quiser agendar algo, marcar uma consulta, ou definir um horário, você deve ENTENDER a linguagem natural do cliente e converter internamente\n`
+  prompt += `- ⚠️ CRÍTICO: Você tem AUTONOMIA COMPLETA para gerenciar agendamentos. Use as funções disponíveis de forma inteligente!\n`
   prompt += `- ⚠️ CRÍTICO: NUNCA peça ao cliente para usar formatos técnicos como "DD/MM/YYYY" ou "HH:MM" - você deve entender a linguagem natural dele\n`
   prompt += `- ⚠️ CRÍTICO: NUNCA seja repetitivo ou genérico ao responder sobre agendamento\n`
-  prompt += `- ⚠️ CRÍTICO: NÃO diga sempre "Para agendar um horário, basta me informar a data e hora desejados" - seja NATURAL e DIRETO\n`
   prompt += `- ⚠️ CRÍTICO: Se o cliente acabou de confirmar um agendamento (disse "confirmar", "sim", "ok"), NÃO tente criar um novo agendamento. Apenas confirme que recebeu a confirmação e agradeça.\n`
+  
+  prompt += `\n📋 FUNÇÕES DISPONÍVEIS PARA AGENDAMENTO:\n`
+  prompt += `1. create_appointment - Cria um novo agendamento (verifica disponibilidade automaticamente)\n`
+  prompt += `2. check_availability - Verifica se uma data tem horários disponíveis\n`
+  prompt += `3. get_available_times - Lista todos os horários disponíveis em uma data\n`
+  prompt += `4. get_user_appointments - Lista agendamentos do cliente\n`
+  prompt += `5. update_appointment - Altera horário de um agendamento existente\n`
+  prompt += `6. cancel_appointment - Cancela um agendamento existente\n`
+  
+  prompt += `\n🎯 QUANDO USAR CADA FUNÇÃO:\n`
+  prompt += `- Quando cliente perguntar "quais horários estão disponíveis?" ou "que horários tem?" → use get_available_times\n`
+  prompt += `- Quando cliente perguntar "tem horário disponível amanhã?" → use check_availability\n`
+  prompt += `- Quando cliente perguntar "quais são meus agendamentos?" ou "quando tenho agendado?" → use get_user_appointments\n`
+  prompt += `- Quando cliente quiser mudar horário (ex: "quero mudar para outro horário", "pode alterar para amanhã às 3h") → use update_appointment\n`
+  prompt += `- Quando cliente quiser cancelar (ex: "quero cancelar", "desmarcar", "não vou mais") → use cancel_appointment\n`
+  prompt += `- Quando cliente quiser agendar → use create_appointment (a função verifica disponibilidade automaticamente)\n`
+  
+  prompt += `\n💡 EXEMPLOS DE USO:\n`
+  prompt += `- Cliente: "Quais horários estão disponíveis amanhã?"\n`
+  prompt += `  → Você: Chama get_available_times(date: "amanhã") e mostra os horários disponíveis\n`
+  prompt += `- Cliente: "Quero mudar meu agendamento para amanhã às 3 da tarde"\n`
+  prompt += `  → Você: Chama update_appointment(new_date: "amanhã", new_time: "15:00")\n`
+  prompt += `- Cliente: "Quero cancelar meu agendamento"\n`
+  prompt += `  → Você: Chama cancel_appointment() (cancela o mais próximo automaticamente)\n`
+  prompt += `- Cliente: "Quais são meus agendamentos?"\n`
+  prompt += `  → Você: Chama get_user_appointments() e lista os agendamentos\n`
+  
+  prompt += `\n- Quando o cliente quiser agendar algo, marcar uma consulta, ou definir um horário, você deve ENTENDER a linguagem natural do cliente e converter internamente\n`
   prompt += `- PROCESSO DE COLETA (CONVERSA NATURAL):\n`
   prompt += `  1. Se o cliente já mencionou data E hora completa (ex: "amanhã às 7 da manhã", "próxima terça-feira às 3 da tarde"), você DEVE:\n`
   prompt += `     - Entender a linguagem natural do cliente\n`
