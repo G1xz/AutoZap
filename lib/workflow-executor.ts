@@ -1156,22 +1156,85 @@ export async function processAppointmentConfirmation(
   }
   
   // Processa cancelamento
-      if (isCancellation) {
+  if (isCancellation) {
     console.log(`❌ PROCESSANDO CANCELAMENTO DE AGENDAMENTO`)
-        if (clearPendingAppointment) {
-          await clearPendingAppointment(instanceId, normalizedContactNumber)
-        } else {
-          const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
-          await clearFn(instanceId, normalizedContactNumber)
-        }
-        const cancelMessage = `Agendamento cancelado. Se precisar de mais alguma coisa, estou à disposição!`
-        const contactKey = `${instanceId}-${contactNumber}`
-        await queueMessage(contactKey, async () => {
-          await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
-        })
+    
+    // Primeiro tenta cancelar agendamento pendente
+    let cancelledPending = false
+    if (pendingAppointment) {
+      if (clearPendingAppointment) {
+        await clearPendingAppointment(instanceId, normalizedContactNumber)
+      } else {
+        const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
+        await clearFn(instanceId, normalizedContactNumber)
+      }
+      cancelledPending = true
+      console.log(`✅ Agendamento pendente cancelado`)
+    }
+    
+    // Também verifica se há agendamentos confirmados recentes para cancelar
+    const recentAppointments = await prisma.appointment.findMany({
+      where: {
+        instanceId,
+        contactNumber: normalizedContactNumber,
+        status: {
+          in: ['pending', 'confirmed'],
+        },
+        date: {
+          gte: new Date(), // Apenas agendamentos futuros
+        },
+      },
+      orderBy: {
+        date: 'asc',
+      },
+      take: 5, // Limita a 5 agendamentos mais próximos
+    })
+    
+    if (recentAppointments.length > 0) {
+      // Cancela o agendamento mais próximo
+      const appointmentToCancel = recentAppointments[0]
+      await prisma.appointment.update({
+        where: { id: appointmentToCancel.id },
+        data: { status: 'cancelled' },
+      })
+      
+      const appointmentDate = new Date(appointmentToCancel.date)
+      const formattedDate = appointmentDate.toLocaleDateString('pt-BR', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+      })
+      const formattedTime = appointmentDate.toLocaleTimeString('pt-BR', {
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+      
+      const cancelMessage = cancelledPending
+        ? `✅ Agendamento pendente cancelado e agendamento confirmado para ${formattedDate} às ${formattedTime} também foi cancelado. Se precisar de mais alguma coisa, estou à disposição!`
+        : `✅ Agendamento confirmado para ${formattedDate} às ${formattedTime} foi cancelado. Se precisar de mais alguma coisa, estou à disposição!`
+      
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
+      })
+      console.log(`✅ Cancelamento de agendamento confirmado processado`)
+    } else if (cancelledPending) {
+      const cancelMessage = `✅ Agendamento pendente cancelado. Se precisar de mais alguma coisa, estou à disposição!`
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
+      })
+    } else {
+      const cancelMessage = `Não encontrei agendamentos para cancelar. Se precisar de mais alguma coisa, estou à disposição!`
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
+      })
+    }
+    
     console.log(`❌ Cancelamento processado - RETORNANDO TRUE`)
     return true // Processou cancelamento, não deve chamar IA
-      }
+  }
       
       // Se há agendamento pendente mas não confirmou nem cancelou, relembra
       console.log(`⚠️ Há agendamento pendente mas mensagem não é confirmação nem cancelamento`)
@@ -1930,14 +1993,19 @@ async function executeAIOnlyWorkflow(
     const handleFunctionCall = async (functionName: string, args: any) => {
       console.log(`🔧 handleFunctionCall chamado: functionName="${functionName}", userId=${userId}, instanceId=${instanceId}`)
       
+      // CRÍTICO: Normaliza o número ANTES de qualquer processamento
+      const normalizedContactNumber = contactNumber.replace(/\D/g, '')
+      console.log(`🔧 handleFunctionCall - contactNumber original: "${contactNumber}"`)
+      console.log(`🔧 handleFunctionCall - contactNumber normalizado: "${normalizedContactNumber}"`)
+      
       if (functionName === 'create_appointment' && userId) {
         try {
           console.log(`📅 Tentando criar agendamento com args:`, args)
-          console.log(`📅 Contexto: userId=${userId}, instanceId=${instanceId}, contactNumber=${contactNumber}`)
+          console.log(`📅 Contexto: userId=${userId}, instanceId=${instanceId}, contactNumber=${normalizedContactNumber}`)
           
-          // CRÍTICO: Verifica se já há um agendamento pendente antes de criar um novo
+          // CRÍTICO: Verifica se já há um agendamento pendente antes de criar um novo (usa número normalizado)
           const { getPendingAppointment } = await import('./pending-appointments')
-          const existingPending = await getPendingAppointment(instanceId, contactNumber)
+          const existingPending = await getPendingAppointment(instanceId, normalizedContactNumber)
           if (existingPending) {
             console.log(`⚠️ Já existe um agendamento pendente. Não criando novo. Retornando mensagem de relembrança.`)
             let reminderMessage = `Você já tem um agendamento pendente de confirmação:\n\n📅 Data: ${existingPending.date}\n🕐 Hora: ${existingPending.time}`
@@ -1954,11 +2022,11 @@ async function executeAIOnlyWorkflow(
           }
           
           // CRÍTICO: Verifica se acabou de confirmar um agendamento (últimos 60 segundos)
-          // Se sim, não cria novo agendamento para evitar loop
+          // Se sim, não cria novo agendamento para evitar loop (usa número normalizado)
           const recentConfirmedAppointment = await prisma.appointment.findFirst({
             where: {
               instanceId,
-              contactNumber,
+              contactNumber: normalizedContactNumber, // Usa número normalizado
               createdAt: {
                 gte: new Date(Date.now() - 60000), // Últimos 60 segundos
               },
@@ -2178,7 +2246,8 @@ async function executeAIOnlyWorkflow(
           const { storePendingAppointment, getPendingAppointment: verifyPending } = await import('./pending-appointments')
           
           try {
-            await storePendingAppointment(instanceId, contactNumber, {
+            // CRÍTICO: Usa número normalizado para garantir consistência
+            await storePendingAppointment(instanceId, normalizedContactNumber, {
               date: formattedDate,
               time: formattedTime,
               duration: serviceDuration,
@@ -2200,7 +2269,8 @@ async function executeAIOnlyWorkflow(
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
             await new Promise(resolve => setTimeout(resolve, 100 * attempt)) // Delay crescente: 100ms, 200ms, 300ms
             
-            verification = await verifyPending(instanceId, contactNumber)
+            // CRÍTICO: Usa número normalizado para verificação
+            verification = await verifyPending(instanceId, normalizedContactNumber)
             if (verification) {
               console.log(`✅✅✅ [handleFunctionCall] VERIFICAÇÃO (tentativa ${attempt}/${maxRetries}): Agendamento pendente confirmado no banco`)
               console.log(`✅✅✅ [handleFunctionCall] Dados verificados:`, JSON.stringify(verification, null, 2))
@@ -2213,7 +2283,7 @@ async function executeAIOnlyWorkflow(
           if (!verification) {
             console.error(`❌❌❌ [handleFunctionCall] ERRO CRÍTICO: Agendamento pendente NÃO encontrado após ${maxRetries} tentativas!`)
             console.error(`❌❌❌ [handleFunctionCall] instanceId usado: ${instanceId}`)
-            console.error(`❌❌❌ [handleFunctionCall] contactNumber usado: ${contactNumber}`)
+            console.error(`❌❌❌ [handleFunctionCall] contactNumber usado: ${normalizedContactNumber}`)
             console.error(`❌❌❌ [handleFunctionCall] Isso pode causar problemas na confirmação!`)
             
             // Tenta buscar diretamente no banco para debug
@@ -2225,7 +2295,9 @@ async function executeAIOnlyWorkflow(
               })
               console.error(`❌❌❌ [handleFunctionCall] Agendamentos pendentes para esta instância: ${directCheck.length}`)
               directCheck.forEach((p: any, i: number) => {
-                console.error(`   [${i + 1}] contactNumber: "${p.contactNumber}" (esperado: "${contactNumber}"), date: ${p.date}, time: ${p.time}`)
+                const pNormalized = p.contactNumber.replace(/\D/g, '')
+                const matches = pNormalized === normalizedContactNumber || p.contactNumber === normalizedContactNumber
+                console.error(`   [${i + 1}] contactNumber: "${p.contactNumber}" (normalizado: "${pNormalized}") ${matches ? '✅ CORRESPONDE!' : '❌'} | Esperado: "${normalizedContactNumber}" | date: ${p.date}, time: ${p.time}`)
               })
             } catch (dbError) {
               console.error(`❌❌❌ [handleFunctionCall] Erro ao buscar diretamente no banco:`, dbError)
