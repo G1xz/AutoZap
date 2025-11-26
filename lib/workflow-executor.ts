@@ -2025,29 +2025,28 @@ async function executeAIOnlyWorkflow(
       targetDayOfWeek: number,
       options?: { forceNextWeek?: boolean }
     ): Date => {
-      // targetDayOfWeek: 0 = domingo, 1 = segunda, ..., 6 = sábado
       const baseDate = getBrazilianDate()
-      const currentDayOfWeek = baseDate.getDay()
+      const maxOffset = options?.forceNextWeek ? 14 : 7
+      const minOffset = options?.forceNextWeek ? 8 : 1
       
-      let daysToAdd = (targetDayOfWeek - currentDayOfWeek + 7) % 7
-      if (daysToAdd === 0) {
-        daysToAdd = 7 // nunca usa o dia atual, sempre próxima ocorrência
+      for (let offset = 1; offset <= maxOffset; offset++) {
+        const candidate = new Date(baseDate)
+        candidate.setHours(12, 0, 0, 0) // evita trocas de dia por horário de verão
+        candidate.setDate(baseDate.getDate() + offset)
+        
+        if (candidate.getDay() === targetDayOfWeek && offset >= minOffset) {
+          console.log(`📅 Cálculo de dia da semana (iterativo): base=${baseDate.toLocaleDateString('pt-BR')} offset=${offset} resultado=${candidate.toLocaleDateString('pt-BR')}`)
+          return candidate
+        }
       }
       
-      if (options?.forceNextWeek) {
-        daysToAdd += 7
-      }
-      
-      const nextDate = new Date(baseDate)
-      nextDate.setDate(baseDate.getDate() + daysToAdd)
-      
-      console.log(`📅 Cálculo de dia da semana:`)
-      console.log(`   Data base (Brasil): ${baseDate.getDate()}/${baseDate.getMonth() + 1}/${baseDate.getFullYear()} (dia da semana: ${currentDayOfWeek})`)
-      console.log(`   Dia da semana desejado: ${targetDayOfWeek}`)
-      console.log(`   Dias a adicionar: ${daysToAdd}`)
-      console.log(`   Próxima ocorrência calculada: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
-      
-      return nextDate
+      // Fallback (não deve ocorrer, mas garante)
+      const fallback = new Date(baseDate)
+      const difference = (targetDayOfWeek - baseDate.getDay() + 7) % 7 || 7
+      const extra = options?.forceNextWeek ? 7 : 0
+      fallback.setDate(baseDate.getDate() + difference + extra)
+      console.warn('⚠️ getNextWeekday entrou no fallback. Verifique logs anteriores.')
+      return fallback
     }
 
     // Função auxiliar para converter datas relativas em português
