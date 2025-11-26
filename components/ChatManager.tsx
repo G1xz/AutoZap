@@ -322,10 +322,20 @@ export default function ChatManager() {
                     {(conv.contactName || conv.contactNumber).charAt(0).toUpperCase()}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="font-semibold text-sm sm:text-base text-gray-900 truncate">
                         {conv.contactName || formatPhoneNumber(conv.contactNumber)}
                       </h3>
+                      {conv.status === 'closed' && (
+                        <span className="px-1.5 sm:px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded-full flex-shrink-0">
+                          Encerrado
+                        </span>
+                      )}
+                      {conv.status === 'waiting_human' && (
+                        <span className="px-1.5 sm:px-2 py-0.5 text-xs font-medium bg-orange-100 text-orange-700 rounded-full flex-shrink-0">
+                          Aguardando
+                        </span>
+                      )}
                       {conv.unreadCount > 0 && (
                         <span className="bg-autozap-primary text-white text-xs px-1.5 sm:px-2 py-0.5 rounded-full">
                           {conv.unreadCount}
@@ -374,9 +384,21 @@ export default function ChatManager() {
                 {(selectedConversation.contactName || selectedConversation.contactNumber).charAt(0).toUpperCase()}
               </div>
               <div className="flex-1 min-w-0">
-                <h3 className="font-semibold text-sm sm:text-base text-gray-900 truncate">
-                  {selectedConversation.contactName || formatPhoneNumber(selectedConversation.contactNumber)}
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-semibold text-sm sm:text-base text-gray-900 truncate">
+                    {selectedConversation.contactName || formatPhoneNumber(selectedConversation.contactNumber)}
+                  </h3>
+                  {selectedConversation.status === 'closed' && (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded-full flex-shrink-0">
+                      Encerrado
+                    </span>
+                  )}
+                  {selectedConversation.status === 'waiting_human' && (
+                    <span className="px-2 py-0.5 text-xs font-medium bg-orange-100 text-orange-700 rounded-full flex-shrink-0">
+                      Aguardando
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs sm:text-sm text-gray-500 truncate">
                   {selectedConversation.instanceName}
                 </p>
@@ -500,29 +522,37 @@ export default function ChatManager() {
 
             {/* Input de mensagem */}
             <div className="p-2 sm:p-4 border-t border-gray-200 bg-white">
-              <div className="flex gap-1.5 sm:gap-2">
-                <input
-                  type="text"
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  onKeyPress={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault()
-                      sendMessage()
-                    }
-                  }}
-                  placeholder="Digite sua mensagem..."
-                  className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent bg-white text-gray-900 placeholder-gray-400"
-                  disabled={sending}
-                />
-                <button
-                  onClick={sendMessage}
-                  disabled={sending || !newMessage.trim()}
-                  className="px-4 sm:px-6 py-1.5 sm:py-2 text-sm sm:text-base bg-autozap-primary text-white rounded-md hover:bg-autozap-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {sending ? '...' : 'Enviar'}
-                </button>
-              </div>
+              {selectedConversation.status === 'closed' ? (
+                <div className="text-center py-2 px-4 bg-gray-100 rounded-md">
+                  <p className="text-sm text-gray-600">
+                    ⚠️ Este chat está encerrado. Envie uma mensagem para reabrir a conversa.
+                  </p>
+                </div>
+              ) : (
+                <div className="flex gap-1.5 sm:gap-2">
+                  <input
+                    type="text"
+                    value={newMessage}
+                    onChange={(e) => setNewMessage(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault()
+                        sendMessage()
+                      }
+                    }}
+                    placeholder="Digite sua mensagem..."
+                    className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent bg-white text-gray-900 placeholder-gray-400"
+                    disabled={sending}
+                  />
+                  <button
+                    onClick={sendMessage}
+                    disabled={sending || !newMessage.trim()}
+                    className="px-4 sm:px-6 py-1.5 sm:py-2 text-sm sm:text-base bg-autozap-primary text-white rounded-md hover:bg-autozap-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {sending ? '...' : 'Enviar'}
+                  </button>
+                </div>
+              )}
             </div>
           </>
         ) : (

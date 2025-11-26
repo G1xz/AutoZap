@@ -182,17 +182,31 @@ export async function executeWorkflows(
     const currentExecution = workflowExecutions.get(executionKey)
 
     if (currentExecution) {
-      // Se há execução IA-only em andamento, sempre responde
+      // CRÍTICO: Verifica se a execução ainda é válida antes de continuar
+      // Se o workflow não existe mais ou não está ativo, limpa a execução
       if (currentExecution.workflowId) {
         const workflow = workflows.find(w => w.id === currentExecution.workflowId)
-        if (workflow?.isAIOnly) {
+        
+        // Se o workflow não existe mais ou não está ativo, limpa a execução
+        if (!workflow || !workflow.isActive) {
+          console.log(`🧹 [executeWorkflows] Limpando execução inválida: workflow não existe ou não está ativo`)
+          workflowExecutions.delete(executionKey)
+          // Continua o fluxo normalmente abaixo
+        } else if (workflow.isAIOnly) {
+          // Se há execução IA-only válida em andamento, sempre responde
           await executeAIOnlyWorkflow(workflow, instanceId, contactNumber, messageBody, message.contactName)
           return
+        } else {
+          // Workflow manual ainda válido, continua execução existente
+          await processQuestionnaireResponse(instanceId, contactNumber, messageBody)
+          return
         }
+      } else {
+        // Execução sem workflowId válido, limpa
+        console.log(`🧹 [executeWorkflows] Limpando execução sem workflowId válido`)
+        workflowExecutions.delete(executionKey)
+        // Continua o fluxo normalmente abaixo
       }
-      // Continua execução existente (ex: resposta de questionário)
-      await processQuestionnaireResponse(instanceId, contactNumber, messageBody)
-      return
     }
 
     // Para fluxos IA-only: verifica se há algum ativo e responde sempre
@@ -853,6 +867,143 @@ export async function processAppointmentConfirmation(
     .normalize('NFD') // Normaliza caracteres Unicode
     .replace(/[\u0300-\u036f]/g, '') // Remove acentos
   
+  // CRÍTICO: Verifica se o usuário quer encerrar o chat ANTES de verificar agendamento pendente
+  const wantsToCloseChat = 
+    userMessageLower.includes('encerrar') ||
+    userMessageLower.includes('fechar') ||
+    userMessageLower.includes('finalizar') ||
+    userMessageLower.includes('terminar') ||
+    normalizedMessage.includes('encerrar') ||
+    normalizedMessage.includes('fechar') ||
+    normalizedMessage.includes('finalizar') ||
+    normalizedMessage.includes('terminar') ||
+    (userMessageLower.includes('chat') && (userMessageLower.includes('encerrar') || userMessageLower.includes('fechar'))) ||
+    (userMessageLower.includes('conversa') && (userMessageLower.includes('encerrar') || userMessageLower.includes('fechar')))
+  
+  // Verifica se está aguardando confirmação de encerramento
+  const conversationStatus = await prisma.conversationStatus.findUnique({
+    where: {
+      instanceId_contactNumber: {
+        instanceId,
+        contactNumber,
+      },
+    },
+  })
+  
+  if (conversationStatus?.status === 'pending_close_confirmation') {
+    // Usuário está respondendo à confirmação de encerramento
+    const isConfirmation = 
+      userMessageLower === 'sim' ||
+      userMessageLower === 'confirmar' ||
+      userMessageLower === 'confirmo' ||
+      userMessageLower === 'ok' ||
+      normalizedMessage === 'sim' ||
+      normalizedMessage === 'confirmar'
+    
+    const isCancellation = 
+      userMessageLower === 'não' ||
+      userMessageLower === 'nao' ||
+      userMessageLower === 'cancelar' ||
+      normalizedMessage === 'nao' ||
+      normalizedMessage === 'cancelar'
+    
+    if (isConfirmation) {
+      // Confirma encerramento - cancela agendamento pendente se houver e encerra
+      const { getPendingAppointment, clearPendingAppointment } = await import('./pending-appointments')
+      const pendingToCancel = await getPendingAppointment(instanceId, normalizedContactNumber)
+      
+      if (pendingToCancel) {
+        await clearPendingAppointment(instanceId, normalizedContactNumber)
+        console.log(`🚪 [processAppointmentConfirmation] Agendamento pendente cancelado ao encerrar chat`)
+      }
+      
+      const { updateConversationStatus } = await import('./conversation-status')
+      await updateConversationStatus(instanceId, contactNumber, 'closed')
+      
+      const closeMessage = 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
+      })
+      
+      // Limpa execução do workflow
+      const executionKey = `${instanceId}-${contactNumber}`
+      if (workflowExecutions.has(executionKey)) {
+        workflowExecutions.delete(executionKey)
+      }
+      
+      return true
+    } else if (isCancellation) {
+      // Cancela encerramento - volta para ativo
+      const { updateConversationStatus } = await import('./conversation-status')
+      await updateConversationStatus(instanceId, contactNumber, 'active')
+      
+      const cancelCloseMessage = 'Entendido! A conversa continuará ativa. Como posso ajudar?'
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, cancelCloseMessage, 'service')
+      })
+      
+      return true
+    }
+  }
+  
+  if (wantsToCloseChat) {
+    console.log(`🚪 [processAppointmentConfirmation] Usuário quer encerrar o chat`)
+    
+    // Verifica se há agendamento pendente antes de encerrar
+    const { getPendingAppointment } = await import('./pending-appointments')
+    const pendingBeforeClose = await getPendingAppointment(instanceId, normalizedContactNumber)
+    
+    if (pendingBeforeClose) {
+      // Se há agendamento pendente, pergunta se quer encerrar mesmo assim
+      const confirmCloseMessage = `Você tem um agendamento pendente de confirmação:\n\n📅 Data: ${pendingBeforeClose.date}\n🕐 Hora: ${pendingBeforeClose.time}\n🛠️ Serviço: ${pendingBeforeClose.service}\n\nDeseja realmente encerrar o chat? Se encerrar, o agendamento pendente será cancelado.\n\nDigite "sim" para confirmar o encerramento ou "não" para continuar.`
+      
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, confirmCloseMessage, 'service')
+      })
+      
+      // Armazena temporariamente que está aguardando confirmação de encerramento
+      await prisma.conversationStatus.upsert({
+        where: {
+          instanceId_contactNumber: {
+            instanceId,
+            contactNumber,
+          },
+        },
+        update: {
+          status: 'pending_close_confirmation',
+        },
+        create: {
+          instanceId,
+          contactNumber,
+          status: 'pending_close_confirmation',
+        },
+      })
+      
+      return true // Processou, não deve chamar IA
+    } else {
+      // Não há agendamento pendente, pode encerrar diretamente
+      const { updateConversationStatus } = await import('./conversation-status')
+      await updateConversationStatus(instanceId, contactNumber, 'closed')
+      
+      const closeMessage = 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
+      })
+      
+      // Limpa execução do workflow
+      const executionKey = `${instanceId}-${contactNumber}`
+      if (workflowExecutions.has(executionKey)) {
+        workflowExecutions.delete(executionKey)
+      }
+      
+      return true // Processou, não deve chamar IA
+    }
+  }
+  
   let pendingAppointment: any = null
   let clearPendingAppointment: any = null
   
@@ -1129,6 +1280,14 @@ export async function processAppointmentConfirmation(
         console.log(`⚠️ Agendamento pendente já foi removido (possível race condition)`)
       }
       
+      // CRÍTICO: Limpa a execução do workflow após confirmar agendamento
+      // Isso permite que novas mensagens iniciem um novo fluxo limpo
+      const executionKey = `${instanceId}-${contactNumber}`
+      if (workflowExecutions.has(executionKey)) {
+        console.log(`🧹 [processAppointmentConfirmation] Limpando execução do workflow após confirmação de agendamento`)
+        workflowExecutions.delete(executionKey)
+      }
+      
           let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
           if (pendingAppointment.duration) {
             confirmationMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
@@ -1232,7 +1391,15 @@ export async function processAppointmentConfirmation(
       })
     }
     
-    console.log(`❌ Cancelamento processado - RETORNANDO TRUE`)
+      // CRÍTICO: Limpa a execução do workflow após cancelar agendamento
+      // Isso permite que novas mensagens iniciem um novo fluxo limpo
+      const executionKeyCancel = `${instanceId}-${contactNumber}`
+      if (workflowExecutions.has(executionKeyCancel)) {
+        console.log(`🧹 [processAppointmentConfirmation] Limpando execução do workflow após cancelamento de agendamento`)
+        workflowExecutions.delete(executionKeyCancel)
+      }
+      
+      console.log(`❌ Cancelamento processado - RETORNANDO TRUE`)
     return true // Processou cancelamento, não deve chamar IA
       }
       
@@ -1306,6 +1473,15 @@ async function executeAIOnlyWorkflow(
     if (processedAppointment) {
       console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
       console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
+      
+      // CRÍTICO: Limpa a execução do workflow após processar agendamento
+      // Isso permite que novas mensagens iniciem um novo fluxo limpo
+      const executionKeyAI = `${instanceId}-${contactNumber}`
+      if (workflowExecutions.has(executionKeyAI)) {
+        console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após processar agendamento`)
+        workflowExecutions.delete(executionKeyAI)
+      }
+      
       return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO CHAMA IA
     }
     
@@ -1350,6 +1526,15 @@ async function executeAIOnlyWorkflow(
         console.log(`✅✅✅ [executeAIOnlyWorkflow] BLOQUEADO: Agendamento criado há ${Math.round((Date.now() - recentAppointment.createdAt.getTime()) / 1000)}s`)
         console.log(`✅✅✅ [executeAIOnlyWorkflow] NÃO CHAMARÁ IA para evitar duplicação`)
         console.log(`✅✅✅ [executeAIOnlyWorkflow] RETORNANDO SEM CHAMAR IA`)
+        
+        // CRÍTICO: Limpa a execução do workflow após detectar agendamento recente
+        // Isso permite que novas mensagens iniciem um novo fluxo limpo
+        const executionKeyRecent = `${instanceId}-${contactNumber}`
+        if (workflowExecutions.has(executionKeyRecent)) {
+          console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após detectar agendamento recente`)
+          workflowExecutions.delete(executionKeyRecent)
+        }
+        
         return // Não chama IA se acabou de confirmar um agendamento
       } else {
         console.log(`   Nenhum agendamento recente encontrado, continuando...`)
@@ -2294,6 +2479,9 @@ async function executeAIOnlyWorkflow(
           console.log(`   time: ${formattedTime}`)
           console.log(`   service: ${args.description || 'Serviço não especificado'}`)
           
+          // CRÍTICO: NÃO limpa a execução aqui - ela ainda é necessária para continuar o fluxo
+          // A execução só será limpa quando o agendamento for confirmado ou cancelado
+          
           const { storePendingAppointment, getPendingAppointment: verifyPending } = await import('./pending-appointments')
           
           try {
@@ -2651,8 +2839,48 @@ async function executeAIOnlyWorkflow(
         }
       }
       
-      // Função para cancelar um agendamento específico
-      if (functionName === 'cancel_appointment' && userId) {
+       // Função para encerrar o chat
+       if (functionName === 'close_chat' && userId) {
+         try {
+           console.log(`🚪 [handleFunctionCall] Encerrando chat para ${instanceId}-${contactNumber}`)
+           
+           // Atualiza o status da conversa para 'closed'
+           const { updateConversationStatus } = await import('./conversation-status')
+           await updateConversationStatus(instanceId, contactNumber, 'closed')
+           
+           // Mensagem de encerramento padrão ou customizada
+           const closeMessage = args.message || 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
+           
+           // Envia mensagem de encerramento
+           const contactKey = `${instanceId}-${contactNumber}`
+           await queueMessage(contactKey, async () => {
+             await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
+           })
+           
+           // CRÍTICO: Limpa a execução do workflow após encerrar o chat
+           const executionKeyClose = `${instanceId}-${contactNumber}`
+           if (workflowExecutions.has(executionKeyClose)) {
+             console.log(`🧹 [handleFunctionCall] Limpando execução do workflow após encerrar chat`)
+             workflowExecutions.delete(executionKeyClose)
+           }
+           
+           console.log(`✅ [handleFunctionCall] Chat encerrado com sucesso`)
+           
+           return {
+             success: true,
+             message: closeMessage,
+           }
+         } catch (error) {
+           console.error('❌ Erro ao encerrar chat:', error)
+           return {
+             success: false,
+             error: 'Erro ao encerrar o chat. Por favor, tente novamente.',
+           }
+         }
+       }
+       
+       // Função para cancelar um agendamento específico
+       if (functionName === 'cancel_appointment' && userId) {
         try {
           // Busca agendamentos do usuário
           const userAppointments = await getUserAppointments(userId, instanceId, normalizedContactNumber, false)
@@ -2817,21 +3045,35 @@ async function executeAIOnlyWorkflow(
             required: ['new_date', 'new_time'],
           },
         },
-        {
-          name: 'cancel_appointment',
-          description: 'Cancela um agendamento existente. Use quando o cliente quiser desmarcar ou cancelar um agendamento (ex: "quero cancelar", "desmarcar", "não vou mais").',
-          parameters: {
-            type: 'object',
-            properties: {
-              appointment_id: {
-                type: 'string',
-                description: 'ID do agendamento a ser cancelado (opcional - se não informado, cancela o mais próximo).',
-              },
-            },
-            required: [],
-          },
-        },
-      ],
+         {
+           name: 'cancel_appointment',
+           description: 'Cancela um agendamento existente. Use quando o cliente quiser desmarcar ou cancelar um agendamento (ex: "quero cancelar", "desmarcar", "não vou mais").',
+           parameters: {
+             type: 'object',
+             properties: {
+               appointment_id: {
+                 type: 'string',
+                 description: 'ID do agendamento a ser cancelado (opcional - se não informado, cancela o mais próximo).',
+               },
+             },
+             required: [],
+           },
+         },
+         {
+           name: 'close_chat',
+           description: 'Encerra a conversa com o cliente. Use quando o cliente pedir para encerrar o chat, finalizar a conversa, ou quando a conversa naturalmente chegou ao fim e o cliente não precisa de mais nada. Você também pode perguntar ao cliente se ele quer encerrar o chat quando apropriado.',
+           parameters: {
+             type: 'object',
+             properties: {
+               message: {
+                 type: 'string',
+                 description: 'Mensagem personalizada de encerramento (opcional). Se não informado, usa mensagem padrão.',
+               },
+             },
+             required: [],
+           },
+         },
+       ],
       onFunctionCall: interceptedFunctionCall,
     })
     

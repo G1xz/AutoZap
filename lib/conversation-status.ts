@@ -1,6 +1,6 @@
 import { prisma } from './prisma'
 
-export type ConversationStatusType = 'active' | 'waiting_human' | 'closed'
+export type ConversationStatusType = 'active' | 'waiting_human' | 'closed' | 'pending_close_confirmation'
 
 /**
  * Atualiza ou cria o status de uma conversa
