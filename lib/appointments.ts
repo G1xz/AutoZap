@@ -83,7 +83,8 @@ export async function createAppointment(params: CreateAppointmentParams) {
       termino: endDate.toISOString(),
     })
 
-    // CRÍTICO: Tenta criar com endDate e duration, mas se falhar, cria sem esses campos
+    // CRÍTICO: Tenta criar com endDate e duration primeiro
+    // Se falhar porque a coluna não existe, usa SQL raw para criar sem endDate
     let appointment
     try {
       appointment = await prisma.appointment.create({
@@ -101,32 +102,99 @@ export async function createAppointment(params: CreateAppointmentParams) {
       })
       console.log('✅ [createAppointment] Agendamento criado com endDate e duration')
     } catch (error: any) {
-      // Se falhar (provavelmente porque endDate/duration não existem ainda), cria sem esses campos
-      console.warn('⚠️ [createAppointment] Erro ao criar com endDate/duration, tentando sem esses campos:', error.message)
-      
-      try {
-        // Se endDate é obrigatório, calcula um valor padrão baseado na duração
-        // Usa a duração fornecida ou 60 minutos como padrão
-        const fallbackEndDate = new Date(params.date.getTime() + (params.duration || 60) * 60000)
+      // Se falhar porque endDate não existe no banco, cria usando SQL raw sem endDate
+      if (error.code === 'P2022' || error.message?.includes('endDate') || error.message?.includes('does not exist')) {
+        console.warn('⚠️ [createAppointment] Coluna endDate não existe no banco, criando sem esse campo')
         
-        appointment = await prisma.appointment.create({
-          data: {
-            userId: params.userId,
-            instanceId: params.instanceId,
-            contactNumber: params.contactNumber,
-            contactName: params.contactName,
-            date: params.date, // Horário de início
-            endDate: fallbackEndDate, // Calcula endDate mesmo no fallback
-            duration: params.duration || null, // Pode ser null se não especificado
-            description: params.description,
-            status: 'pending',
-          },
-        })
-        console.log('✅ [createAppointment] Agendamento criado com endDate calculado (compatibilidade)')
-        console.warn('⚠️ [createAppointment] IMPORTANTE: Aplique a migration para adicionar campos endDate e duration')
-      } catch (fallbackError) {
-        console.error('❌ [createAppointment] Erro também na criação sem endDate/duration:', fallbackError)
-        throw fallbackError
+        try {
+          // Usa SQL raw para criar sem endDate (compatibilidade com banco antigo)
+          // Gera ID usando função similar ao cuid() do Prisma
+          const generateId = () => {
+            const timestamp = Date.now().toString(36)
+            const random = Math.random().toString(36).substring(2, 15)
+            return `${timestamp}${random}`
+          }
+          
+          const appointmentId = generateId()
+          const now = new Date()
+          
+          // Insere diretamente no banco sem passar pelo Prisma Client (que valida o schema)
+          await prisma.$executeRawUnsafe(`
+            INSERT INTO "Appointment" (
+              id, "userId", "instanceId", "contactNumber", "contactName", 
+              date, description, status, "createdAt", "updatedAt"
+            )
+            VALUES (
+              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+            )
+          `, 
+            appointmentId,
+            params.userId,
+            params.instanceId || null,
+            params.contactNumber,
+            params.contactName || null,
+            params.date,
+            params.description || null,
+            'pending',
+            now,
+            now
+          )
+          
+          // Busca o agendamento criado usando query raw (evita validação do Prisma Client)
+          const result = await prisma.$queryRawUnsafe<Array<{
+            id: string
+            userId: string
+            instanceId: string | null
+            contactNumber: string
+            contactName: string | null
+            date: Date
+            description: string | null
+            status: string
+            createdAt: Date
+            updatedAt: Date
+          }>>(`
+            SELECT id, "userId", "instanceId", "contactNumber", "contactName", 
+                   date, description, status, "createdAt", "updatedAt"
+            FROM "Appointment"
+            WHERE id = $1
+          `, appointmentId)
+          
+          if (!result || result.length === 0) {
+            throw new Error('Agendamento criado mas não encontrado após criação')
+          }
+          
+          const created = result[0]
+          
+          // Converte para o formato esperado pelo Prisma (sem endDate)
+          appointment = {
+            id: created.id,
+            userId: created.userId,
+            instanceId: created.instanceId,
+            contactNumber: created.contactNumber,
+            contactName: created.contactName,
+            date: created.date,
+            description: created.description,
+            status: created.status as any,
+            createdAt: created.createdAt,
+            updatedAt: created.updatedAt,
+          } as any
+          
+          console.log('✅ [createAppointment] Agendamento criado sem endDate (compatibilidade com banco antigo)')
+          console.warn('⚠️ [createAppointment] IMPORTANTE: Aplique a migration para adicionar campos endDate e duration')
+        } catch (fallbackError: any) {
+          console.error('❌ [createAppointment] Erro ao criar sem endDate:', fallbackError)
+          return {
+            success: false,
+            error: `Erro ao criar agendamento: ${fallbackError.message || 'Erro desconhecido'}. Por favor, verifique se a migration foi aplicada ou entre em contato com o suporte.`,
+          }
+        }
+      } else {
+        // Outro tipo de erro, propaga
+        console.error('❌ [createAppointment] Erro ao criar agendamento:', error)
+        return {
+          success: false,
+          error: `Erro ao criar agendamento: ${error.message || 'Erro desconhecido'}`,
+        }
       }
     }
 
