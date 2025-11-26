@@ -2110,6 +2110,10 @@ async function executeAIOnlyWorkflow(
         }
       }
       
+      // CRÍTICO: Verifica primeiro se mencionou "próxima" + dia da semana
+      // Se sim, sempre pega a próxima semana (não a atual)
+      const isNextWeek = lower.includes('próxima') || lower.includes('proxima')
+      
       // Dias da semana em português (calcula a próxima ocorrência)
       const weekdays: Record<string, number> = {
         'domingo': 0,
@@ -2123,7 +2127,21 @@ async function executeAIOnlyWorkflow(
       
       for (const [dayName, dayOfWeek] of Object.entries(weekdays)) {
         if (lower.includes(dayName)) {
-          const nextDate = getNextWeekday(dayOfWeek)
+          let nextDate: Date
+          
+          if (isNextWeek) {
+            // CRÍTICO: Se mencionou "próxima", sempre pega a próxima semana (não a atual)
+            // Primeiro calcula a próxima ocorrência normalmente, depois adiciona 7 dias
+            const normalNextDate = getNextWeekday(dayOfWeek)
+            nextDate = new Date(normalNextDate)
+            nextDate.setDate(nextDate.getDate() + 7) // Sempre adiciona 7 dias para "próxima semana"
+            console.log(`📅 Parseado "próxima ${dayName}" → próxima semana: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
+          } else {
+            // Se não mencionou "próxima", usa a função normal que pode pegar esta semana ou próxima
+            nextDate = getNextWeekday(dayOfWeek)
+            console.log(`📅 Parseado "${dayName}" → próxima ocorrência: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
+          }
+          
           const year = nextDate.getFullYear()
           const month = nextDate.getMonth()
           const day = nextDate.getDate()
