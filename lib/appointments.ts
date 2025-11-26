@@ -625,8 +625,16 @@ export async function getAvailableTimes(
       pendingStart.setHours(hour, minute, 0, 0)
       const pendingEnd = new Date(pendingStart.getTime() + pendingDuration * 60000)
       
-      if (pendingStart.getHours() < endHour && pendingEnd.getHours() >= startHour) {
+      // CRÍTICO: Adiciona se o agendamento pendente se sobrepõe com o horário de funcionamento
+      // Verifica se o agendamento começa antes do fim do horário E termina depois do início
+      const overlapsWithBusinessHours = pendingStart.getHours() < endHour && 
+        (pendingEnd.getHours() > startHour || (pendingEnd.getHours() === startHour && pendingEnd.getMinutes() > 0))
+      
+      if (overlapsWithBusinessHours) {
         occupiedIntervals.push({ start: pendingStart, end: pendingEnd })
+        console.log(`📅 [getAvailableTimes] Agendamento pendente adicionado aos ocupados: ${pending.time} (${pendingDuration}min) → ${pendingStart.toLocaleTimeString('pt-BR')} até ${pendingEnd.toLocaleTimeString('pt-BR')}`)
+      } else {
+        console.log(`⚠️ [getAvailableTimes] Agendamento pendente fora do horário de funcionamento: ${pending.time} (${pendingDuration}min)`)
       }
     })
 
@@ -649,9 +657,11 @@ export async function getAvailableTimes(
         // Verifica se há conflito com algum agendamento existente
         let hasConflict = false
         for (const occupied of occupiedIntervals) {
-          // Conflito se o novo agendamento se sobrepõe com algum existente
+          // CRÍTICO: Conflito se o novo agendamento se sobrepõe com algum existente
+          // Dois intervalos se sobrepõem se: start1 < end2 && end1 > start2
           if (slotStart < occupied.end && slotEnd > occupied.start) {
             hasConflict = true
+            console.log(`⚠️ [getAvailableTimes] Conflito detectado: slot ${slotStart.toLocaleTimeString('pt-BR')}-${slotEnd.toLocaleTimeString('pt-BR')} conflita com ${occupied.start.toLocaleTimeString('pt-BR')}-${occupied.end.toLocaleTimeString('pt-BR')}`)
             break
           }
         }
