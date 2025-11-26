@@ -39,6 +39,18 @@ interface WorkflowExecutionContext {
   variables: Record<string, any>
 }
 
+interface MediaAttachment {
+  type: 'image'
+  url: string
+  caption?: string
+}
+
+interface ServiceWithAppointment {
+  name: string
+  duration?: number
+  imageUrl?: string
+}
+
 // Armazena o estado de execução de workflows por contato
 const workflowExecutions = new Map<string, WorkflowExecutionContext>()
 
@@ -1686,7 +1698,7 @@ async function executeAIOnlyWorkflow(
           // Extrair produtos e serviços do catálogo
           const catalogProducts: string[] = []
           const catalogServices: string[] = []
-          const servicesWithAppointment: Array<{ name: string; duration?: number }> = []
+          const servicesWithAppointment: ServiceWithAppointment[] = []
 
           catalog.nodes.forEach((node: any) => {
             try {
@@ -1718,7 +1730,8 @@ async function executeAIOnlyWorkflow(
                 if (nodeData.requiresAppointment) {
                   servicesWithAppointment.push({
                     name: nodeData.name,
-                    duration: nodeData.appointmentDuration
+                    duration: nodeData.appointmentDuration,
+                    imageUrl: nodeData.imageUrl,
                   })
                   console.log(`📅 Serviço com agendamento: ${nodeData.name} (duração: ${nodeData.appointmentDuration || 'não especificada'} min)`)
                 }
@@ -2570,23 +2583,43 @@ async function executeAIOnlyWorkflow(
           const formattedDate = `${day.toString().padStart(2, '0')}/${(month + 1).toString().padStart(2, '0')}/${year}`
           const formattedTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
           
-          // CRÍTICO: Busca informações do serviço para obter duração
+          // CRÍTICO: Busca informações do serviço para obter duração e imagem
           // A duração DEVE vir do serviço, não pode ser um padrão fixo
           let serviceDuration: number | undefined
-          const servicesWithAppointment = businessDetails.servicesWithAppointment || []
-          const serviceName = args.description?.toLowerCase() || ''
+          let serviceImageUrl: string | undefined
+          const servicesWithAppointment: ServiceWithAppointment[] = businessDetails.servicesWithAppointment || []
+          const serviceName = args.description?.toLowerCase().trim() || ''
           
-          console.log(`🔍 [handleFunctionCall] Buscando duração do serviço: "${serviceName}"`)
-          console.log(`🔍 [handleFunctionCall] Serviços disponíveis:`, servicesWithAppointment.map((s: any) => `${s.name} (${s.duration || 'sem duração'} min)`))
+          console.log(`🔍 [handleFunctionCall] Buscando dados do serviço: "${serviceName}"`)
+          console.log(`🔍 [handleFunctionCall] Serviços disponíveis:`, servicesWithAppointment.map((s) => `${s.name} (${s.duration || 'sem duração'} min)`))
           
-          // Busca duração do serviço mencionado na descrição
-          for (const service of servicesWithAppointment) {
-            const serviceNameLower = service.name.toLowerCase()
-            // Verifica se o nome do serviço está na descrição OU se a descrição está no nome do serviço
-            if (serviceName.includes(serviceNameLower) || serviceNameLower.includes(serviceName) || serviceName.includes(serviceNameLower.split(' ')[0])) {
-              serviceDuration = service.duration
-              console.log(`✅ [handleFunctionCall] Duração encontrada: ${service.name} = ${serviceDuration} minutos`)
-              break
+          let matchedService: ServiceWithAppointment | null = null
+          
+          if (serviceName && servicesWithAppointment.length > 0) {
+            for (const service of servicesWithAppointment) {
+              if (!service.name) continue
+              const serviceNameLower = service.name.toLowerCase()
+              const firstWord = serviceNameLower.split(' ')[0]
+              
+              // Verifica se o nome do serviço está na descrição OU se a descrição está no nome do serviço
+              if (
+                serviceName.includes(serviceNameLower) ||
+                serviceNameLower.includes(serviceName) ||
+                (firstWord && serviceName.includes(firstWord))
+              ) {
+                matchedService = service
+                console.log(`✅ [handleFunctionCall] Serviço identificado: ${service.name}`)
+                break
+              }
+            }
+          }
+          
+          if (matchedService) {
+            serviceDuration = matchedService.duration
+            serviceImageUrl = matchedService.imageUrl
+            console.log(`✅ [handleFunctionCall] Duração encontrada: ${matchedService.name} = ${serviceDuration} minutos`)
+            if (serviceImageUrl) {
+              console.log(`🖼️ [handleFunctionCall] Imagem encontrada para o serviço: ${serviceImageUrl}`)
             }
           }
           
@@ -2598,8 +2631,8 @@ async function executeAIOnlyWorkflow(
             console.error(`   Serviços disponíveis:`, servicesWithAppointment)
             
             // Lista serviços disponíveis para ajudar o usuário
-            const availableServices = servicesWithAppointment.map((s: any) => s.name).join(', ')
-            const errorMessage = `Não foi possível determinar a duração do serviço "${args.description || 'não especificado'}".\n\nServiços disponíveis com agendamento:\n${servicesWithAppointment.map((s: any) => `- ${s.name}${s.duration ? ` (${s.duration} min)` : ' (duração não configurada)'}`).join('\n')}\n\nPor favor, verifique se o serviço tem duração configurada no catálogo.`
+            const availableServices = servicesWithAppointment.map((s) => s.name).join(', ')
+            const errorMessage = `Não foi possível determinar a duração do serviço "${args.description || 'não especificado'}".\n\nServiços disponíveis com agendamento:\n${servicesWithAppointment.map((s) => `- ${s.name}${s.duration ? ` (${s.duration} min)` : ' (duração não configurada)'}`).join('\n')}\n\nPor favor, verifique se o serviço tem duração configurada no catálogo.`
             
             return {
               success: false,
@@ -2792,6 +2825,15 @@ async function executeAIOnlyWorkflow(
             // A verificação na confirmação vai tentar novamente
           }
 
+          // Prepara mídia (imagem do serviço) se disponível
+          const mediaAttachment = serviceImageUrl
+            ? {
+                type: 'image' as const,
+                url: serviceImageUrl,
+                caption: `${args.description || 'Serviço'} - confirme o agendamento`,
+              }
+            : undefined
+          
           // Retorna mensagem de confirmação para o usuário
           // IMPORTANTE: Retorna success: false para que a IA não confirme automaticamente
           // A mensagem será exibida diretamente ao usuário
@@ -2819,6 +2861,7 @@ async function executeAIOnlyWorkflow(
               duration: serviceDuration,
               service: args.description || 'Serviço não especificado',
             },
+            mediaAttachment,
           }
         } catch (error) {
           console.error('❌ Erro ao criar agendamento (catch):', error)
@@ -3265,6 +3308,7 @@ async function executeAIOnlyWorkflow(
     
     // Intercepta chamadas de função para verificar se há agendamento pendente
     let pendingAppointmentResponse: string | null = null
+    let pendingAppointmentMedia: MediaAttachment | null = null
     
     const interceptedFunctionCall = async (functionName: string, args: any) => {
       console.log(`🔧 [interceptedFunctionCall] Interceptando chamada de função: ${functionName}`)
@@ -3280,6 +3324,9 @@ async function executeAIOnlyWorkflow(
       if (result && typeof result === 'object' && 'pending' in result && result.pending === true) {
         pendingAppointmentResponse = result.message || result.error || 'Por favor, confirme os dados do agendamento.'
           console.log(`📅 [interceptedFunctionCall] Agendamento pendente interceptado:`, pendingAppointmentResponse)
+        if ('mediaAttachment' in result && result.mediaAttachment) {
+          pendingAppointmentMedia = result.mediaAttachment as MediaAttachment
+        }
         // Retorna erro para que a IA não confirme automaticamente
         return {
           success: false,
@@ -3417,6 +3464,13 @@ async function executeAIOnlyWorkflow(
     if (pendingAppointmentResponse) {
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
+        if (pendingAppointmentMedia?.type === 'image' && pendingAppointmentMedia.url) {
+          try {
+            await sendWhatsAppImage(instanceId, contactNumber, pendingAppointmentMedia.url, pendingAppointmentMedia.caption)
+          } catch (mediaError) {
+            console.error('❌ Erro ao enviar imagem de confirmação:', mediaError)
+          }
+        }
         await sendWhatsAppMessage(instanceId, contactNumber, pendingAppointmentResponse!, 'service')
       })
       console.log(`📅 Mensagem de confirmação de agendamento enviada diretamente`)

@@ -9,7 +9,7 @@ interface BusinessDetails {
   businessType?: string
   products?: Array<{ name: string; description?: string; price?: number }>
   services?: Array<{ name: string; description?: string; duration?: number; price?: number }>
-  servicesWithAppointment?: Array<{ name: string; duration?: number }>
+  servicesWithAppointment?: Array<{ name: string; duration?: number; imageUrl?: string }>
   pricingInfo?: string
   howToBuy?: string
   tone?: string
