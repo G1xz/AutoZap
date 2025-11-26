@@ -2706,6 +2706,8 @@ async function executeAIOnlyWorkflow(
       // Função para verificar disponibilidade em uma data
       if (functionName === 'check_availability' && userId) {
         try {
+          console.log(`🔍 [check_availability] Chamada com args:`, args)
+          
           if (!args.date) {
             return {
               success: false,
@@ -2715,15 +2717,24 @@ async function executeAIOnlyWorkflow(
           
           // Parse da data
           const dateStr = args.date
+          console.log(`🔍 [check_availability] Parseando data: "${dateStr}"`)
           const parsedDate = parsePortugueseDate(dateStr)
+          
           if (!parsedDate) {
+            console.error(`❌ [check_availability] Falha ao parsear data: "${dateStr}"`)
             return {
               success: false,
-              error: `Data inválida: "${dateStr}". Use formato DD/MM/YYYY ou linguagem natural.`,
+              error: `Data inválida: "${dateStr}". Use formato DD/MM/YYYY ou linguagem natural (ex: "amanhã", "terça-feira").`,
             }
           }
           
-          const result = await checkAvailability(userId, parsedDate)
+          console.log(`✅ [check_availability] Data parseada: ${parsedDate.toISOString()}`)
+          console.log(`🔍 [check_availability] Chamando checkAvailability com userId=${userId}, instanceId=${instanceId}`)
+          
+          // CRÍTICO: Passa instanceId para considerar agendamentos pendentes também
+          const result = await checkAvailability(userId, parsedDate, instanceId)
+          
+          console.log(`📊 [check_availability] Resultado:`, result)
           
           if (result.success) {
             const formattedDate = parsedDate.toLocaleDateString('pt-BR', {

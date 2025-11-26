@@ -221,6 +221,7 @@ export async function getAvailableTimes(
     })
 
     // Busca agendamentos CONFIRMADOS do dia
+    // CRÍTICO: Seleciona apenas campos necessários para evitar erros se endDate/duration não existirem
     const appointments = await prisma.appointment.findMany({
       where: {
         userId,
@@ -231,6 +232,11 @@ export async function getAvailableTimes(
         status: {
           in: ['pending', 'confirmed'],
         },
+      },
+      select: {
+        date: true,
+        endDate: true,
+        duration: true,
       },
       orderBy: {
         date: 'asc',
@@ -281,26 +287,41 @@ export async function getAvailableTimes(
     const occupiedSlots = new Set<string>()
     
     appointments.forEach((apt) => {
-      const aptStart = new Date(apt.date) // Horário de início
-      const aptEnd = apt.endDate ? new Date(apt.endDate) : new Date(aptStart.getTime() + (apt.duration || 60) * 60000) // Horário de término
-      
-      // Calcula todos os slots de 30min entre início e término
-      let currentTime = new Date(aptStart)
-      
-      while (currentTime < aptEnd) {
-        const slotHour = currentTime.getHours()
-        const slotMinute = currentTime.getMinutes()
+      try {
+        const aptStart = new Date(apt.date) // Horário de início
         
-        // Arredonda para o slot de 30min mais próximo (00 ou 30)
-        const roundedMinute = slotMinute < 30 ? 0 : 30
-        
-        if (slotHour < endHour && slotHour >= startHour) {
-          const slotStr = `${slotHour.toString().padStart(2, '0')}:${roundedMinute.toString().padStart(2, '0')}`
-          occupiedSlots.add(slotStr)
+        // CRÍTICO: Calcula horário de término de forma segura
+        // Se endDate existe e é válido, usa ele. Senão, calcula baseado na duração
+        let aptEnd: Date
+        if (apt.endDate && apt.endDate instanceof Date && !isNaN(apt.endDate.getTime())) {
+          aptEnd = new Date(apt.endDate)
+        } else {
+          // Calcula baseado na duração (usa 60min como fallback apenas para compatibilidade)
+          const duration = apt.duration && apt.duration > 0 ? apt.duration : 60
+          aptEnd = new Date(aptStart.getTime() + duration * 60000)
         }
         
-        // Avança 30 minutos
-        currentTime = new Date(currentTime.getTime() + 30 * 60000)
+        // Calcula todos os slots de 30min entre início e término
+        let currentTime = new Date(aptStart)
+        
+        while (currentTime < aptEnd) {
+          const slotHour = currentTime.getHours()
+          const slotMinute = currentTime.getMinutes()
+          
+          // Arredonda para o slot de 30min mais próximo (00 ou 30)
+          const roundedMinute = slotMinute < 30 ? 0 : 30
+          
+          if (slotHour < endHour && slotHour >= startHour) {
+            const slotStr = `${slotHour.toString().padStart(2, '0')}:${roundedMinute.toString().padStart(2, '0')}`
+            occupiedSlots.add(slotStr)
+          }
+          
+          // Avança 30 minutos
+          currentTime = new Date(currentTime.getTime() + 30 * 60000)
+        }
+      } catch (error) {
+        console.error('❌ Erro ao processar agendamento:', error, apt)
+        // Continua com o próximo agendamento mesmo se houver erro
       }
     })
     
@@ -349,10 +370,13 @@ export async function getAvailableTimes(
       occupiedTimes: Array.from(occupiedSlots).sort(),
     }
   } catch (error) {
-    console.error('Erro ao buscar horários disponíveis:', error)
+    console.error('❌ Erro ao buscar horários disponíveis:', error)
+    console.error('❌ Stack trace:', error instanceof Error ? error.stack : 'N/A')
+    
+    // Retorna erro mais detalhado para debug
     return {
       success: false,
-      error: 'Erro ao buscar horários disponíveis',
+      error: `Erro ao buscar horários disponíveis: ${error instanceof Error ? error.message : String(error)}`,
     }
   }
 }
