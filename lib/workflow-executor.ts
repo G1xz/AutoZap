@@ -1019,7 +1019,10 @@ export async function processAppointmentConfirmation(
     console.log(`   - instanceId: "${instanceId}"`)
     console.log(`   - contactNumber: "${contactNumber}"`)
     
-    const maxSearchRetries = 3
+    // CRÍTICO: Aumenta tentativas e delays para lidar com race conditions
+    // Quando o usuário confirma muito rápido após criar o agendamento pendente,
+    // pode haver um delay de sincronização do banco de dados
+    const maxSearchRetries = 5 // Aumentado de 3 para 5
     for (let attempt = 1; attempt <= maxSearchRetries; attempt++) {
       // Usa número normalizado para busca
       pendingAppointment = await getPendingAppointment(instanceId, normalizedContactNumber)
@@ -1029,7 +1032,8 @@ export async function processAppointmentConfirmation(
         break
       } else if (attempt < maxSearchRetries) {
         console.log(`⚠️ [processAppointmentConfirmation] Tentativa ${attempt}/${maxSearchRetries} não encontrou agendamento, tentando novamente...`)
-        await new Promise(resolve => setTimeout(resolve, 150 * attempt)) // Delay crescente
+        // Delay crescente mais agressivo: 200ms, 400ms, 600ms, 800ms
+        await new Promise(resolve => setTimeout(resolve, 200 * attempt))
       }
     }
     
@@ -2674,10 +2678,12 @@ async function executeAIOnlyWorkflow(
           
           // CRÍTICO: Aguarda e verifica se foi salvo corretamente ANTES de retornar
           // Tenta múltiplas vezes com delays crescentes para garantir sincronização
+          // CRÍTICO: Aumenta tentativas e delays para garantir que está salvo antes de retornar
           let verification: any = null
-          const maxRetries = 3
+          const maxRetries = 5 // Aumentado de 3 para 5
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            await new Promise(resolve => setTimeout(resolve, 100 * attempt)) // Delay crescente: 100ms, 200ms, 300ms
+            // Delay crescente mais agressivo: 200ms, 400ms, 600ms, 800ms, 1000ms
+            await new Promise(resolve => setTimeout(resolve, 200 * attempt))
             
             // CRÍTICO: Usa número normalizado para verificação
             verification = await verifyPending(instanceId, normalizedContactNumber)
@@ -3560,6 +3566,31 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- ⚠️ CRÍTICO: NUNCA peça ao cliente para usar formatos técnicos como "DD/MM/YYYY" ou "HH:MM" - você deve entender a linguagem natural dele\n`
   prompt += `- ⚠️ CRÍTICO: NUNCA seja repetitivo ou genérico ao responder sobre agendamento\n`
   prompt += `- ⚠️ CRÍTICO: Se o cliente acabou de confirmar um agendamento (disse "confirmar", "sim", "ok"), NÃO tente criar um novo agendamento. Apenas confirme que recebeu a confirmação e agradeça.\n`
+  
+  prompt += `\n🎯 FLUXO DE AGENDAMENTO (SIGA EXATAMENTE ESTA SEQUÊNCIA):\n`
+  prompt += `1. CLIENTE SOLICITA AGENDAMENTO:\n`
+  prompt += `   - Cliente diz algo como "quero agendar X para amanhã às 3h" ou "pode ser às 4?"\n`
+  prompt += `   - Você DEVE chamar create_appointment IMEDIATAMENTE com os dados coletados\n`
+  prompt += `   - A função create_appointment vai:\n`
+  prompt += `     * Verificar se o horário está disponível\n`
+  prompt += `     * Criar um agendamento PENDENTE (não confirmado ainda)\n`
+  prompt += `     * Retornar uma mensagem pedindo confirmação\n`
+  prompt += `   - Você DEVE repassar EXATAMENTE a mensagem retornada pela função\n`
+  prompt += `   - NÃO diga que o agendamento foi criado/confirmado - apenas mostre os dados e peça confirmação\n`
+  prompt += `\n2. CLIENTE CONFIRMA:\n`
+  prompt += `   - Cliente diz "confirmar", "sim", "ok", "tá certo"\n`
+  prompt += `   - Você NÃO deve chamar nenhuma função aqui!\n`
+  prompt += `   - Apenas agradeça e confirme que recebeu a confirmação\n`
+  prompt += `   - O sistema vai processar a confirmação automaticamente\n`
+  prompt += `\n3. CLIENTE CANCELA:\n`
+  prompt += `   - Cliente diz "cancelar", "não", "desmarcar"\n`
+  prompt += `   - Você NÃO deve chamar nenhuma função aqui!\n`
+  prompt += `   - Apenas confirme que o agendamento foi cancelado\n`
+  prompt += `   - O sistema vai processar o cancelamento automaticamente\n`
+  prompt += `\n⚠️ REGRAS CRÍTICAS DE AGENDAMENTO:\n`
+  prompt += `- ⚠️ CRÍTICO: Se você acabou de criar um agendamento pendente e o cliente responde qualquer coisa que não seja confirmação/cancelamento, NÃO crie outro agendamento. Aguarde a confirmação do primeiro.\n`
+  prompt += `- ⚠️ CRÍTICO: Se o cliente sugerir outro horário DEPOIS de você ter criado um agendamento pendente, você DEVE criar um novo agendamento pendente com o novo horário (o sistema vai substituir automaticamente)\n`
+  prompt += `- ⚠️ CRÍTICO: NUNCA crie múltiplos agendamentos pendentes para o mesmo cliente ao mesmo tempo\n`
   
   prompt += `\n📋 FUNÇÕES DISPONÍVEIS PARA AGENDAMENTO:\n`
   prompt += `1. create_appointment - Cria um novo agendamento (verifica disponibilidade automaticamente)\n`
