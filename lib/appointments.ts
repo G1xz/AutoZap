@@ -666,14 +666,22 @@ export async function getAvailableTimes(
     console.log(`📅 [getAvailableTimes] Data: ${targetDateStr}`)
     console.log(`📅 [getAvailableTimes] Agendamentos confirmados: ${appointments.length}`)
     console.log(`📅 [getAvailableTimes] Agendamentos pendentes: ${pendingAppointments.length}`)
-    console.log(`📅 [getAvailableTimes] Horários ocupados: ${occupiedSlots.size}`)
+    console.log(`📅 [getAvailableTimes] Intervalos ocupados: ${occupiedIntervals.length}`)
     console.log(`📅 [getAvailableTimes] Horários disponíveis: ${availableSlots.length}`)
 
+    // Converte intervalos ocupados para lista de horários para compatibilidade
+    const occupiedTimes: string[] = []
+    occupiedIntervals.forEach((interval) => {
+      const startTime = `${interval.start.getHours().toString().padStart(2, '0')}:${interval.start.getMinutes().toString().padStart(2, '0')}`
+      const endTime = `${interval.end.getHours().toString().padStart(2, '0')}:${interval.end.getMinutes().toString().padStart(2, '0')}`
+      occupiedTimes.push(`${startTime}-${endTime}`)
+    })
+    
     return {
       success: true,
       date: targetDateStr,
       availableTimes: availableSlots,
-      occupiedTimes: Array.from(occupiedSlots).sort(),
+      occupiedTimes: occupiedTimes.sort(),
     }
   } catch (error) {
     console.error('❌ Erro ao buscar horários disponíveis:', error)
