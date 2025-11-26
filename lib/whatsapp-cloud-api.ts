@@ -770,6 +770,13 @@ export async function processIncomingMessage(
   message: WhatsAppMessage
 ): Promise<void> {
   try {
+    console.log(`\n📨📨📨 [processIncomingMessage] ========== NOVA MENSAGEM RECEBIDA ==========`)
+    console.log(`   📱 De: ${message.from}`)
+    console.log(`   💬 Mensagem: "${message.body}"`)
+    console.log(`   🆔 InstanceId: ${instanceId}`)
+    console.log(`   👤 Nome do contato: ${message.contactName || 'não disponível'}`)
+    console.log(`📨📨📨 [processIncomingMessage] =========================================\n`)
+    
     // ⚠️⚠️⚠️ CRÍTICO: PRIMEIRA COISA - Verifica confirmação de agendamento ANTES de qualquer outra operação
     // Isso garante que confirmações sejam processadas imediatamente, mesmo antes de salvar mensagem ou garantir status
     console.log(`🔍 [processIncomingMessage] PRIMEIRA VERIFICAÇÃO: Confirmação de agendamento`)

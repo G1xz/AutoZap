@@ -184,8 +184,10 @@ export async function generateAIResponse(
   })
 
   // Chama a API com function calling se disponível
-  console.log(`🤖 [generateAIResponse] Chamando OpenAI com ${messages.length} mensagens`)
-  console.log(`🤖 [generateAIResponse] Funções disponíveis:`, context?.functions?.map(f => f.name).join(', ') || 'nenhuma')
+  console.log(`\n🤖🤖🤖 [generateAIResponse] ========== CHAMANDO OPENAI ==========`)
+  console.log(`   📝 Mensagens no histórico: ${messages.length}`)
+  console.log(`   🔧 Funções disponíveis: ${context?.functions?.map(f => f.name).join(', ') || 'nenhuma'}`)
+  console.log(`   📨 Última mensagem do usuário: "${messages[messages.length - 1]?.content?.substring(0, 100)}..."`)
   
   const response = await callChatGPT(messages, {
     temperature: context?.temperature,
@@ -193,19 +195,23 @@ export async function generateAIResponse(
     functions: context?.functions,
   })
 
-  console.log(`🤖 [generateAIResponse] Resposta recebida da OpenAI:`)
-  console.log(`   - Tem função call? ${!!response.functionCall}`)
+  console.log(`\n✅✅✅ [generateAIResponse] ========== RESPOSTA RECEBIDA DA OPENAI ==========`)
+  console.log(`   🔧 IA quer chamar função? ${!!response.functionCall ? '✅ SIM' : '❌ NÃO'}`)
   if (response.functionCall) {
-    console.log(`   - Nome da função: ${response.functionCall.name}`)
-    console.log(`   - Argumentos:`, JSON.stringify(response.functionCall.arguments, null, 2))
+    console.log(`   📞 Nome da função: "${response.functionCall.name}"`)
+    console.log(`   📋 Argumentos recebidos:`)
+    console.log(JSON.stringify(response.functionCall.arguments, null, 2))
   } else {
-    console.log(`   - Conteúdo da resposta: ${response.content?.substring(0, 200)}...`)
+    console.log(`   💬 Resposta de texto (primeiros 200 chars): "${response.content?.substring(0, 200)}..."`)
   }
+  console.log(`🤖🤖🤖 [generateAIResponse] ============================================\n`)
 
   // Se a IA quer chamar uma função, executa e continua a conversa
   if (response.functionCall && context?.onFunctionCall) {
-    console.log(`🔧 [generateAIResponse] IA quer chamar função: ${response.functionCall.name}`)
-    console.log(`🔧 [generateAIResponse] Argumentos:`, JSON.stringify(response.functionCall.arguments, null, 2))
+    console.log(`\n🔧🔧🔧 [generateAIResponse] ========== EXECUTANDO FUNÇÃO ==========`)
+    console.log(`   📞 Função: "${response.functionCall.name}"`)
+    console.log(`   📋 Argumentos:`)
+    console.log(JSON.stringify(response.functionCall.arguments, null, 2))
     
     try {
       const functionResult = await context.onFunctionCall(
@@ -213,8 +219,12 @@ export async function generateAIResponse(
         response.functionCall.arguments
       )
       
-      console.log(`✅ [generateAIResponse] Função ${response.functionCall.name} executada com sucesso`)
-      console.log(`📊 [generateAIResponse] Resultado:`, JSON.stringify(functionResult, null, 2))
+      console.log(`\n✅✅✅ [generateAIResponse] ========== FUNÇÃO EXECUTADA ==========`)
+      console.log(`   📞 Função: "${response.functionCall.name}"`)
+      console.log(`   ✅ Status: SUCESSO`)
+      console.log(`   📊 Resultado:`)
+      console.log(JSON.stringify(functionResult, null, 2))
+      console.log(`✅✅✅ [generateAIResponse] ====================================\n`)
 
       // Adiciona a resposta da função e pede para a IA continuar
       messages.push({
@@ -239,13 +249,19 @@ export async function generateAIResponse(
         functions: context?.functions,
       })
 
-      console.log(`✅ [generateAIResponse] Resposta final gerada após função`)
+      console.log(`\n✅✅✅ [generateAIResponse] ========== RESPOSTA FINAL GERADA ==========`)
+      console.log(`   💬 Resposta (primeiros 200 chars): "${finalResponse.content?.substring(0, 200)}..."`)
+      console.log(`✅✅✅ [generateAIResponse] =========================================\n`)
       return finalResponse.content
     } catch (error) {
-      console.error('❌ [generateAIResponse] Erro ao executar função:', error)
-      console.error('❌ [generateAIResponse] Stack trace:', error instanceof Error ? error.stack : 'N/A')
-      console.error('❌ [generateAIResponse] Nome da função:', response.functionCall.name)
-      console.error('❌ [generateAIResponse] Argumentos:', JSON.stringify(response.functionCall.arguments, null, 2))
+      console.error(`\n❌❌❌ [generateAIResponse] ========== ERRO AO EXECUTAR FUNÇÃO ==========`)
+      console.error(`   📞 Função que falhou: "${response.functionCall.name}"`)
+      console.error(`   📋 Argumentos usados:`)
+      console.error(JSON.stringify(response.functionCall.arguments, null, 2))
+      console.error(`   ❌ Erro:`, error)
+      console.error(`   📚 Stack trace:`)
+      console.error(error instanceof Error ? error.stack : 'N/A')
+      console.error(`❌❌❌ [generateAIResponse] ===========================================\n`)
       
       // Retorna mensagem de erro mais específica
       const errorMessage = error instanceof Error ? error.message : String(error)
