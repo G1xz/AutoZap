@@ -1,0 +1,228 @@
+import { Transaction } from './types';
+import { classifyTransaction } from './classification';
+import { detectAnomalies } from './anomaly-detection';
+import { detectRecurringTransactions } from './recurrence-analysis';
+import { generateFinancialReport } from './index';
+
+// Dados de teste baseados no exemplo fornecido
+const testTransactions: Transaction[] = [
+  {
+    id: "1",
+    date: "2025-09-08",
+    amount: 10000,
+    merchant: "Salário Empresa X",
+    category: "SALARY",
+    payment_method: "PIX",
+    transaction_type: "DEPOSIT"
+  },
+  {
+    id: "2", 
+    date: "2025-09-10",
+    amount: -300,
+    merchant: "Mercado",
+    category: "FOOD",
+    payment_method: "CASH",
+    transaction_type: "EXPENSE"
+  },
+  {
+    id: "3",
+    date: "2025-09-11", 
+    amount: -6666,
+    merchant: "Gacha",
+    category: "OTHER",
+    payment_method: "PIX",
+    transaction_type: "EXPENSE"
+  }
+];
+
+describe('Sistema de Relatórios Financeiros Melhorado', () => {
+  
+  describe('Classificação de Transações', () => {
+    test('deve classificar salário como receita com alta confiança', () => {
+      const transaction = testTransactions[0]; // Salário
+      const classification = classifyTransaction(transaction);
+      
+      expect(classification.is_income).toBe(true);
+      expect(classification.confidence).toBe('alta');
+      expect(classification.reason).toContain('Salário');
+    });
+
+    test('deve classificar despesa como despesa', () => {
+      const transaction = testTransactions[1]; // Mercado
+      const classification = classifyTransaction(transaction);
+      
+      expect(classification.is_income).toBe(false);
+      expect(classification.confidence).toBe('alta');
+    });
+
+    test('deve detectar transação suspeita (Gacha)', () => {
+      const transaction = testTransactions[2]; // Gacha
+      const classification = classifyTransaction(transaction);
+      
+      expect(classification.is_income).toBe(false);
+      // Deve detectar como suspeita devido ao merchant "Gacha"
+    });
+  });
+
+  describe('Detecção de Anomalias', () => {
+    test('deve detectar transação anômala (valor alto)', () => {
+      const anomalies = detectAnomalies(testTransactions, 10000, 6966);
+      
+      // Deve detectar a transação do Gacha como anômala
+      const gachaAnomaly = anomalies.find(a => a.merchant === "Gacha");
+      expect(gachaAnomaly).toBeDefined();
+      expect(gachaAnomaly?.reason).toContain('valor muito acima');
+    });
+
+    test('não deve classificar salário como despesa', () => {
+      const anomalies = detectAnomalies(testTransactions, 10000, 6966);
+      
+      // Não deve haver anomalia de salário em despesas
+      const salaryAnomaly = anomalies.find(a => 
+        a.merchant.includes("Salário") && a.reason.includes("despesa")
+      );
+      expect(salaryAnomaly).toBeUndefined();
+    });
+  });
+
+  describe('Análise de Recorrência', () => {
+    test('deve detectar transações recorrentes', () => {
+      // Adicionar mais transações para testar recorrência
+      const recurringTransactions: Transaction[] = [
+        {
+          id: "4",
+          date: "2025-09-01",
+          amount: -150,
+          merchant: "Netflix",
+          category: "ENTERTAINMENT",
+          payment_method: "CREDIT_CARD",
+          transaction_type: "EXPENSE"
+        },
+        {
+          id: "5", 
+          date: "2025-08-01",
+          amount: -150,
+          merchant: "Netflix",
+          category: "ENTERTAINMENT", 
+          payment_method: "CREDIT_CARD",
+          transaction_type: "EXPENSE"
+        }
+      ];
+      
+      const recurring = detectRecurringTransactions(recurringTransactions);
+      
+      const netflixRecurring = recurring.find(r => r.merchant === "Netflix");
+      expect(netflixRecurring).toBeDefined();
+      expect(netflixRecurring?.confidence).toBe('alta');
+    });
+  });
+
+  describe('Relatório Completo', () => {
+    test('deve gerar relatório com estrutura correta', async () => {
+      const report = await generateFinancialReport(testTransactions, 0);
+      
+      // Verificar estrutura básica
+      expect(report.summary).toBeDefined();
+      expect(report.top_receitas).toBeDefined();
+      expect(report.top_despesas).toBeDefined();
+      expect(report.categories).toBeDefined();
+      expect(report.anomalies).toBeDefined();
+      expect(report.insights).toBeDefined();
+      expect(report.raw_transactions).toBeDefined();
+    });
+
+    test('deve separar corretamente receitas e despesas', async () => {
+      const report = await generateFinancialReport(testTransactions, 0);
+      
+      // Salário deve estar em top_receitas
+      const salaryInReceitas = report.top_receitas.find(r => r.merchant.includes("Salário"));
+      expect(salaryInReceitas).toBeDefined();
+      
+      // Salário NÃO deve estar em top_despesas
+      const salaryInDespesas = report.top_despesas.find(d => d.merchant.includes("Salário"));
+      expect(salaryInDespesas).toBeUndefined();
+    });
+
+    test('deve calcular totais corretamente', async () => {
+      const report = await generateFinancialReport(testTransactions, 0);
+      
+      // Verificar se soma das receitas ≈ receitas_mes
+      const sumReceitas = report.top_receitas.reduce((sum, r) => sum + r.total, 0);
+      expect(Math.abs(sumReceitas - report.summary.receitas_mes)).toBeLessThan(1);
+      
+      // Verificar se soma das despesas ≈ gastos_mes  
+      const sumDespesas = report.top_despesas.reduce((sum, d) => sum + d.total, 0);
+      expect(Math.abs(sumDespesas - report.summary.gastos_mes)).toBeLessThan(1);
+    });
+
+    test('deve detectar anomalias e gerar insights', async () => {
+      const report = await generateFinancialReport(testTransactions, 0);
+      
+      // Deve ter pelo menos uma anomalia (Gacha)
+      expect(report.anomalies.length).toBeGreaterThan(0);
+      
+      // Deve ter insights
+      expect(report.insights.length).toBeGreaterThan(0);
+      
+      // Deve ter insight sobre anomalia
+      const anomalyInsight = report.insights.find(i => i.text.includes("anômala"));
+      expect(anomalyInsight).toBeDefined();
+    });
+  });
+
+  describe('Critérios de Aceitação', () => {
+    test('salário nunca deve aparecer em top_despesas', async () => {
+      const report = await generateFinancialReport(testTransactions, 0);
+      
+      const salaryInDespesas = report.top_despesas.find(d => 
+        d.merchant.toLowerCase().includes('salário') || 
+        d.merchant.toLowerCase().includes('salary')
+      );
+      
+      expect(salaryInDespesas).toBeUndefined();
+    });
+
+    test('deve incluir explanation e confidence em cada anomaly', async () => {
+      const report = await generateFinancialReport(testTransactions, 0);
+      
+      report.anomalies.forEach(anomaly => {
+        expect(anomaly.explanation).toBeDefined();
+        expect(anomaly.confidence).toBeDefined();
+        expect(['alta', 'média', 'baixa']).toContain(anomaly.confidence);
+      });
+    });
+
+    test('deve tratar variação percentual quando mês anterior for zero', async () => {
+      const report = await generateFinancialReport(testTransactions, 0);
+      
+      // Se não há dados do mês anterior, variação deve ser null
+      if (report.comparison.previous_month.receitas === 0) {
+        expect(report.comparison.variation.receitas_percent).toBeNull();
+      }
+    });
+  });
+});
+
+// Função auxiliar para executar testes
+export function runTests() {
+  console.log('🧪 Executando testes do sistema de relatórios financeiros...');
+  
+  // Teste básico de classificação
+  const transaction = testTransactions[0];
+  const classification = classifyTransaction(transaction);
+  console.log('✅ Classificação de salário:', classification);
+  
+  // Teste de detecção de anomalias
+  const anomalies = detectAnomalies(testTransactions, 10000, 6966);
+  console.log('✅ Anomalias detectadas:', anomalies.length);
+  
+  // Teste de relatório completo
+  generateFinancialReport(testTransactions, 0).then(report => {
+    console.log('✅ Relatório gerado com sucesso');
+    console.log('📊 Resumo:', report.summary);
+    console.log('🏆 Top receitas:', report.top_receitas.length);
+    console.log('💸 Top despesas:', report.top_despesas.length);
+    console.log('⚠️ Anomalias:', report.anomalies.length);
+    console.log('💡 Insights:', report.insights.length);
+  });
+}

@@ -2,6 +2,8 @@ import { prisma } from './prisma'
 import { sendWhatsAppMessage, sendWhatsAppInteractiveMessage, sendWhatsAppImage, sendWhatsAppVideo, sendWhatsAppDocument, getUserProfileName } from './whatsapp-cloud-api'
 import { generateAIResponse } from './openai'
 import { createAppointment, checkAvailability, getAvailableTimes, getUserAppointments, updateAppointment, cancelAppointment } from './appointments'
+import { buildSystemPrompt } from './_prompts/build-system-prompt'
+import { generateEnhancedAppointmentContext } from './_context/enhanced-appointment-context'
 
 export interface WhatsAppMessage {
   from: string
@@ -1778,8 +1780,25 @@ async function executeAIOnlyWorkflow(
       hasPricing: !!businessDetails.pricingInfo
     })
 
-    // Monta o prompt do sistema com os detalhes do negócio
-    const systemPrompt = buildAISystemPrompt(businessDetails, contactNameFinal || formattedPhoneFormatted)
+    // Gera contexto aprimorado de agendamentos (similar ao Midas)
+    let appointmentContext = ''
+    try {
+      appointmentContext = await generateEnhancedAppointmentContext(
+        workflow.userId,
+        instanceId,
+        contactNumber
+      )
+    } catch (error) {
+      console.error('Erro ao gerar contexto de agendamentos:', error)
+      // Continua sem contexto de agendamentos se houver erro
+    }
+
+    // Monta o prompt do sistema com os detalhes do negócio usando a nova estrutura modular
+    const systemPrompt = buildSystemPrompt(
+      businessDetails,
+      contactNameFinal || formattedPhoneFormatted,
+      appointmentContext
+    )
 
     // Verifica se é a primeira interação (poucas mensagens na conversa ou nenhuma resposta da IA ainda)
     // Considera primeira interação se há menos de 3 mensagens OU se não há nenhuma mensagem da IA ainda
@@ -3393,9 +3412,12 @@ async function executeAIOnlyWorkflow(
 }
 
 /**
- * Constrói o prompt do sistema para a IA baseado nos detalhes do negócio
+ * @deprecated Use buildSystemPrompt de lib/_prompts/build-system-prompt.ts
+ * Mantido apenas para compatibilidade - será removido em versão futura
  */
 function buildAISystemPrompt(businessDetails: any, contactName: string): string {
+  // Redireciona para a nova função modular
+  return buildSystemPrompt(businessDetails, contactName)
   const businessName = businessDetails.businessName || 'este negócio'
   const businessDescription = businessDetails.businessDescription || ''
   const businessType = businessDetails.businessType || 'services'
