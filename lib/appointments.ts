@@ -105,6 +105,10 @@ export async function createAppointment(params: CreateAppointmentParams) {
       console.warn('⚠️ [createAppointment] Erro ao criar com endDate/duration, tentando sem esses campos:', error.message)
       
       try {
+        // Se endDate é obrigatório, calcula um valor padrão baseado na duração
+        // Usa a duração fornecida ou 60 minutos como padrão
+        const fallbackEndDate = new Date(params.date.getTime() + (params.duration || 60) * 60000)
+        
         appointment = await prisma.appointment.create({
           data: {
             userId: params.userId,
@@ -112,11 +116,13 @@ export async function createAppointment(params: CreateAppointmentParams) {
             contactNumber: params.contactNumber,
             contactName: params.contactName,
             date: params.date, // Horário de início
+            endDate: fallbackEndDate, // Calcula endDate mesmo no fallback
+            duration: params.duration || null, // Pode ser null se não especificado
             description: params.description,
             status: 'pending',
           },
         })
-        console.log('✅ [createAppointment] Agendamento criado sem endDate/duration (compatibilidade)')
+        console.log('✅ [createAppointment] Agendamento criado com endDate calculado (compatibilidade)')
         console.warn('⚠️ [createAppointment] IMPORTANTE: Aplique a migration para adicionar campos endDate e duration')
       } catch (fallbackError) {
         console.error('❌ [createAppointment] Erro também na criação sem endDate/duration:', fallbackError)
