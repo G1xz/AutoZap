@@ -88,18 +88,18 @@ export async function createAppointment(params: CreateAppointmentParams) {
     let appointment
     try {
       appointment = await prisma.appointment.create({
-        data: {
-          userId: params.userId,
-          instanceId: params.instanceId,
-          contactNumber: params.contactNumber,
-          contactName: params.contactName,
+      data: {
+        userId: params.userId,
+        instanceId: params.instanceId,
+        contactNumber: params.contactNumber,
+        contactName: params.contactName,
           date: params.date, // Horário de início
           endDate: endDate, // Horário de término calculado
           duration: duration, // Duração em minutos
-          description: params.description,
-          status: 'pending',
-        },
-      })
+        description: params.description,
+        status: 'pending',
+      },
+    })
       console.log('✅ [createAppointment] Agendamento criado com endDate e duration')
     } catch (error: any) {
       // Se falhar porque endDate não existe no banco, cria usando SQL raw sem endDate
@@ -285,24 +285,24 @@ export async function checkAvailability(
       console.warn('⚠️ [checkAvailability] Erro ao buscar com endDate/duration, tentando sem esses campos:', error.message)
       try {
         const appointmentsWithoutNewFields = await prisma.appointment.findMany({
-          where: {
-            userId,
-            date: {
-              gte: startOfDay,
-              lte: endOfDay,
-            },
-            status: {
-              in: ['pending', 'confirmed'],
-            },
-          },
+      where: {
+        userId,
+        date: {
+          gte: startOfDay,
+          lte: endOfDay,
+        },
+        status: {
+          in: ['pending', 'confirmed'],
+        },
+      },
           select: {
             date: true,
             description: true,
           },
-          orderBy: {
-            date: 'asc',
-          },
-        })
+      orderBy: {
+        date: 'asc',
+      },
+    })
         
         // Converte para o formato esperado
         appointments = appointmentsWithoutNewFields.map(apt => ({
@@ -330,7 +330,7 @@ export async function checkAvailability(
           date: apt.date, // Início
           endDate: endDate, // Término
           duration: apt.duration || 60,
-          description: apt.description,
+        description: apt.description,
         }
       }),
     }
@@ -375,27 +375,69 @@ export async function getAvailableTimes(
     })
 
     // Busca agendamentos CONFIRMADOS do dia
-    // CRÍTICO: Seleciona apenas campos necessários para evitar erros se endDate/duration não existirem
-    const appointments = await prisma.appointment.findMany({
-      where: {
-        userId,
-        date: {
-          gte: startOfDay,
-          lte: endOfDay,
+    // CRÍTICO: Tenta buscar com endDate e duration, mas se falhar, busca sem esses campos
+    let appointments: Array<{
+      date: Date
+      endDate?: Date | null
+      duration?: number | null
+    }>
+    
+    try {
+      appointments = await prisma.appointment.findMany({
+        where: {
+          userId,
+          date: {
+            gte: startOfDay,
+            lte: endOfDay,
+          },
+          status: {
+            in: ['pending', 'confirmed'],
+          },
         },
-        status: {
-          in: ['pending', 'confirmed'],
+        select: {
+          date: true,
+          endDate: true,
+          duration: true,
         },
-      },
-      select: {
-        date: true,
-        endDate: true,
-        duration: true,
-      },
-      orderBy: {
-        date: 'asc',
-      },
-    })
+        orderBy: {
+          date: 'asc',
+        },
+      })
+    } catch (error: any) {
+      // Se falhar (provavelmente porque endDate/duration não existem ainda), busca sem esses campos
+      console.warn('⚠️ [getAvailableTimes] Erro ao buscar com endDate/duration, tentando sem esses campos:', error.message)
+      try {
+        const appointmentsWithoutNewFields = await prisma.appointment.findMany({
+          where: {
+            userId,
+            date: {
+              gte: startOfDay,
+              lte: endOfDay,
+            },
+            status: {
+              in: ['pending', 'confirmed'],
+            },
+          },
+          select: {
+            date: true,
+          },
+          orderBy: {
+            date: 'asc',
+          },
+        })
+        
+        // Converte para o formato esperado
+        appointments = appointmentsWithoutNewFields.map(apt => ({
+          date: apt.date,
+          endDate: null,
+          duration: null,
+        }))
+        console.log('✅ [getAvailableTimes] Busca sem endDate/duration bem-sucedida')
+      } catch (fallbackError) {
+        console.error('❌ [getAvailableTimes] Erro também na busca sem endDate/duration:', fallbackError)
+        throw fallbackError
+      }
+    }
 
     // CRÍTICO: Busca também agendamentos PENDENTES (não confirmados ainda)
     // Isso evita mostrar horários que já estão reservados mas ainda não confirmados
@@ -559,30 +601,87 @@ export async function getUserAppointments(
       }
     }
 
-    const appointments = await prisma.appointment.findMany({
-      where,
-      orderBy: {
-        date: 'asc',
-      },
-    })
+    // CRÍTICO: Usa select explícito para evitar erro se endDate não existir no banco
+    let appointments: Array<{
+      id: string
+      date: Date
+      description: string | null
+      status: string
+      endDate?: Date | null
+      duration?: number | null
+    }>
+    
+    try {
+      appointments = await prisma.appointment.findMany({
+        where,
+        select: {
+          id: true,
+          date: true,
+          description: true,
+          status: true,
+          endDate: true,
+          duration: true,
+        },
+        orderBy: {
+          date: 'asc',
+        },
+      })
+    } catch (error: any) {
+      // Se falhar (provavelmente porque endDate/duration não existem ainda), busca sem esses campos
+      console.warn('⚠️ [getUserAppointments] Erro ao buscar com endDate/duration, tentando sem esses campos:', error.message)
+      try {
+        const appointmentsWithoutNewFields = await prisma.appointment.findMany({
+          where,
+          select: {
+            id: true,
+            date: true,
+            description: true,
+            status: true,
+          },
+          orderBy: {
+            date: 'asc',
+          },
+        })
+        
+        // Converte para o formato esperado
+        appointments = appointmentsWithoutNewFields.map(apt => ({
+          ...apt,
+          endDate: null,
+          duration: null,
+        }))
+        console.log('✅ [getUserAppointments] Busca sem endDate/duration bem-sucedida')
+      } catch (fallbackError) {
+        console.error('❌ [getUserAppointments] Erro também na busca sem endDate/duration:', fallbackError)
+        throw fallbackError
+      }
+    }
 
     return {
       success: true,
-      appointments: appointments.map((apt) => ({
-        id: apt.id,
-        date: apt.date,
-        description: apt.description,
-        status: apt.status,
-        formattedDate: apt.date.toLocaleDateString('pt-BR', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-        }),
-        formattedTime: apt.date.toLocaleTimeString('pt-BR', {
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      })),
+      appointments: appointments.map((apt) => {
+        // Calcula endDate e formattedEndTime se não existir
+        const endDate = apt.endDate || (apt.duration ? new Date(apt.date.getTime() + apt.duration * 60000) : null)
+        
+        return {
+          id: apt.id,
+          date: apt.date,
+          description: apt.description,
+          status: apt.status,
+          formattedDate: apt.date.toLocaleDateString('pt-BR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+          }),
+          formattedTime: apt.date.toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+          formattedEndTime: endDate ? endDate.toLocaleTimeString('pt-BR', {
+            hour: '2-digit',
+            minute: '2-digit',
+          }) : undefined,
+        }
+      }),
     }
   } catch (error) {
     console.error('Erro ao buscar agendamentos do usuário:', error)
@@ -603,10 +702,19 @@ export async function updateAppointment(
 ) {
   try {
     // Verifica se o agendamento existe e pertence ao usuário
+    // CRÍTICO: Usa select explícito para evitar erro se endDate não existir no banco
     const appointment = await prisma.appointment.findFirst({
       where: {
         id: appointmentId,
         userId,
+      },
+      select: {
+        id: true,
+        date: true,
+        description: true,
+        status: true,
+        duration: true,
+        // endDate pode não existir no banco ainda
       },
     })
 
@@ -618,12 +726,47 @@ export async function updateAppointment(
     }
 
     // Atualiza o agendamento
-    const updated = await prisma.appointment.update({
-      where: { id: appointmentId },
-      data: {
-        date: newDate,
-      },
-    })
+    // CRÍTICO: Tenta atualizar com endDate, mas se falhar, atualiza sem esse campo
+    let updated: any
+    try {
+      // Calcula novo endDate baseado na duração existente
+      const newEndDate = appointment.duration 
+        ? new Date(newDate.getTime() + appointment.duration * 60000)
+        : new Date(newDate.getTime() + 60 * 60000) // Padrão 60min se não tiver duração
+      
+      updated = await prisma.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          date: newDate,
+          endDate: newEndDate,
+        },
+        select: {
+          id: true,
+          date: true,
+          description: true,
+          status: true,
+        },
+      })
+    } catch (error: any) {
+      // Se falhar porque endDate não existe, atualiza sem esse campo
+      if (error.code === 'P2022' || error.message?.includes('endDate') || error.message?.includes('does not exist')) {
+        console.warn('⚠️ [updateAppointment] Coluna endDate não existe, atualizando sem esse campo')
+        updated = await prisma.appointment.update({
+          where: { id: appointmentId },
+          data: {
+            date: newDate,
+          },
+          select: {
+            id: true,
+            date: true,
+            description: true,
+            status: true,
+          },
+        })
+      } else {
+        throw error
+      }
+    }
 
     return {
       success: true,
@@ -648,10 +791,19 @@ export async function updateAppointment(
  */
 export async function cancelAppointment(appointmentId: string, userId: string) {
   try {
+    // CRÍTICO: Usa select explícito para evitar erro se endDate não existir no banco
     const appointment = await prisma.appointment.findFirst({
       where: {
         id: appointmentId,
         userId,
+      },
+      select: {
+        id: true,
+        date: true,
+        description: true,
+        status: true,
+        duration: true,
+        // endDate pode não existir no banco ainda
       },
     })
 

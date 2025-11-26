@@ -385,9 +385,9 @@ export default function ChatManager() {
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-sm sm:text-base text-gray-900 truncate">
-                    {selectedConversation.contactName || formatPhoneNumber(selectedConversation.contactNumber)}
-                  </h3>
+                <h3 className="font-semibold text-sm sm:text-base text-gray-900 truncate">
+                  {selectedConversation.contactName || formatPhoneNumber(selectedConversation.contactNumber)}
+                </h3>
                   {selectedConversation.status === 'closed' && (
                     <span className="px-2 py-0.5 text-xs font-medium bg-gray-200 text-gray-700 rounded-full flex-shrink-0">
                       Encerrado
@@ -529,29 +529,29 @@ export default function ChatManager() {
                   </p>
                 </div>
               ) : (
-                <div className="flex gap-1.5 sm:gap-2">
-                  <input
-                    type="text"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault()
-                        sendMessage()
-                      }
-                    }}
-                    placeholder="Digite sua mensagem..."
-                    className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent bg-white text-gray-900 placeholder-gray-400"
-                    disabled={sending}
-                  />
-                  <button
-                    onClick={sendMessage}
-                    disabled={sending || !newMessage.trim()}
-                    className="px-4 sm:px-6 py-1.5 sm:py-2 text-sm sm:text-base bg-autozap-primary text-white rounded-md hover:bg-autozap-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                    {sending ? '...' : 'Enviar'}
-                  </button>
-                </div>
+              <div className="flex gap-1.5 sm:gap-2">
+                <input
+                  type="text"
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      sendMessage()
+                    }
+                  }}
+                  placeholder="Digite sua mensagem..."
+                  className="flex-1 px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent bg-white text-gray-900 placeholder-gray-400"
+                  disabled={sending}
+                />
+                <button
+                  onClick={sendMessage}
+                  disabled={sending || !newMessage.trim()}
+                  className="px-4 sm:px-6 py-1.5 sm:py-2 text-sm sm:text-base bg-autozap-primary text-white rounded-md hover:bg-autozap-light disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {sending ? '...' : 'Enviar'}
+                </button>
+              </div>
               )}
             </div>
           </>

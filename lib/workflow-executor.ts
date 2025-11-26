@@ -198,8 +198,8 @@ export async function executeWorkflows(
           return
         } else {
           // Workflow manual ainda válido, continua execução existente
-          await processQuestionnaireResponse(instanceId, contactNumber, messageBody)
-          return
+      await processQuestionnaireResponse(instanceId, contactNumber, messageBody)
+      return
         }
       } else {
         // Execução sem workflowId válido, limpa
@@ -1023,8 +1023,8 @@ export async function processAppointmentConfirmation(
     for (let attempt = 1; attempt <= maxSearchRetries; attempt++) {
       // Usa número normalizado para busca
       pendingAppointment = await getPendingAppointment(instanceId, normalizedContactNumber)
-      
-      if (pendingAppointment) {
+    
+    if (pendingAppointment) {
         console.log(`✅ [processAppointmentConfirmation] Agendamento pendente encontrado na tentativa ${attempt}/${maxSearchRetries}`)
         break
       } else if (attempt < maxSearchRetries) {
@@ -1065,17 +1065,17 @@ export async function processAppointmentConfirmation(
     
     // Verifica se a mensagem parece confirmação ANTES de verificar se há agendamento pendente
     const looksLikeConfirmation = 
-      userMessageLower === 'confirmar' || 
-      normalizedMessage === 'confirmar' ||
-      userMessageLower === 'sim' || 
-      userMessageLower === 'confirmo' ||
-      userMessageLower === 'ok' ||
-      userMessageLower === 'tá certo' ||
-      userMessageLower === 'ta certo' ||
-      userMessageLower === 'esta certo' ||
-      userMessageLower === 'está certo' ||
-      userMessageLower.startsWith('confirmar') ||
-      normalizedMessage.startsWith('confirmar') ||
+        userMessageLower === 'confirmar' || 
+        normalizedMessage === 'confirmar' ||
+        userMessageLower === 'sim' || 
+        userMessageLower === 'confirmo' ||
+        userMessageLower === 'ok' ||
+        userMessageLower === 'tá certo' ||
+        userMessageLower === 'ta certo' ||
+        userMessageLower === 'esta certo' ||
+        userMessageLower === 'está certo' ||
+        userMessageLower.startsWith('confirmar') ||
+        normalizedMessage.startsWith('confirmar') ||
       (userMessageLower.length <= 20 && (userMessageLower.includes('confirm') || normalizedMessage.includes('confirm')))
     
     if (!pendingAppointment) {
@@ -1142,9 +1142,9 @@ export async function processAppointmentConfirmation(
 
   // Se chegou aqui, há agendamento pendente - continua processamento
   console.log(`🔍 [processAppointmentConfirmation] Analisando mensagem (há agendamento pendente):`)
-  console.log(`   Mensagem original: "${userMessage}"`)
-  console.log(`   Mensagem lowercase: "${userMessageLower}"`)
-  console.log(`   Mensagem normalizada: "${normalizedMessage}"`)
+      console.log(`   Mensagem original: "${userMessage}"`)
+      console.log(`   Mensagem lowercase: "${userMessageLower}"`)
+      console.log(`   Mensagem normalizada: "${normalizedMessage}"`)
       
   // Detecção MUITO robusta de confirmação - verifica múltiplas variações
   // Primeiro verifica correspondências exatas
@@ -2658,11 +2658,11 @@ async function executeAIOnlyWorkflow(
           try {
             // CRÍTICO: Usa número normalizado para garantir consistência
             await storePendingAppointment(instanceId, normalizedContactNumber, {
-              date: formattedDate,
-              time: formattedTime,
-              duration: serviceDuration,
-              service: args.description || 'Serviço não especificado',
-              description: args.description,
+            date: formattedDate,
+            time: formattedTime,
+            duration: serviceDuration,
+            service: args.description || 'Serviço não especificado',
+            description: args.description,
             }, userId) // Passa userId como parâmetro obrigatório
             
             console.log(`✅✅✅ [handleFunctionCall] storePendingAppointment chamado com SUCESSO`)
@@ -3173,23 +3173,23 @@ async function executeAIOnlyWorkflow(
       console.log(`🔧 [interceptedFunctionCall] Argumentos:`, JSON.stringify(args, null, 2))
       
       try {
-        const result = await handleFunctionCall(functionName, args)
+      const result = await handleFunctionCall(functionName, args)
         
         console.log(`✅ [interceptedFunctionCall] Função ${functionName} executada`)
         console.log(`📊 [interceptedFunctionCall] Resultado:`, JSON.stringify(result, null, 2))
-        
-        // Se retornou um agendamento pendente, intercepta a resposta
-        if (result && typeof result === 'object' && 'pending' in result && result.pending === true) {
-          pendingAppointmentResponse = result.message || result.error || 'Por favor, confirme os dados do agendamento.'
+      
+      // Se retornou um agendamento pendente, intercepta a resposta
+      if (result && typeof result === 'object' && 'pending' in result && result.pending === true) {
+        pendingAppointmentResponse = result.message || result.error || 'Por favor, confirme os dados do agendamento.'
           console.log(`📅 [interceptedFunctionCall] Agendamento pendente interceptado:`, pendingAppointmentResponse)
-          // Retorna erro para que a IA não confirme automaticamente
-          return {
-            success: false,
-            error: pendingAppointmentResponse,
-          }
+        // Retorna erro para que a IA não confirme automaticamente
+        return {
+          success: false,
+          error: pendingAppointmentResponse,
         }
-        
-        return result
+      }
+      
+      return result
       } catch (error) {
         console.error(`❌ [interceptedFunctionCall] Erro ao executar função ${functionName}:`, error)
         console.error(`❌ [interceptedFunctionCall] Stack trace:`, error instanceof Error ? error.stack : 'N/A')
