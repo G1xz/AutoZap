@@ -45,6 +45,10 @@ interface MediaAttachment {
   caption?: string
 }
 
+function isImageAttachment(media: MediaAttachment | null): media is MediaAttachment {
+  return !!media && media.type === 'image' && !!media.url
+}
+
 interface ServiceWithAppointment {
   name: string
   duration?: number
@@ -2017,61 +2021,31 @@ async function executeAIOnlyWorkflow(
     }
 
     // Função auxiliar para calcular a próxima ocorrência de um dia da semana
-    const getNextWeekday = (targetDayOfWeek: number): Date => {
+    const getNextWeekday = (
+      targetDayOfWeek: number,
+      options?: { forceNextWeek?: boolean }
+    ): Date => {
       // targetDayOfWeek: 0 = domingo, 1 = segunda, ..., 6 = sábado
-      // Obtém a data atual no fuso do Brasil usando Intl para garantir precisão
-      const now = new Date()
-      const brazilianParts = new Intl.DateTimeFormat('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        weekday: 'long',
-      }).formatToParts(now)
+      const baseDate = getBrazilianDate()
+      const currentDayOfWeek = baseDate.getDay()
       
-      const currentYear = parseInt(brazilianParts.find(p => p.type === 'year')!.value)
-      const currentMonth = parseInt(brazilianParts.find(p => p.type === 'month')!.value) - 1 // JavaScript usa 0-11
-      const currentDay = parseInt(brazilianParts.find(p => p.type === 'day')!.value)
-      const currentWeekdayName = brazilianParts.find(p => p.type === 'weekday')!.value.toLowerCase()
-      
-      // Mapeia nome do dia da semana para número (0 = domingo, 1 = segunda, ..., 6 = sábado)
-      const weekdayMap: Record<string, number> = {
-        'domingo': 0,
-        'segunda-feira': 1, 'segunda': 1,
-        'terça-feira': 2, 'terça': 2, 'terca-feira': 2, 'terca': 2,
-        'quarta-feira': 3, 'quarta': 3,
-        'quinta-feira': 4, 'quinta': 4,
-        'sexta-feira': 5, 'sexta': 5,
-        'sábado': 6, 'sabado': 6,
+      let daysToAdd = (targetDayOfWeek - currentDayOfWeek + 7) % 7
+      if (daysToAdd === 0) {
+        daysToAdd = 7 // nunca usa o dia atual, sempre próxima ocorrência
       }
       
-      const currentDayOfWeek = weekdayMap[currentWeekdayName] ?? new Date(currentYear, currentMonth, currentDay).getDay()
-      
-      let daysToAdd = targetDayOfWeek - currentDayOfWeek
-      
-      // Se o dia já passou esta semana (daysToAdd <= 0), pega a próxima semana
-      // Se for o mesmo dia (daysToAdd === 0), também pega a próxima semana
-      if (daysToAdd <= 0) {
+      if (options?.forceNextWeek) {
         daysToAdd += 7
       }
       
-      const nextDate = new Date(currentYear, currentMonth, currentDay)
-      nextDate.setDate(nextDate.getDate() + daysToAdd)
-      
-      // Validação: verifica se o cálculo está correto
-      const nextDateCheck = new Date(nextDate.getFullYear(), nextDate.getMonth(), nextDate.getDate())
-      const calculatedDayOfWeek = nextDateCheck.getDay()
+      const nextDate = new Date(baseDate)
+      nextDate.setDate(baseDate.getDate() + daysToAdd)
       
       console.log(`📅 Cálculo de dia da semana:`)
-      console.log(`   Data atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} (${currentWeekdayName}, dia da semana: ${currentDayOfWeek})`)
-      console.log(`   Dia da semana desejado: ${targetDayOfWeek} (${Object.keys(weekdayMap).find(k => weekdayMap[k] === targetDayOfWeek)})`)
+      console.log(`   Data base (Brasil): ${baseDate.getDate()}/${baseDate.getMonth() + 1}/${baseDate.getFullYear()} (dia da semana: ${currentDayOfWeek})`)
+      console.log(`   Dia da semana desejado: ${targetDayOfWeek}`)
       console.log(`   Dias a adicionar: ${daysToAdd}`)
       console.log(`   Próxima ocorrência calculada: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
-      console.log(`   Validação: dia da semana da data calculada = ${calculatedDayOfWeek} (deve ser ${targetDayOfWeek})`)
-      
-      if (calculatedDayOfWeek !== targetDayOfWeek) {
-        console.error(`⚠️ ERRO: A data calculada não corresponde ao dia da semana desejado!`)
-      }
       
       return nextDate
     }
@@ -2140,20 +2114,12 @@ async function executeAIOnlyWorkflow(
       
       for (const [dayName, dayOfWeek] of Object.entries(weekdays)) {
         if (lower.includes(dayName)) {
-          let nextDate: Date
-          
-          if (isNextWeek) {
-            // CRÍTICO: Se mencionou "próxima", sempre pega a próxima semana (não a atual)
-            // Primeiro calcula a próxima ocorrência normalmente, depois adiciona 7 dias
-            const normalNextDate = getNextWeekday(dayOfWeek)
-            nextDate = new Date(normalNextDate)
-            nextDate.setDate(nextDate.getDate() + 7) // Sempre adiciona 7 dias para "próxima semana"
-            console.log(`📅 Parseado "próxima ${dayName}" → próxima semana: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
-          } else {
-            // Se não mencionou "próxima", usa a função normal que pode pegar esta semana ou próxima
-            nextDate = getNextWeekday(dayOfWeek)
-            console.log(`📅 Parseado "${dayName}" → próxima ocorrência: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
-          }
+          const nextDate = getNextWeekday(dayOfWeek, { forceNextWeek: isNextWeek })
+          console.log(
+            `📅 Parseado "${isNextWeek ? 'próxima ' : ''}${dayName}" → ocorrência calculada: ${nextDate.getDate()}/${
+              nextDate.getMonth() + 1
+            }/${nextDate.getFullYear()}`
+          )
           
           const year = nextDate.getFullYear()
           const month = nextDate.getMonth()
@@ -3463,14 +3429,24 @@ async function executeAIOnlyWorkflow(
     // Se há uma resposta de agendamento pendente, usa ela diretamente em vez da resposta da IA
     if (pendingAppointmentResponse) {
       const contactKey = `${instanceId}-${contactNumber}`
-      await queueMessage(contactKey, async () => {
-        if (pendingAppointmentMedia?.type === 'image' && pendingAppointmentMedia.url) {
+      
+      if (isImageAttachment(pendingAppointmentMedia)) {
+        const media: MediaAttachment = pendingAppointmentMedia
+        await queueMessage(contactKey, async () => {
           try {
-            await sendWhatsAppImage(instanceId, contactNumber, pendingAppointmentMedia.url, pendingAppointmentMedia.caption)
+            await sendWhatsAppImage(
+              instanceId,
+              contactNumber,
+              media.url,
+              media.caption
+            )
           } catch (mediaError) {
             console.error('❌ Erro ao enviar imagem de confirmação:', mediaError)
           }
-        }
+        })
+      }
+      
+      await queueMessage(contactKey, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, pendingAppointmentResponse!, 'service')
       })
       console.log(`📅 Mensagem de confirmação de agendamento enviada diretamente`)
