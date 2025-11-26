@@ -248,7 +248,7 @@ export function buildSystemPrompt(
   prompt += `- ⚠️ CRÍTICO: Se o cliente acabou de confirmar um agendamento (disse "confirmar", "sim", "ok"), NÃO tente criar um novo agendamento. Apenas confirme que recebeu a confirmação e agradeça.\n`
 
   // Adiciona as regras detalhadas de agendamento (mantém do código original)
-  prompt += addAppointmentRules()
+  prompt += addAppointmentRules(businessName)
 
   // ==========================================
   // INFORMAÇÕES ADICIONAIS
@@ -263,7 +263,7 @@ export function buildSystemPrompt(
 /**
  * Adiciona regras detalhadas de agendamento
  */
-function addAppointmentRules(): string {
+function addAppointmentRules(businessName: string): string {
   return `
 🎯 FLUXO DE AGENDAMENTO (SIGA EXATAMENTE ESTA SEQUÊNCIA):
 1. CLIENTE SOLICITA AGENDAMENTO:
