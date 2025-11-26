@@ -2058,11 +2058,13 @@ async function executeAIOnlyWorkflow(
         targetHour = 12
         targetMinute = 0
       } else {
-      // Procura por padrões de hora
+      // Procura por padrões de hora - MELHORADO para entender mais variações
       const hourPatterns = [
+        /às?\s*(\d{1,2})\s*(?:da\s*)?(?:tarde|manhã|manha|noite)/i, // "às 4 da tarde", "as 5 da tarde"
         /(\d{1,2})\s*(?:da\s*)?(?:tarde|manhã|manha|noite)/i, // "5 da tarde", "17 da tarde"
+        /às?\s*(\d{1,2})(?:\s*h)?/i, // "às 4", "as 4h", "às 16"
         /(\d{1,2}):(\d{2})/, // "17:30"
-        /(\d{1,2})h/i, // "17h"
+        /(\d{1,2})h/i, // "17h", "4h"
       ]
       
       for (const pattern of hourPatterns) {
@@ -2073,9 +2075,16 @@ async function executeAIOnlyWorkflow(
             targetMinute = parseInt(match[2])
           }
           
-          // Se mencionou "tarde" e hora < 12, adiciona 12 (ex: "5 da tarde" = 17h)
+          // Se mencionou "tarde" ou "noite" e hora < 12, adiciona 12 (ex: "5 da tarde" = 17h, "às 4" = 16h se contexto for tarde)
           if ((lower.includes('tarde') || lower.includes('noite')) && targetHour < 12) {
             targetHour += 12
+          } else if (lower.includes('às') || lower.includes('as')) {
+            // Se disse "às X" sem especificar manhã/tarde/noite, assume tarde se X < 12
+            // Mas se X >= 12, já está em formato 24h
+            if (targetHour < 12 && !lower.includes('manhã') && !lower.includes('manha')) {
+              // Se não especificou manhã e é < 12, assume tarde (mais comum)
+              targetHour += 12
+            }
           }
           break
           }
@@ -2356,7 +2365,7 @@ async function executeAIOnlyWorkflow(
             }
           }
           
-          // Processa a hora primeiro (formato HH:MM ou "meio-dia")
+          // Processa a hora primeiro - MELHORADO para aceitar mais formatos
           let hour: number
           let minute: number
           
@@ -2367,17 +2376,38 @@ async function executeAIOnlyWorkflow(
             hour = 12
             minute = 0
           } else {
-            // Tenta formato HH:MM
-          const timeMatch = args.time.match(/(\d{1,2}):(\d{2})/)
-          if (!timeMatch) {
-            return {
-              success: false,
-                error: `Hora inválida: "${args.time}". Use o formato HH:MM (ex: 16:00) ou "meio-dia".`,
+            // Tenta múltiplos formatos de hora
+            let timeMatch: RegExpMatchArray | null = null
+            
+            // Formato HH:MM (ex: "16:00", "4:00")
+            timeMatch = args.time.match(/(\d{1,2}):(\d{2})/)
+            
+            // Se não encontrou, tenta formato "Xh" ou "X" (ex: "16h", "4", "às 4")
+            if (!timeMatch) {
+              // Remove "às" ou "as" se presente
+              const cleanedTime = timeLower.replace(/^às?\s*/, '').replace(/\s*h$/, '')
+              const numberMatch = cleanedTime.match(/^(\d{1,2})$/)
+              if (numberMatch) {
+                hour = parseInt(numberMatch[1])
+                minute = 0
+                
+                // Se hora < 12 e não especificou manhã, assume tarde (mais comum)
+                // Mas se hora >= 12, já está em formato 24h
+                if (hour < 12) {
+                  // Verifica contexto da mensagem original para decidir se é manhã ou tarde
+                  // Por padrão, assume tarde se não especificado
+                  hour += 12
+                }
+              } else {
+                return {
+                  success: false,
+                  error: `Hora inválida: "${args.time}". Use formato HH:MM (ex: 16:00), apenas o número (ex: 16), ou "meio-dia".`,
+                }
+              }
+            } else {
+              hour = parseInt(timeMatch[1])
+              minute = parseInt(timeMatch[2])
             }
-          }
-          
-            hour = parseInt(timeMatch[1])
-            minute = parseInt(timeMatch[2])
           
           // Valida valores
             if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
@@ -2387,6 +2417,8 @@ async function executeAIOnlyWorkflow(
               }
             }
           }
+          
+          console.log(`🕐 [handleFunctionCall] Hora parseada: "${args.time}" → ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`)
           
           // Tenta primeiro parsear como data em português (dias da semana, "amanhã", etc)
           // Mas agora passamos a hora também para parsePortugueseDate considerar
@@ -3623,13 +3655,17 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `  → Você: Chama cancel_appointment() (cancela o mais próximo automaticamente)\n`
   prompt += `- Cliente: "Quais são meus agendamentos?"\n`
   prompt += `  → Você: Chama get_user_appointments() e lista os agendamentos\n`
-  prompt += `\n⚠️⚠️⚠️ REGRA CRÍTICA - EVITE INFORMAÇÕES CONTRADITÓRIAS:\n`
-  prompt += `- NUNCA chame get_available_times E check_availability na mesma resposta\n`
-  prompt += `- Se você já mostrou horários disponíveis com get_available_times, NÃO diga depois que algum horário está ocupado\n`
-  prompt += `- Se você já verificou disponibilidade com check_availability, NÃO liste horários disponíveis depois\n`
-  prompt += `- Use APENAS UMA função de disponibilidade por resposta do cliente\n`
-  prompt += `- Se o cliente perguntar "quais horários estão disponíveis?", use get_available_times e MOSTRE os horários\n`
-  prompt += `- Se o cliente perguntar "tem horário disponível?", use check_availability e diga se há horários ocupados\n`
+  prompt += `\n⚠️⚠️⚠️ REGRA CRÍTICA - EVITE INFORMAÇÕES CONTRADITÓRIAS (LEIA COM MUITA ATENÇÃO):\n`
+  prompt += `- ⚠️ CRÍTICO: check_availability e get_available_times usam a MESMA fonte de dados!\n`
+  prompt += `- ⚠️ CRÍTICO: Se check_availability diz que 15h está ocupado, get_available_times TAMBÉM deve mostrar que 15h está ocupado!\n`
+  prompt += `- ⚠️ CRÍTICO: NUNCA chame get_available_times E check_availability na mesma resposta - isso causa contradições!\n`
+  prompt += `- ⚠️ CRÍTICO: Se você já mostrou horários disponíveis com get_available_times, NÃO diga depois que algum horário está ocupado\n`
+  prompt += `- ⚠️ CRÍTICO: Se você já verificou disponibilidade com check_availability, NÃO liste horários disponíveis depois\n`
+  prompt += `- ⚠️ CRÍTICO: Use APENAS UMA função de disponibilidade por resposta do cliente\n`
+  prompt += `- ⚠️ CRÍTICO: Se o cliente perguntar "quais horários estão disponíveis?", use get_available_times e MOSTRE os horários\n`
+  prompt += `- ⚠️ CRÍTICO: Se o cliente perguntar "tem horário disponível?", use check_availability e diga se há horários ocupados\n`
+  prompt += `- ⚠️ CRÍTICO: Se você disse que um horário não está disponível, NÃO mostre esse mesmo horário como disponível depois!\n`
+  prompt += `- ⚠️ CRÍTICO: Se você mostrou horários disponíveis, NÃO diga que algum deles está ocupado!\n`
   
   prompt += `\n- Quando o cliente quiser agendar algo, marcar uma consulta, ou definir um horário, você deve ENTENDER a linguagem natural do cliente e converter internamente\n`
   prompt += `- PROCESSO DE COLETA (CONVERSA NATURAL):\n`
@@ -3670,9 +3706,15 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- CONVERSÃO INTERNA DE HORAS (você faz isso internamente, não pede ao cliente):\n`
   prompt += `  - "7 da manhã" ou "7h da manhã" → "07:00"\n`
   prompt += `  - "4 da tarde" ou "4h da tarde" → "16:00"\n`
+  prompt += `  - "às 4" ou "as 4" (sem especificar manhã/tarde) → "16:00" (assume tarde)\n`
+  prompt += `  - "4" (apenas número, sem contexto) → "16:00" (assume tarde se não especificado)\n`
   prompt += `  - "9 da noite" ou "9h da noite" → "21:00"\n`
   prompt += `  - "14h" ou "14:00" → "14:00"\n`
+  prompt += `  - "16h" ou "16:00" → "16:00"\n`
   prompt += `  - "meio-dia" ou "meio dia" → "12:00"\n`
+  prompt += `  - ⚠️ CRÍTICO: Se o cliente disser apenas um número (ex: "4", "às 4"), SEMPRE assuma que é da tarde (formato 24h)\n`
+  prompt += `  - ⚠️ CRÍTICO: Se o número for >= 12, já está em formato 24h (ex: "14" = 14:00, "16" = 16:00)\n`
+  prompt += `  - ⚠️ CRÍTICO: Se o número for < 12 e não especificar manhã, assuma tarde (ex: "4" = 16:00, "5" = 17:00)\n`
   prompt += `  - Se não especificar hora, use "14:00" como padrão\n`
   prompt += `- FORMATO DA FUNÇÃO (você usa internamente, não menciona ao cliente):\n`
   prompt += `  - A função create_appointment espera:\n`

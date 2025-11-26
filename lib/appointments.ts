@@ -248,8 +248,8 @@ export async function checkAvailability(
     const endOfDay = new Date(date)
     endOfDay.setHours(23, 59, 59, 999)
 
-    // Busca apenas agendamentos CONFIRMADOS (status: 'confirmed' ou 'pending' na tabela Appointment)
-    // Não inclui agendamentos pendentes de confirmação (PendingAppointment) pois eles podem ser cancelados
+    // CRÍTICO: Busca agendamentos CONFIRMADOS E também PENDENTES de confirmação
+    // Ambos devem ser considerados para evitar contradições entre checkAvailability e getAvailableTimes
     // CRÍTICO: Tenta buscar com endDate e duration, mas se falhar, busca sem esses campos
     let appointments: Array<{
       date: Date
@@ -318,21 +318,74 @@ export async function checkAvailability(
       }
     }
 
-    console.log(`📅 [checkAvailability] Data: ${date.toLocaleDateString('pt-BR')}`)
-    console.log(`📅 [checkAvailability] Agendamentos encontrados: ${appointments.length}`)
+    // CRÍTICO: Busca também agendamentos PENDENTES (não confirmados ainda)
+    // Isso garante consistência com getAvailableTimes e evita contradições
+    const pendingAppointments: Array<{ date: Date; endDate: Date; duration: number; description?: string }> = []
+    if (instanceId) {
+      try {
+        const targetDateStr = date.toLocaleDateString('pt-BR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+        })
+        
+        const allPending = await prisma.pendingAppointment.findMany({
+          where: {
+            userId,
+            instanceId,
+            date: targetDateStr,
+            expiresAt: {
+              gt: new Date(), // Apenas pendentes que não expiraram
+            },
+          },
+        })
+        
+        allPending.forEach((pending) => {
+          const [hour, minute] = pending.time.split(':').map(Number)
+          const pendingDuration = pending.duration || 60
+          
+          // Cria data de início e término para o agendamento pendente
+          const pendingStart = new Date(date)
+          pendingStart.setHours(hour, minute, 0, 0)
+          const pendingEnd = new Date(pendingStart.getTime() + pendingDuration * 60000)
+          
+          pendingAppointments.push({
+            date: pendingStart,
+            endDate: pendingEnd,
+            duration: pendingDuration,
+            description: pending.service || pending.description || undefined,
+          })
+        })
+        
+        console.log(`📅 [checkAvailability] Encontrados ${allPending.length} agendamentos pendentes para ${targetDateStr}`)
+      } catch (error) {
+        console.error('❌ Erro ao buscar agendamentos pendentes em checkAvailability:', error)
+        // Continua mesmo se houver erro
+      }
+    }
 
-    return {
-      success: true,
-      appointments: appointments.map((apt) => {
+    console.log(`📅 [checkAvailability] Data: ${date.toLocaleDateString('pt-BR')}`)
+    console.log(`📅 [checkAvailability] Agendamentos confirmados encontrados: ${appointments.length}`)
+    console.log(`📅 [checkAvailability] Agendamentos pendentes encontrados: ${pendingAppointments.length}`)
+
+    // Combina agendamentos confirmados e pendentes
+    const allAppointments = [
+      ...appointments.map((apt) => {
         // CRÍTICO: Calcula endDate se não existir (para compatibilidade com registros antigos)
         const endDate = apt.endDate || new Date(apt.date.getTime() + (apt.duration || 60) * 60000)
         return {
           date: apt.date, // Início
           endDate: endDate, // Término
           duration: apt.duration || 60,
-        description: apt.description,
+          description: apt.description || undefined,
         }
       }),
+      ...pendingAppointments,
+    ]
+
+    return {
+      success: true,
+      appointments: allAppointments,
     }
   } catch (error) {
     console.error('❌ [checkAvailability] Erro ao verificar disponibilidade:', error)
