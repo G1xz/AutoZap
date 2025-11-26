@@ -2928,31 +2928,54 @@ async function executeAIOnlyWorkflow(
             }
           }
           
-          const duration = args.duration || 60 // Duração padrão de 1 hora
+          // CRÍTICO: Tenta obter a duração do serviço mencionado pelo cliente
+          // Se não especificada, usa a duração mínima dos serviços ou 60min como padrão
+          let duration = args.duration
+          
+          if (!duration || duration <= 0) {
+            // Busca duração mínima dos serviços disponíveis
+            const servicesWithAppointment = businessDetails.servicesWithAppointment || []
+            if (servicesWithAppointment.length > 0) {
+              const durations = servicesWithAppointment
+                .map((s: any) => s.duration)
+                .filter((d: number) => d && d > 0)
+              
+              if (durations.length > 0) {
+                duration = Math.min(...durations)
+                console.log(`📅 [get_available_times] Usando duração mínima dos serviços: ${duration} minutos`)
+              } else {
+                duration = 60 // Fallback padrão
+              }
+            } else {
+              duration = 60 // Fallback padrão
+            }
+          }
+          
+          console.log(`📅 [get_available_times] Verificando disponibilidade com duração: ${duration} minutos`)
           // CRÍTICO: Passa instanceId para considerar agendamentos pendentes também
           const result = await getAvailableTimes(userId, parsedDate, duration, 8, 18, instanceId)
           
           if (result.success) {
             if (result.availableTimes && result.availableTimes.length > 0) {
-              // Formata horários de forma mais legível (agrupa em linhas)
-              const timesList = result.availableTimes
-                .slice(0, 20) // Limita a 20 horários
-                .map((time, index) => {
-                  // Adiciona quebra de linha a cada 5 horários para melhor visualização
-                  if (index > 0 && index % 5 === 0) {
-                    return `\n${time}`
-                  }
-                  return time
-                })
-                .join(', ')
+              // Importa função de agrupamento
+              const { groupConsecutiveTimes } = await import('./appointments')
               
-              const moreText = result.availableTimes.length > 20 
-                ? `\n\n... e mais ${result.availableTimes.length - 20} horários disponíveis.` 
-                : ''
+              // Agrupa horários consecutivos em intervalos quando há muitos horários
+              const groupedTimes = groupConsecutiveTimes(result.availableTimes, duration)
+              
+              // Formata a lista de horários
+              let timesList: string
+              if (groupedTimes.length <= 5) {
+                // Poucos horários: lista individualmente
+                timesList = groupedTimes.join(', ')
+              } else {
+                // Muitos horários: mostra em intervalos
+                timesList = groupedTimes.join('\n')
+              }
               
               return {
                 success: true,
-                message: `📅 Horários disponíveis em ${result.date}:\n\n${timesList}${moreText}\n\nQual horário você prefere?`,
+                message: `📅 Horários disponíveis em ${result.date}:\n\n${timesList}\n\nQual horário você prefere?`,
               }
             } else {
               return {

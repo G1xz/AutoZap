@@ -4,6 +4,74 @@
 
 import { prisma } from './prisma'
 
+/**
+ * Agrupa horários consecutivos em intervalos
+ * Ex: ["08:00", "08:15", "08:30", "09:00", "09:15"] → ["das 08:00 às 08:45", "das 09:00 às 09:45"]
+ * Se houver poucos horários, retorna individualmente
+ */
+export function groupConsecutiveTimes(times: string[], durationMinutes: number = 15): string[] {
+  if (times.length === 0) return []
+  if (times.length <= 5) return times // Se houver poucos horários, retorna individualmente
+  
+  // Converte horários para minutos desde meia-noite para facilitar comparação
+  const timeToMinutes = (time: string): number => {
+    const [hour, minute] = time.split(':').map(Number)
+    return hour * 60 + minute
+  }
+  
+  const minutesToTime = (minutes: number): string => {
+    const hour = Math.floor(minutes / 60)
+    const minute = minutes % 60
+    return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
+  }
+  
+  // Ordena os horários
+  const sortedTimes = [...times].sort((a, b) => timeToMinutes(a) - timeToMinutes(b))
+  
+  const intervals: string[] = []
+  let intervalStart = sortedTimes[0]
+  let intervalEndTime = sortedTimes[0]
+  
+  for (let i = 1; i < sortedTimes.length; i++) {
+    const currentTime = sortedTimes[i]
+    const currentMinutes = timeToMinutes(currentTime)
+    const intervalEndMinutes = timeToMinutes(intervalEndTime) + durationMinutes
+    
+    // Se o próximo horário está dentro do intervalo atual (considerando a duração), continua o intervalo
+    // Se não está, fecha o intervalo atual e abre um novo
+    if (currentMinutes <= intervalEndMinutes + durationMinutes) {
+      // Continua o intervalo: atualiza o fim do intervalo para o último horário + duração
+      intervalEndTime = currentTime
+    } else {
+      // Fecha o intervalo atual
+      const intervalEnd = minutesToTime(timeToMinutes(intervalEndTime) + durationMinutes)
+      
+      if (intervalStart === intervalEndTime) {
+        // Intervalo de um único horário
+        intervals.push(intervalStart)
+      } else {
+        // Intervalo com múltiplos horários
+        intervals.push(`das ${intervalStart} às ${intervalEnd}`)
+      }
+      
+      // Abre novo intervalo
+      intervalStart = currentTime
+      intervalEndTime = currentTime
+    }
+  }
+  
+  // Adiciona o último intervalo
+  const finalIntervalEnd = minutesToTime(timeToMinutes(intervalEndTime) + durationMinutes)
+  
+  if (intervalStart === intervalEndTime) {
+    intervals.push(intervalStart)
+  } else {
+    intervals.push(`das ${intervalStart} às ${finalIntervalEnd}`)
+  }
+  
+  return intervals
+}
+
 export interface CreateAppointmentParams {
   userId: string
   instanceId: string
@@ -522,89 +590,78 @@ export async function getAvailableTimes(
       }
     }
 
-    // Gera todos os horários possíveis do dia (slots de 30 minutos)
-    const allSlots: string[] = []
-    for (let hour = startHour; hour < endHour; hour++) {
-      for (let minute = 0; minute < 60; minute += 30) {
-        const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
-        allSlots.push(timeStr)
-      }
-    }
-
-    // Marca horários ocupados por agendamentos CONFIRMADOS
-    // CRÍTICO: Usa horário de término real (endDate) em vez de assumir duração
-    const occupiedSlots = new Set<string>()
+    // CRÍTICO: Coleta todos os intervalos ocupados (início e fim) de agendamentos confirmados e pendentes
+    const occupiedIntervals: Array<{ start: Date; end: Date }> = []
     
+    // Processa agendamentos CONFIRMADOS
     appointments.forEach((apt) => {
       try {
         const aptStart = new Date(apt.date) // Horário de início
         
         // CRÍTICO: Calcula horário de término de forma segura
-        // Se endDate existe e é válido, usa ele. Senão, calcula baseado na duração
         let aptEnd: Date
         if (apt.endDate && apt.endDate instanceof Date && !isNaN(apt.endDate.getTime())) {
           aptEnd = new Date(apt.endDate)
         } else {
-          // Calcula baseado na duração (usa 60min como fallback apenas para compatibilidade)
           const duration = apt.duration && apt.duration > 0 ? apt.duration : 60
           aptEnd = new Date(aptStart.getTime() + duration * 60000)
         }
         
-        // Calcula todos os slots de 30min entre início e término
-        let currentTime = new Date(aptStart)
-        
-        while (currentTime < aptEnd) {
-          const slotHour = currentTime.getHours()
-          const slotMinute = currentTime.getMinutes()
-          
-          // Arredonda para o slot de 30min mais próximo (00 ou 30)
-          const roundedMinute = slotMinute < 30 ? 0 : 30
-          
-          if (slotHour < endHour && slotHour >= startHour) {
-            const slotStr = `${slotHour.toString().padStart(2, '0')}:${roundedMinute.toString().padStart(2, '0')}`
-            occupiedSlots.add(slotStr)
-          }
-          
-          // Avança 30 minutos
-          currentTime = new Date(currentTime.getTime() + 30 * 60000)
+        // Apenas adiciona se estiver dentro do horário de funcionamento
+        if (aptStart.getHours() < endHour && aptEnd.getHours() >= startHour) {
+          occupiedIntervals.push({ start: aptStart, end: aptEnd })
         }
       } catch (error) {
         console.error('❌ Erro ao processar agendamento:', error, apt)
-        // Continua com o próximo agendamento mesmo se houver erro
       }
     })
     
-    // CRÍTICO: Marca também horários ocupados por agendamentos PENDENTES
-    // Usa duração real do agendamento pendente
+    // Processa agendamentos PENDENTES
     pendingAppointments.forEach((pending) => {
       const [hour, minute] = pending.time.split(':').map(Number)
       const pendingDuration = pending.duration || 60
       
-      // Cria data de início e término para o agendamento pendente
       const pendingStart = new Date(date)
       pendingStart.setHours(hour, minute, 0, 0)
       const pendingEnd = new Date(pendingStart.getTime() + pendingDuration * 60000)
       
-      // Marca todos os slots de 30min entre início e término
-      let currentTime = new Date(pendingStart)
-      
-      while (currentTime < pendingEnd) {
-        const slotHour = currentTime.getHours()
-        const slotMinute = currentTime.getMinutes()
-        const roundedMinute = slotMinute < 30 ? 0 : 30
-        
-        if (slotHour < endHour && slotHour >= startHour) {
-          const slotStr = `${slotHour.toString().padStart(2, '0')}:${roundedMinute.toString().padStart(2, '0')}`
-          occupiedSlots.add(slotStr)
-        }
-        
-        // Avança 30 minutos
-        currentTime = new Date(currentTime.getTime() + 30 * 60000)
+      if (pendingStart.getHours() < endHour && pendingEnd.getHours() >= startHour) {
+        occupiedIntervals.push({ start: pendingStart, end: pendingEnd })
       }
     })
 
-    // Filtra horários disponíveis (que não estão ocupados)
-    const availableSlots = allSlots.filter((slot) => !occupiedSlots.has(slot))
+    // CRÍTICO: Gera horários disponíveis considerando a duração do serviço
+    // Verifica se um novo agendamento com durationMinutes caberia em cada horário possível
+    const availableSlots: string[] = []
+    const slotInterval = 15 // Verifica a cada 15 minutos para maior precisão
+    
+    for (let hour = startHour; hour < endHour; hour++) {
+      for (let minute = 0; minute < 60; minute += slotInterval) {
+        const slotStart = new Date(date)
+        slotStart.setHours(hour, minute, 0, 0)
+        const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60000)
+        
+        // Verifica se o slot termina antes do fim do horário de funcionamento
+        if (slotEnd.getHours() > endHour || (slotEnd.getHours() === endHour && slotEnd.getMinutes() > 0)) {
+          continue
+        }
+        
+        // Verifica se há conflito com algum agendamento existente
+        let hasConflict = false
+        for (const occupied of occupiedIntervals) {
+          // Conflito se o novo agendamento se sobrepõe com algum existente
+          if (slotStart < occupied.end && slotEnd > occupied.start) {
+            hasConflict = true
+            break
+          }
+        }
+        
+        if (!hasConflict) {
+          const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
+          availableSlots.push(timeStr)
+        }
+      }
+    }
 
     console.log(`📅 [getAvailableTimes] Data: ${targetDateStr}`)
     console.log(`📅 [getAvailableTimes] Agendamentos confirmados: ${appointments.length}`)
