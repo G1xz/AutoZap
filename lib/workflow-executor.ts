@@ -1249,8 +1249,53 @@ export async function processAppointmentConfirmation(
       return true
     }
     
+    // CRÍTICO: Busca a duração do serviço antes de criar o agendamento
+    // A duração DEVE vir do serviço, não pode ser um padrão fixo
+    let serviceDuration: number | undefined = pendingAppointment.duration
+    
+    // Se não tem duração no pendente, busca do workflow
+    if (!serviceDuration || serviceDuration <= 0) {
+      const workflow = await prisma.workflow.findFirst({
+        where: {
+          instanceId,
+          isActive: true,
+          isAIOnly: true,
+        },
+      })
+      
+      if (workflow?.aiBusinessDetails) {
+        try {
+          const businessDetails = JSON.parse(workflow.aiBusinessDetails)
+          const servicesWithAppointment = businessDetails.servicesWithAppointment || []
+          const serviceName = pendingAppointment.service?.toLowerCase() || ''
+          
+          for (const service of servicesWithAppointment) {
+            if (serviceName.includes(service.name.toLowerCase())) {
+              serviceDuration = service.duration
+              console.log(`✅ [processAppointmentConfirmation] Duração do serviço encontrada: ${service.name} = ${serviceDuration} minutos`)
+              break
+            }
+          }
+        } catch (error) {
+          console.error('❌ [processAppointmentConfirmation] Erro ao buscar duração do serviço:', error)
+        }
+      }
+    }
+    
+    // CRÍTICO: Se ainda não tem duração, retorna erro
+    if (!serviceDuration || serviceDuration <= 0) {
+      console.error('❌ [processAppointmentConfirmation] Duração do serviço não encontrada!')
+      const errorMessage = `Não foi possível determinar a duração do serviço "${pendingAppointment.service}". Por favor, verifique se o serviço tem duração configurada.`
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+      })
+      return true // Processou (com erro), não deve chamar IA
+    }
+    
     // CRÍTICO: Cria o agendamento PRIMEIRO, só remove o pendente depois de sucesso
     // Isso evita perder o agendamento pendente se houver erro na criação
+    // CRÍTICO: Passa a duração do serviço, não padrão fixo
         const { createAppointment } = await import('./appointments')
         const result = await createAppointment({
           userId,
@@ -1258,6 +1303,7 @@ export async function processAppointmentConfirmation(
           contactNumber,
           contactName: contactName,
           date: appointmentDateUTC,
+          duration: serviceDuration, // CRÍTICO: Duração do serviço, não padrão fixo
           description: pendingAppointment.description || `Agendamento para ${pendingAppointment.service}`,
         })
         
@@ -2403,29 +2449,85 @@ async function executeAIOnlyWorkflow(
             console.error(`❌ ERRO: Hora não corresponde após conversão! Esperado: ${hour}:${minute.toString().padStart(2, '0')}, Obtido: ${verificationBrazilian.hour}:${verificationBrazilian.minute.toString().padStart(2, '0')}`)
           }
 
-          // Formata data e hora para exibição
+          // Formata data e hora para exibição (declara ANTES de usar)
           const formattedDate = `${day.toString().padStart(2, '0')}/${(month + 1).toString().padStart(2, '0')}/${year}`
           const formattedTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
           
-          // Busca informações do serviço para obter duração
+          // CRÍTICO: Busca informações do serviço para obter duração
+          // A duração DEVE vir do serviço, não pode ser um padrão fixo
           let serviceDuration: number | undefined
           const servicesWithAppointment = businessDetails.servicesWithAppointment || []
           const serviceName = args.description?.toLowerCase() || ''
           
+          console.log(`🔍 [handleFunctionCall] Buscando duração do serviço: "${serviceName}"`)
+          console.log(`🔍 [handleFunctionCall] Serviços disponíveis:`, servicesWithAppointment.map((s: any) => `${s.name} (${s.duration || 'sem duração'} min)`))
+          
           for (const service of servicesWithAppointment) {
             if (serviceName.includes(service.name.toLowerCase())) {
               serviceDuration = service.duration
+              console.log(`✅ [handleFunctionCall] Duração encontrada: ${service.name} = ${serviceDuration} minutos`)
               break
             }
           }
           
+          // CRÍTICO: Se não encontrou a duração, retorna erro
+          if (!serviceDuration || serviceDuration <= 0) {
+            console.error(`❌ [handleFunctionCall] Duração do serviço não encontrada ou inválida!`)
+            console.error(`   Serviço procurado: "${serviceName}"`)
+            console.error(`   Serviços disponíveis:`, servicesWithAppointment)
+            
+            return {
+              success: false,
+              error: `Não foi possível determinar a duração do serviço "${args.description || 'não especificado'}". Por favor, verifique se o serviço tem duração configurada no catálogo.`,
+            }
+          }
+          
           // CRÍTICO: Verifica disponibilidade ANTES de criar agendamento pendente
+          // Verifica tanto agendamentos confirmados quanto pendentes
           console.log(`🔍 [handleFunctionCall] Verificando disponibilidade do horário...`)
-          const availabilityCheck = await checkAvailability(userId, appointmentDateUTC)
+          const availabilityCheck = await checkAvailability(userId, appointmentDateUTC, instanceId)
+          
+          // CRÍTICO: Também verifica agendamentos pendentes de confirmação
+          let pendingConflict = false
+          try {
+            const allPending = await prisma.pendingAppointment.findMany({
+              where: {
+                userId,
+                instanceId,
+                date: formattedDate,
+                expiresAt: {
+                  gt: new Date(),
+                },
+              },
+            })
+            
+            // Verifica se há conflito com agendamentos pendentes
+            for (const pending of allPending) {
+              const [pendingHour, pendingMinute] = pending.time.split(':').map(Number)
+              const pendingDuration = pending.duration || 60
+              
+              // Verifica se o horário solicitado conflita com algum pendente
+              // CRÍTICO: Usa a duração real do serviço, não padrão fixo
+              const requestedStart = hour * 60 + minute
+              const requestedEnd = requestedStart + serviceDuration // Duração do serviço
+              const pendingStart = pendingHour * 60 + pendingMinute
+              const pendingEnd = pendingStart + pendingDuration
+              
+              if (requestedStart < pendingEnd && requestedEnd > pendingStart) {
+                pendingConflict = true
+                console.log(`⚠️ [handleFunctionCall] Conflito com agendamento pendente: ${pending.time} - ${pending.service}`)
+                break
+              }
+            }
+          } catch (error) {
+            console.error('Erro ao verificar agendamentos pendentes:', error)
+            // Continua mesmo se houver erro
+          }
           
           if (availabilityCheck.success && availabilityCheck.appointments) {
-            // Verifica se há conflitos de horário
-            const appointmentDuration = serviceDuration || 60 // Duração padrão de 1 hora
+            // Verifica se há conflitos de horário com agendamentos confirmados
+            // CRÍTICO: Usa a duração real do serviço, não padrão fixo
+            const appointmentDuration = serviceDuration // Duração do serviço em minutos
             const appointmentStart = appointmentDateUTC
             const appointmentEnd = new Date(appointmentStart.getTime() + appointmentDuration * 60000)
             
@@ -2434,9 +2536,12 @@ async function executeAIOnlyWorkflow(
             
             for (const existingApt of availabilityCheck.appointments) {
               const existingStart = new Date(existingApt.date)
-              const existingEnd = new Date(existingStart.getTime() + 60 * 60000) // Assume 1 hora padrão
+              // CRÍTICO: Usa horário de término real se disponível, senão calcula baseado na duração
+              const existingEnd = existingApt.endDate 
+                ? new Date(existingApt.endDate)
+                : new Date(existingStart.getTime() + (existingApt.duration || 60) * 60000)
               
-              // Verifica sobreposição
+              // Verifica sobreposição de intervalos
               if (appointmentStart < existingEnd && appointmentEnd > existingStart) {
                 hasConflict = true
                 const existingFormattedDate = existingStart.toLocaleDateString('pt-BR', {
@@ -2444,27 +2549,41 @@ async function executeAIOnlyWorkflow(
                   month: '2-digit',
                   year: 'numeric',
                 })
-                const existingFormattedTime = existingStart.toLocaleTimeString('pt-BR', {
+                const existingFormattedStartTime = existingStart.toLocaleTimeString('pt-BR', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })
+                const existingFormattedEndTime = existingEnd.toLocaleTimeString('pt-BR', {
                   hour: '2-digit',
                   minute: '2-digit',
                 })
                 
-                conflictMessage = `❌ Este horário não está disponível!\n\nJá existe um agendamento para:\n📅 Data: ${existingFormattedDate}\n🕐 Hora: ${existingFormattedTime}`
+                conflictMessage = `❌ Este horário não está disponível!\n\nJá existe um agendamento:\n📅 Data: ${existingFormattedDate}\n🕐 Horário: ${existingFormattedStartTime} às ${existingFormattedEndTime}`
                 if (existingApt.description) {
                   conflictMessage += `\n🛠️ Serviço: ${existingApt.description}`
                 }
-                conflictMessage += `\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis.`
+                conflictMessage += `\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis usando "quais horários estão disponíveis?".`
                 console.log(`⚠️ [handleFunctionCall] Conflito de horário detectado!`)
                 break
               }
             }
             
-            if (hasConflict) {
+            if (hasConflict || pendingConflict) {
+              if (pendingConflict && !hasConflict) {
+                conflictMessage = `❌ Este horário não está disponível!\n\nJá existe um agendamento pendente de confirmação para este horário.\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis usando "quais horários estão disponíveis?".`
+              }
+              
               return {
                 success: false,
                 error: conflictMessage,
                 message: conflictMessage,
               }
+            }
+          } else if (pendingConflict) {
+            return {
+              success: false,
+              error: `❌ Este horário não está disponível!\n\nJá existe um agendamento pendente de confirmação para este horário.\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis usando "quais horários estão disponíveis?".`,
+              message: `❌ Este horário não está disponível!\n\nJá existe um agendamento pendente de confirmação para este horário.\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis usando "quais horários estão disponíveis?".`,
             }
           }
           
@@ -2613,6 +2732,32 @@ async function executeAIOnlyWorkflow(
               year: 'numeric',
             })
             
+            // CRÍTICO: Também verifica agendamentos pendentes para dar informação completa
+            let pendingInfo = ''
+            try {
+              const formattedDateStr = formattedDate
+              const pendingAppointments = await prisma.pendingAppointment.findMany({
+                where: {
+                  userId,
+                  instanceId,
+                  date: formattedDateStr,
+                  expiresAt: {
+                    gt: new Date(),
+                  },
+                },
+              })
+              
+              if (pendingAppointments.length > 0) {
+                const pendingList = pendingAppointments.map((p) => {
+                  return `- ${p.time} - ${p.service} (pendente de confirmação)`
+                }).join('\n')
+                pendingInfo = `\n\n⚠️ Agendamentos pendentes de confirmação:\n${pendingList}`
+              }
+            } catch (error) {
+              console.error('Erro ao buscar agendamentos pendentes:', error)
+              // Continua mesmo se houver erro
+            }
+            
             if (result.appointments && result.appointments.length > 0) {
               const appointmentsList = result.appointments.map((apt: any) => {
                 const aptDate = new Date(apt.date)
@@ -2621,12 +2766,12 @@ async function executeAIOnlyWorkflow(
               
               return {
                 success: true,
-                message: `📅 Horários ocupados em ${formattedDate}:\n\n${appointmentsList}\n\nEstes horários já estão reservados. Escolha outro horário.`,
+                message: `📅 Horários ocupados em ${formattedDate}:\n\n${appointmentsList}${pendingInfo}\n\nEstes horários já estão reservados. Escolha outro horário ou pergunte quais horários estão disponíveis.`,
               }
             } else {
               return {
                 success: true,
-                message: `✅ A data ${formattedDate} está completamente disponível! Você pode escolher qualquer horário.`,
+                message: `✅ A data ${formattedDate} está completamente disponível!${pendingInfo}\n\nVocê pode escolher qualquer horário.`,
               }
             }
           } else {
@@ -2664,13 +2809,26 @@ async function executeAIOnlyWorkflow(
           }
           
           const duration = args.duration || 60 // Duração padrão de 1 hora
-          const result = await getAvailableTimes(userId, parsedDate, duration)
+          // CRÍTICO: Passa instanceId para considerar agendamentos pendentes também
+          const result = await getAvailableTimes(userId, parsedDate, duration, 8, 18, instanceId)
           
           if (result.success) {
             if (result.availableTimes && result.availableTimes.length > 0) {
-              // Agrupa horários em grupos de 5 para melhor visualização
-              const timesList = result.availableTimes.slice(0, 20).join(', ') // Limita a 20 horários
-              const moreText = result.availableTimes.length > 20 ? `\n\n... e mais ${result.availableTimes.length - 20} horários disponíveis.` : ''
+              // Formata horários de forma mais legível (agrupa em linhas)
+              const timesList = result.availableTimes
+                .slice(0, 20) // Limita a 20 horários
+                .map((time, index) => {
+                  // Adiciona quebra de linha a cada 5 horários para melhor visualização
+                  if (index > 0 && index % 5 === 0) {
+                    return `\n${time}`
+                  }
+                  return time
+                })
+                .join(', ')
+              
+              const moreText = result.availableTimes.length > 20 
+                ? `\n\n... e mais ${result.availableTimes.length - 20} horários disponíveis.` 
+                : ''
               
               return {
                 success: true,
@@ -3331,23 +3489,36 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `5. update_appointment - Altera horário de um agendamento existente\n`
   prompt += `6. cancel_appointment - Cancela um agendamento existente\n`
   
-  prompt += `\n🎯 QUANDO USAR CADA FUNÇÃO:\n`
-  prompt += `- Quando cliente perguntar "quais horários estão disponíveis?" ou "que horários tem?" → use get_available_times\n`
-  prompt += `- Quando cliente perguntar "tem horário disponível amanhã?" → use check_availability\n`
+  prompt += `\n🎯 QUANDO USAR CADA FUNÇÃO (IMPORTANTE - LEIA COM ATENÇÃO):\n`
+  prompt += `- ⚠️ CRÍTICO: Quando cliente perguntar "quais horários estão disponíveis?" ou "que horários tem?" → use APENAS get_available_times (NÃO use check_availability junto)\n`
+  prompt += `- ⚠️ CRÍTICO: Quando cliente perguntar "tem horário disponível amanhã?" ou "está livre amanhã?" → use check_availability (NÃO use get_available_times junto)\n`
+  prompt += `- ⚠️ CRÍTICO: NUNCA chame múltiplas funções de disponibilidade na mesma resposta - isso causa informações contraditórias!\n`
   prompt += `- Quando cliente perguntar "quais são meus agendamentos?" ou "quando tenho agendado?" → use get_user_appointments\n`
   prompt += `- Quando cliente quiser mudar horário (ex: "quero mudar para outro horário", "pode alterar para amanhã às 3h") → use update_appointment\n`
   prompt += `- Quando cliente quiser cancelar (ex: "quero cancelar", "desmarcar", "não vou mais") → use cancel_appointment\n`
-  prompt += `- Quando cliente quiser agendar → use create_appointment (a função verifica disponibilidade automaticamente)\n`
+  prompt += `- Quando cliente quiser agendar → use create_appointment (a função verifica disponibilidade automaticamente ANTES de criar)\n`
+  prompt += `- ⚠️ REGRA DE OURO: Se você já chamou get_available_times e mostrou os horários disponíveis, NÃO chame check_availability depois. Use apenas UMA função por resposta!\n`
   
-  prompt += `\n💡 EXEMPLOS DE USO:\n`
-  prompt += `- Cliente: "Quais horários estão disponíveis amanhã?"\n`
-  prompt += `  → Você: Chama get_available_times(date: "amanhã") e mostra os horários disponíveis\n`
+  prompt += `\n💡 EXEMPLOS DE USO (SIGA EXATAMENTE):\n`
+  prompt += `- Cliente: "Quais horários estão disponíveis amanhã?" ou "que horários tem amanhã?"\n`
+  prompt += `  → Você: Chama APENAS get_available_times(date: "amanhã") e mostra os horários disponíveis\n`
+  prompt += `  → NÃO chame check_availability depois! Use apenas UMA função.\n`
+  prompt += `- Cliente: "Tem horário disponível amanhã?" ou "está livre amanhã?"\n`
+  prompt += `  → Você: Chama APENAS check_availability(date: "amanhã") e responde se há horários ocupados\n`
+  prompt += `  → NÃO chame get_available_times depois! Use apenas UMA função.\n`
   prompt += `- Cliente: "Quero mudar meu agendamento para amanhã às 3 da tarde"\n`
   prompt += `  → Você: Chama update_appointment(new_date: "amanhã", new_time: "15:00")\n`
   prompt += `- Cliente: "Quero cancelar meu agendamento"\n`
   prompt += `  → Você: Chama cancel_appointment() (cancela o mais próximo automaticamente)\n`
   prompt += `- Cliente: "Quais são meus agendamentos?"\n`
   prompt += `  → Você: Chama get_user_appointments() e lista os agendamentos\n`
+  prompt += `\n⚠️⚠️⚠️ REGRA CRÍTICA - EVITE INFORMAÇÕES CONTRADITÓRIAS:\n`
+  prompt += `- NUNCA chame get_available_times E check_availability na mesma resposta\n`
+  prompt += `- Se você já mostrou horários disponíveis com get_available_times, NÃO diga depois que algum horário está ocupado\n`
+  prompt += `- Se você já verificou disponibilidade com check_availability, NÃO liste horários disponíveis depois\n`
+  prompt += `- Use APENAS UMA função de disponibilidade por resposta do cliente\n`
+  prompt += `- Se o cliente perguntar "quais horários estão disponíveis?", use get_available_times e MOSTRE os horários\n`
+  prompt += `- Se o cliente perguntar "tem horário disponível?", use check_availability e diga se há horários ocupados\n`
   
   prompt += `\n- Quando o cliente quiser agendar algo, marcar uma consulta, ou definir um horário, você deve ENTENDER a linguagem natural do cliente e converter internamente\n`
   prompt += `- PROCESSO DE COLETA (CONVERSA NATURAL):\n`

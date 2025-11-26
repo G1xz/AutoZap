@@ -18,13 +18,13 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  whatsappInstances WhatsAppInstance[]
-  automationRules   AutomationRule[]
-  workflows         Workflow[]
-  services          Service[]
-  appointments      Appointment[]
+  whatsappInstances   WhatsAppInstance[]
+  automationRules     AutomationRule[]
+  workflows           Workflow[]
+  services            Service[]
+  appointments        Appointment[]
   pendingAppointments PendingAppointment[]
-  catalogs          Catalog[]
+  catalogs            Catalog[]
 }
 
 model WhatsAppInstance {
@@ -52,7 +52,7 @@ model WhatsAppInstance {
   workflows            Workflow[]
   conversationStatuses ConversationStatus[]
   appointments         Appointment[]
-  pendingAppointments   PendingAppointment[]
+  pendingAppointments  PendingAppointment[]
   contacts             Contact[]
 }
 
@@ -96,14 +96,14 @@ model ConversationStatus {
 }
 
 model Contact {
-  id              String   @id @default(cuid())
-  instanceId      String
-  phoneNumber     String
-  name            String?
+  id                String    @id @default(cuid())
+  instanceId        String
+  phoneNumber       String
+  name              String?
   profilePictureUrl String? // URL da foto de perfil salva no Cloudinary
-  lastSeen        DateTime? // Última vez que o contato foi visto
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  lastSeen          DateTime? // Última vez que o contato foi visto
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   instance WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
@@ -128,18 +128,18 @@ model AutomationRule {
 }
 
 model Workflow {
-  id              String   @id @default(cuid())
-  userId          String
-  instanceId      String?
-  name            String
-  description     String?
-  trigger         String // palavra-chave ou padrão que inicia o fluxo
-  isActive        Boolean  @default(true)
-  usesAI          Boolean  @default(false) // Indica se o workflow usa nós de IA
-  isAIOnly        Boolean  @default(false) // Indica se é um fluxo exclusivo de IA (conversação autônoma)
+  id                String   @id @default(cuid())
+  userId            String
+  instanceId        String?
+  name              String
+  description       String?
+  trigger           String // palavra-chave ou padrão que inicia o fluxo
+  isActive          Boolean  @default(true)
+  usesAI            Boolean  @default(false) // Indica se o workflow usa nós de IA
+  isAIOnly          Boolean  @default(false) // Indica se é um fluxo exclusivo de IA (conversação autônoma)
   aiBusinessDetails String? // JSON com detalhes do negócio para a IA (nome, produtos, serviços, etc)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   user        User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   instance    WhatsAppInstance?    @relation(fields: [instanceId], references: [id], onDelete: Cascade)
@@ -253,7 +253,9 @@ model Appointment {
   instanceId    String?
   contactNumber String
   contactName   String?
-  date          DateTime
+  date          DateTime // Horário de INÍCIO do agendamento
+  endDate       DateTime // Horário de TÉRMINO do agendamento (calculado: date + duration)
+  duration      Int? // Duração em minutos (vem do serviço agendado, pode ser null se não especificado)
   description   String?
   status        String   @default("pending") // pending, confirmed, cancelled, completed
   createdAt     DateTime @default(now())
@@ -266,6 +268,7 @@ model Appointment {
   @@index([userId, date])
   @@index([instanceId, date])
   @@index([status])
+  @@index([date, endDate]) // Índice para consultas de sobreposição
 }
 
 model PendingAppointment {
@@ -282,7 +285,7 @@ model PendingAppointment {
   expiresAt     DateTime // Quando expira (ex: 1 hora após criação)
   createdAt     DateTime @default(now())
 
-  user     User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   instance WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
 
   @@unique([instanceId, contactNumber]) // Apenas um agendamento pendente por contato
