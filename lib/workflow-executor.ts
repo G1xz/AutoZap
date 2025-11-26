@@ -1086,6 +1086,7 @@ export async function processAppointmentConfirmation(
         // Verifica se há um agendamento criado recentemente (últimos 5 minutos)
         // Isso pode indicar que o agendamento já foi confirmado
         try {
+          // Usa select explícito para evitar erro se endDate não existir no banco
           const recentAppointment = await prisma.appointment.findFirst({
             where: {
               instanceId,
@@ -1093,6 +1094,14 @@ export async function processAppointmentConfirmation(
               createdAt: {
                 gte: new Date(Date.now() - 300000), // Últimos 5 minutos
               },
+            },
+            select: {
+              id: true,
+              createdAt: true,
+              date: true,
+              description: true,
+              status: true,
+              // endDate e duration podem não existir no banco ainda
             },
             orderBy: {
               createdAt: 'desc',
@@ -1215,6 +1224,7 @@ export async function processAppointmentConfirmation(
       
       // Verifica se há um agendamento criado recentemente
       try {
+        // Usa select explícito para evitar erro se endDate não existir no banco
         const recentAppointment = await prisma.appointment.findFirst({
           where: {
             instanceId,
@@ -1222,6 +1232,14 @@ export async function processAppointmentConfirmation(
             createdAt: {
               gte: new Date(Date.now() - 10000), // Últimos 10 segundos
             },
+          },
+          select: {
+            id: true,
+            createdAt: true,
+            date: true,
+            description: true,
+            status: true,
+            // endDate e duration podem não existir no banco ainda
           },
           orderBy: {
             createdAt: 'desc',
@@ -1378,6 +1396,7 @@ export async function processAppointmentConfirmation(
     }
     
     // Também verifica se há agendamentos confirmados recentes para cancelar
+    // Usa select explícito para evitar erro se endDate não existir no banco
     const recentAppointments = await prisma.appointment.findMany({
       where: {
         instanceId,
@@ -1388,6 +1407,13 @@ export async function processAppointmentConfirmation(
         date: {
           gte: new Date(), // Apenas agendamentos futuros
         },
+      },
+      select: {
+        id: true,
+        date: true,
+        description: true,
+        status: true,
+        // endDate e duration podem não existir no banco ainda
       },
       orderBy: {
         date: 'asc',
@@ -1555,6 +1581,7 @@ async function executeAIOnlyWorkflow(
       console.log(`   Verificando se há agendamento criado recentemente...`)
       
       // Verifica se há um agendamento criado recentemente (últimos 120 segundos)
+      // Usa select explícito para evitar erro se endDate não existir no banco
       const recentAppointment = await prisma.appointment.findFirst({
         where: {
           instanceId,
@@ -1562,6 +1589,14 @@ async function executeAIOnlyWorkflow(
           createdAt: {
             gte: new Date(Date.now() - 120000), // Últimos 120 segundos
           },
+        },
+        select: {
+          id: true,
+          createdAt: true,
+          date: true,
+          description: true,
+          status: true,
+          // endDate e duration podem não existir no banco ainda
         },
         orderBy: {
           createdAt: 'desc',
@@ -2254,6 +2289,7 @@ async function executeAIOnlyWorkflow(
           
           // CRÍTICO: Verifica se acabou de confirmar um agendamento (últimos 60 segundos)
           // Se sim, não cria novo agendamento para evitar loop (usa número normalizado)
+          // Usa select explícito para evitar erro se endDate não existir no banco
           const recentConfirmedAppointment = await prisma.appointment.findFirst({
             where: {
               instanceId,
@@ -2261,6 +2297,14 @@ async function executeAIOnlyWorkflow(
               createdAt: {
                 gte: new Date(Date.now() - 60000), // Últimos 60 segundos
               },
+            },
+            select: {
+              id: true,
+              createdAt: true,
+              date: true,
+              description: true,
+              status: true,
+              // endDate e duration podem não existir no banco ainda
             },
             orderBy: {
               createdAt: 'desc',
