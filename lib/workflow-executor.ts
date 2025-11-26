@@ -2021,30 +2021,23 @@ async function executeAIOnlyWorkflow(
     }
 
     // Função auxiliar para calcular a próxima ocorrência de um dia da semana
-    const getNextWeekday = (
-      targetDayOfWeek: number,
-      options?: { forceNextWeek?: boolean }
-    ): Date => {
+    const getNextWeekday = (targetDayOfWeek: number): Date => {
       const baseDate = getBrazilianDate()
-      const maxOffset = options?.forceNextWeek ? 14 : 7
-      const minOffset = options?.forceNextWeek ? 8 : 1
       
-      for (let offset = 1; offset <= maxOffset; offset++) {
+      for (let offset = 1; offset <= 7; offset++) {
         const candidate = new Date(baseDate)
         candidate.setHours(12, 0, 0, 0) // evita trocas de dia por horário de verão
         candidate.setDate(baseDate.getDate() + offset)
         
-        if (candidate.getDay() === targetDayOfWeek && offset >= minOffset) {
+        if (candidate.getDay() === targetDayOfWeek) {
           console.log(`📅 Cálculo de dia da semana (iterativo): base=${baseDate.toLocaleDateString('pt-BR')} offset=${offset} resultado=${candidate.toLocaleDateString('pt-BR')}`)
           return candidate
         }
       }
       
-      // Fallback (não deve ocorrer, mas garante)
+      // Fallback (se algo sair do previsto, adiciona 7 dias)
       const fallback = new Date(baseDate)
-      const difference = (targetDayOfWeek - baseDate.getDay() + 7) % 7 || 7
-      const extra = options?.forceNextWeek ? 7 : 0
-      fallback.setDate(baseDate.getDate() + difference + extra)
+      fallback.setDate(baseDate.getDate() + 7)
       console.warn('⚠️ getNextWeekday entrou no fallback. Verifique logs anteriores.')
       return fallback
     }
@@ -2113,12 +2106,9 @@ async function executeAIOnlyWorkflow(
       
       for (const [dayName, dayOfWeek] of Object.entries(weekdays)) {
         if (lower.includes(dayName)) {
-          const nextDate = getNextWeekday(dayOfWeek, { forceNextWeek: isNextWeek })
-          console.log(
-            `📅 Parseado "${isNextWeek ? 'próxima ' : ''}${dayName}" → ocorrência calculada: ${nextDate.getDate()}/${
-              nextDate.getMonth() + 1
-            }/${nextDate.getFullYear()}`
-          )
+          // "Próxima" e "segunda" usam o mesmo cálculo (sempre próxima ocorrência futura)
+          const nextDate = getNextWeekday(dayOfWeek)
+          console.log(`📅 Parseado "${dayName}" (flag próxima=${isNextWeek}) → ocorrência: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
           
           const year = nextDate.getFullYear()
           const month = nextDate.getMonth()
