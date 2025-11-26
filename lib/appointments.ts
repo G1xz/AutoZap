@@ -83,23 +83,52 @@ export async function createAppointment(params: CreateAppointmentParams) {
       termino: endDate.toISOString(),
     })
 
-    const appointment = await prisma.appointment.create({
-      data: {
-        userId: params.userId,
-        instanceId: params.instanceId,
-        contactNumber: params.contactNumber,
-        contactName: params.contactName,
-        date: params.date, // Horário de início
-        endDate: endDate, // Horário de término calculado
-        duration: duration, // Duração em minutos
-        description: params.description,
-        status: 'pending',
-      },
-    })
+    // CRÍTICO: Tenta criar com endDate e duration, mas se falhar, cria sem esses campos
+    let appointment
+    try {
+      appointment = await prisma.appointment.create({
+        data: {
+          userId: params.userId,
+          instanceId: params.instanceId,
+          contactNumber: params.contactNumber,
+          contactName: params.contactName,
+          date: params.date, // Horário de início
+          endDate: endDate, // Horário de término calculado
+          duration: duration, // Duração em minutos
+          description: params.description,
+          status: 'pending',
+        },
+      })
+      console.log('✅ [createAppointment] Agendamento criado com endDate e duration')
+    } catch (error: any) {
+      // Se falhar (provavelmente porque endDate/duration não existem ainda), cria sem esses campos
+      console.warn('⚠️ [createAppointment] Erro ao criar com endDate/duration, tentando sem esses campos:', error.message)
+      
+      try {
+        appointment = await prisma.appointment.create({
+          data: {
+            userId: params.userId,
+            instanceId: params.instanceId,
+            contactNumber: params.contactNumber,
+            contactName: params.contactName,
+            date: params.date, // Horário de início
+            description: params.description,
+            status: 'pending',
+          },
+        })
+        console.log('✅ [createAppointment] Agendamento criado sem endDate/duration (compatibilidade)')
+        console.warn('⚠️ [createAppointment] IMPORTANTE: Aplique a migration para adicionar campos endDate e duration')
+      } catch (fallbackError) {
+        console.error('❌ [createAppointment] Erro também na criação sem endDate/duration:', fallbackError)
+        throw fallbackError
+      }
+    }
 
-    console.log('✅ Agendamento criado com sucesso no banco:', {
+    console.log('✅ [createAppointment] Agendamento criado com sucesso no banco:', {
       id: appointment.id,
       date: appointment.date,
+      endDate: (appointment as any).endDate || 'não disponível',
+      duration: (appointment as any).duration || 'não disponível',
       description: appointment.description,
       status: appointment.status,
     })
@@ -109,8 +138,8 @@ export async function createAppointment(params: CreateAppointmentParams) {
       appointment: {
         id: appointment.id,
         date: appointment.date, // Início
-        endDate: appointment.endDate, // Término
-        duration: appointment.duration,
+        endDate: (appointment as any).endDate || undefined, // Término (pode não existir)
+        duration: (appointment as any).duration || undefined, // Duração (pode não existir)
         description: appointment.description,
         status: appointment.status,
       },

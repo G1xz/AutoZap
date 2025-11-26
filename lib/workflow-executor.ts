@@ -2462,23 +2462,31 @@ async function executeAIOnlyWorkflow(
           console.log(`🔍 [handleFunctionCall] Buscando duração do serviço: "${serviceName}"`)
           console.log(`🔍 [handleFunctionCall] Serviços disponíveis:`, servicesWithAppointment.map((s: any) => `${s.name} (${s.duration || 'sem duração'} min)`))
           
+          // Busca duração do serviço mencionado na descrição
           for (const service of servicesWithAppointment) {
-            if (serviceName.includes(service.name.toLowerCase())) {
+            const serviceNameLower = service.name.toLowerCase()
+            // Verifica se o nome do serviço está na descrição OU se a descrição está no nome do serviço
+            if (serviceName.includes(serviceNameLower) || serviceNameLower.includes(serviceName) || serviceName.includes(serviceNameLower.split(' ')[0])) {
               serviceDuration = service.duration
               console.log(`✅ [handleFunctionCall] Duração encontrada: ${service.name} = ${serviceDuration} minutos`)
               break
             }
           }
           
-          // CRÍTICO: Se não encontrou a duração, retorna erro
+          // CRÍTICO: Se não encontrou a duração, retorna erro ANTES de criar agendamento pendente
           if (!serviceDuration || serviceDuration <= 0) {
             console.error(`❌ [handleFunctionCall] Duração do serviço não encontrada ou inválida!`)
             console.error(`   Serviço procurado: "${serviceName}"`)
+            console.error(`   Descrição completa: "${args.description}"`)
             console.error(`   Serviços disponíveis:`, servicesWithAppointment)
+            
+            // Lista serviços disponíveis para ajudar o usuário
+            const availableServices = servicesWithAppointment.map((s: any) => s.name).join(', ')
+            const errorMessage = `Não foi possível determinar a duração do serviço "${args.description || 'não especificado'}".\n\nServiços disponíveis com agendamento:\n${servicesWithAppointment.map((s: any) => `- ${s.name}${s.duration ? ` (${s.duration} min)` : ' (duração não configurada)'}`).join('\n')}\n\nPor favor, verifique se o serviço tem duração configurada no catálogo.`
             
             return {
               success: false,
-              error: `Não foi possível determinar a duração do serviço "${args.description || 'não especificado'}". Por favor, verifique se o serviço tem duração configurada no catálogo.`,
+              error: errorMessage,
             }
           }
           
