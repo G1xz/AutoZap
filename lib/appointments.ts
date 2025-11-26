@@ -147,27 +147,73 @@ export async function checkAvailability(
 
     // Busca apenas agendamentos CONFIRMADOS (status: 'confirmed' ou 'pending' na tabela Appointment)
     // Não inclui agendamentos pendentes de confirmação (PendingAppointment) pois eles podem ser cancelados
-    const appointments = await prisma.appointment.findMany({
-      where: {
-        userId,
-        date: {
-          gte: startOfDay,
-          lte: endOfDay,
+    // CRÍTICO: Tenta buscar com endDate e duration, mas se falhar, busca sem esses campos
+    let appointments: Array<{
+      date: Date
+      endDate?: Date | null
+      duration?: number | null
+      description?: string | null
+    }>
+    
+    try {
+      appointments = await prisma.appointment.findMany({
+        where: {
+          userId,
+          date: {
+            gte: startOfDay,
+            lte: endOfDay,
+          },
+          status: {
+            in: ['pending', 'confirmed'],
+          },
         },
-        status: {
-          in: ['pending', 'confirmed'], // Status na tabela Appointment (não confundir com PendingAppointment)
+        select: {
+          date: true,
+          endDate: true,
+          duration: true,
+          description: true,
         },
-      },
-      select: {
-        date: true,
-        endDate: true,
-        duration: true,
-        description: true,
-      },
-      orderBy: {
-        date: 'asc',
-      },
-    })
+        orderBy: {
+          date: 'asc',
+        },
+      })
+    } catch (error: any) {
+      // Se falhar (provavelmente porque endDate/duration não existem ainda), busca sem esses campos
+      console.warn('⚠️ [checkAvailability] Erro ao buscar com endDate/duration, tentando sem esses campos:', error.message)
+      try {
+        const appointmentsWithoutNewFields = await prisma.appointment.findMany({
+          where: {
+            userId,
+            date: {
+              gte: startOfDay,
+              lte: endOfDay,
+            },
+            status: {
+              in: ['pending', 'confirmed'],
+            },
+          },
+          select: {
+            date: true,
+            description: true,
+          },
+          orderBy: {
+            date: 'asc',
+          },
+        })
+        
+        // Converte para o formato esperado
+        appointments = appointmentsWithoutNewFields.map(apt => ({
+          date: apt.date,
+          endDate: null,
+          duration: null,
+          description: apt.description,
+        }))
+        console.log('✅ [checkAvailability] Busca sem endDate/duration bem-sucedida')
+      } catch (fallbackError) {
+        console.error('❌ [checkAvailability] Erro também na busca sem endDate/duration:', fallbackError)
+        throw fallbackError
+      }
+    }
 
     console.log(`📅 [checkAvailability] Data: ${date.toLocaleDateString('pt-BR')}`)
     console.log(`📅 [checkAvailability] Agendamentos encontrados: ${appointments.length}`)
@@ -186,10 +232,15 @@ export async function checkAvailability(
       }),
     }
   } catch (error) {
-    console.error('Erro ao verificar disponibilidade:', error)
+    console.error('❌ [checkAvailability] Erro ao verificar disponibilidade:', error)
+    console.error('❌ [checkAvailability] Stack trace:', error instanceof Error ? error.stack : 'N/A')
+    console.error('❌ [checkAvailability] Parâmetros:', { userId, date: date.toISOString(), instanceId })
+    
+    // Retorna erro mais detalhado para debug
+    const errorMessage = error instanceof Error ? error.message : String(error)
     return {
       success: false,
-      error: 'Erro ao verificar disponibilidade',
+      error: `Erro ao verificar disponibilidade: ${errorMessage}`,
     }
   }
 }

@@ -3117,21 +3117,38 @@ async function executeAIOnlyWorkflow(
     let pendingAppointmentResponse: string | null = null
     
     const interceptedFunctionCall = async (functionName: string, args: any) => {
-      console.log(`🔧 Interceptando chamada de função: ${functionName}`, args)
-      const result = await handleFunctionCall(functionName, args)
+      console.log(`🔧 [interceptedFunctionCall] Interceptando chamada de função: ${functionName}`)
+      console.log(`🔧 [interceptedFunctionCall] Argumentos:`, JSON.stringify(args, null, 2))
       
-      // Se retornou um agendamento pendente, intercepta a resposta
-      if (result && typeof result === 'object' && 'pending' in result && result.pending === true) {
-        pendingAppointmentResponse = result.message || result.error || 'Por favor, confirme os dados do agendamento.'
-        console.log(`📅 Agendamento pendente interceptado:`, pendingAppointmentResponse)
-        // Retorna erro para que a IA não confirme automaticamente
+      try {
+        const result = await handleFunctionCall(functionName, args)
+        
+        console.log(`✅ [interceptedFunctionCall] Função ${functionName} executada`)
+        console.log(`📊 [interceptedFunctionCall] Resultado:`, JSON.stringify(result, null, 2))
+        
+        // Se retornou um agendamento pendente, intercepta a resposta
+        if (result && typeof result === 'object' && 'pending' in result && result.pending === true) {
+          pendingAppointmentResponse = result.message || result.error || 'Por favor, confirme os dados do agendamento.'
+          console.log(`📅 [interceptedFunctionCall] Agendamento pendente interceptado:`, pendingAppointmentResponse)
+          // Retorna erro para que a IA não confirme automaticamente
+          return {
+            success: false,
+            error: pendingAppointmentResponse,
+          }
+        }
+        
+        return result
+      } catch (error) {
+        console.error(`❌ [interceptedFunctionCall] Erro ao executar função ${functionName}:`, error)
+        console.error(`❌ [interceptedFunctionCall] Stack trace:`, error instanceof Error ? error.stack : 'N/A')
+        
+        // Retorna erro detalhado para a IA
+        const errorMessage = error instanceof Error ? error.message : String(error)
         return {
           success: false,
-          error: pendingAppointmentResponse,
+          error: `Erro ao executar ${functionName}: ${errorMessage}`,
         }
       }
-      
-      return result
     }
     
     const aiResponse = await generateAIResponse(userMessageWithContext, {

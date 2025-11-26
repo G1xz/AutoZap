@@ -192,11 +192,17 @@ export async function generateAIResponse(
 
   // Se a IA quer chamar uma função, executa e continua a conversa
   if (response.functionCall && context?.onFunctionCall) {
+    console.log(`🔧 [generateAIResponse] IA quer chamar função: ${response.functionCall.name}`)
+    console.log(`🔧 [generateAIResponse] Argumentos:`, JSON.stringify(response.functionCall.arguments, null, 2))
+    
     try {
       const functionResult = await context.onFunctionCall(
         response.functionCall.name,
         response.functionCall.arguments
       )
+      
+      console.log(`✅ [generateAIResponse] Função ${response.functionCall.name} executada com sucesso`)
+      console.log(`📊 [generateAIResponse] Resultado:`, JSON.stringify(functionResult, null, 2))
 
       // Adiciona a resposta da função e pede para a IA continuar
       messages.push({
@@ -221,10 +227,17 @@ export async function generateAIResponse(
         functions: context?.functions,
       })
 
+      console.log(`✅ [generateAIResponse] Resposta final gerada após função`)
       return finalResponse.content
     } catch (error) {
-      console.error('Erro ao executar função:', error)
-      return 'Desculpe, ocorreu um erro ao processar sua solicitação. Por favor, tente novamente.'
+      console.error('❌ [generateAIResponse] Erro ao executar função:', error)
+      console.error('❌ [generateAIResponse] Stack trace:', error instanceof Error ? error.stack : 'N/A')
+      console.error('❌ [generateAIResponse] Nome da função:', response.functionCall.name)
+      console.error('❌ [generateAIResponse] Argumentos:', JSON.stringify(response.functionCall.arguments, null, 2))
+      
+      // Retorna mensagem de erro mais específica
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      return `Desculpe, ocorreu um erro ao processar sua solicitação: ${errorMessage}. Por favor, tente novamente.`
     }
   }
 
