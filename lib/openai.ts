@@ -184,11 +184,23 @@ export async function generateAIResponse(
   })
 
   // Chama a API com function calling se disponível
+  console.log(`🤖 [generateAIResponse] Chamando OpenAI com ${messages.length} mensagens`)
+  console.log(`🤖 [generateAIResponse] Funções disponíveis:`, context?.functions?.map(f => f.name).join(', ') || 'nenhuma')
+  
   const response = await callChatGPT(messages, {
     temperature: context?.temperature,
     maxTokens: context?.maxTokens,
     functions: context?.functions,
   })
+
+  console.log(`🤖 [generateAIResponse] Resposta recebida da OpenAI:`)
+  console.log(`   - Tem função call? ${!!response.functionCall}`)
+  if (response.functionCall) {
+    console.log(`   - Nome da função: ${response.functionCall.name}`)
+    console.log(`   - Argumentos:`, JSON.stringify(response.functionCall.arguments, null, 2))
+  } else {
+    console.log(`   - Conteúdo da resposta: ${response.content?.substring(0, 200)}...`)
+  }
 
   // Se a IA quer chamar uma função, executa e continua a conversa
   if (response.functionCall && context?.onFunctionCall) {
