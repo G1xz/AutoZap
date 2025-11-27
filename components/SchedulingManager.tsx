@@ -2,6 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
+import { useToast } from '@/hooks/use-toast'
+import { useConfirmDialog } from '@/hooks/use-confirm-dialog'
+import { Check, X, Trash2, CheckCircle2 } from 'lucide-react'
 
 interface Appointment {
   id: string
@@ -15,10 +18,13 @@ interface Appointment {
 
 export default function SchedulingManager() {
   const { data: session } = useSession()
+  const { toast } = useToast()
+  const { confirm, ConfirmDialog } = useConfirmDialog()
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedDate, setSelectedDate] = useState<Date>(new Date())
   const [currentMonth, setCurrentMonth] = useState(new Date())
+  const [actionInProgress, setActionInProgress] = useState<string | null>(null)
 
   useEffect(() => {
     fetchAppointments()
@@ -30,9 +36,12 @@ export default function SchedulingManager() {
       if (response.ok) {
         const data = await response.json()
         setAppointments(data)
+      } else {
+        toast.error('Erro ao buscar agendamentos')
       }
     } catch (error) {
       console.error('Erro ao buscar agendamentos:', error)
+      toast.error('Erro ao buscar agendamentos')
     } finally {
       setLoading(false)
     }
@@ -40,39 +49,59 @@ export default function SchedulingManager() {
 
   const handleStatusChange = async (id: string, newStatus: string) => {
     try {
+      setActionInProgress(id)
       const response = await fetch(`/api/appointments/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus }),
       })
 
-      if (response.ok) {
-        fetchAppointments()
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Erro ao atualizar agendamento')
       }
+
+      fetchAppointments()
+      toast.success('Agendamento atualizado com sucesso!')
     } catch (error) {
       console.error('Erro ao alterar status:', error)
+      toast.error(error instanceof Error ? error.message : 'Erro ao alterar status')
+    } finally {
+      setActionInProgress(null)
     }
   }
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Tem certeza que deseja excluir este agendamento?')) {
+    const confirmed = await confirm({
+      title: 'Excluir agendamento',
+      description: 'Tem certeza que deseja excluir este agendamento? Esta ação não pode ser desfeita.',
+      confirmText: 'Excluir',
+      cancelText: 'Manter',
+      variant: 'destructive',
+    })
+
+    if (!confirmed) {
       return
     }
 
     try {
+      setActionInProgress(id)
       const response = await fetch(`/api/appointments/${id}`, {
         method: 'DELETE',
       })
 
-      if (response.ok) {
-        fetchAppointments()
-      } else {
+      if (!response.ok) {
         const error = await response.json()
-        alert(error.error || 'Erro ao excluir agendamento')
+        throw new Error(error.error || 'Erro ao excluir agendamento')
       }
+
+      fetchAppointments()
+      toast.success('Agendamento excluído com sucesso!')
     } catch (error) {
       console.error('Erro ao excluir agendamento:', error)
-      alert('Erro ao excluir agendamento')
+      toast.error(error instanceof Error ? error.message : 'Erro ao excluir agendamento')
+    } finally {
+      setActionInProgress(null)
     }
   }
 
@@ -242,7 +271,9 @@ export default function SchedulingManager() {
   const selectedDateAppointments = getSelectedDateAppointments()
 
   return (
-    <div className="space-y-6">
+    <>
+      <ConfirmDialog />
+      <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-xl font-semibold text-gray-900">Agenda</h2>
       </div>
@@ -326,7 +357,9 @@ export default function SchedulingManager() {
               </p>
             ) : (
               <div className="space-y-3">
-                {selectedDateAppointments.map((appointment) => (
+                {selectedDateAppointments.map((appointment) => {
+                  const isProcessing = actionInProgress === appointment.id
+                  return (
                   <div
                     key={appointment.id}
                     className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
@@ -360,13 +393,15 @@ export default function SchedulingManager() {
                         <>
                           <button
                             onClick={() => handleStatusChange(appointment.id, 'confirmed')}
-                            className="flex-1 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors"
+                            disabled={isProcessing}
+                            className="flex-1 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                           >
                             Confirmar
                           </button>
                           <button
                             onClick={() => handleStatusChange(appointment.id, 'cancelled')}
-                            className="flex-1 px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors"
+                            disabled={isProcessing}
+                            className="flex-1 px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                           >
                             Cancelar
                           </button>
@@ -375,21 +410,23 @@ export default function SchedulingManager() {
                       {appointment.status === 'confirmed' && (
                         <button
                           onClick={() => handleStatusChange(appointment.id, 'completed')}
-                          className="flex-1 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors"
+                          disabled={isProcessing}
+                          className="flex-1 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                         >
                           Marcar como Concluído
                         </button>
                       )}
                       <button
                         onClick={() => handleDelete(appointment.id)}
-                        className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 transition-colors"
+                        disabled={isProcessing}
+                        className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
                         title="Excluir agendamento"
                       >
                         Excluir
                       </button>
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             )}
           </div>
@@ -410,6 +447,7 @@ export default function SchedulingManager() {
                   const aptDateBrazilian = utcToBrazilian(utcDate)
                   const nowBrazilian = utcToBrazilian(new Date())
                   const isToday = aptDateBrazilian.toDateString() === nowBrazilian.toDateString()
+                  const isProcessing = actionInProgress === appointment.id
                   
                   return (
                     <div
@@ -445,13 +483,50 @@ export default function SchedulingManager() {
                           {appointment.description}
                         </div>
                       )}
-                      <button
-                        onClick={() => handleDelete(appointment.id)}
-                        className="mt-2 w-full px-2 py-1 bg-red-500 text-white rounded text-xs hover:bg-red-600 transition-colors"
-                        title="Excluir agendamento"
-                      >
-                        Excluir
-                      </button>
+                      <div className="mt-3 flex items-center gap-2">
+                        {appointment.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => handleStatusChange(appointment.id, 'confirmed')}
+                              disabled={isProcessing}
+                              className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 hover:bg-green-50 hover:border-green-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Confirmar agendamento"
+                              aria-label="Confirmar agendamento"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleStatusChange(appointment.id, 'cancelled')}
+                              disabled={isProcessing}
+                              className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 hover:bg-red-50 hover:border-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              title="Cancelar agendamento"
+                              aria-label="Cancelar agendamento"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </>
+                        )}
+                        {appointment.status === 'confirmed' && (
+                          <button
+                            onClick={() => handleStatusChange(appointment.id, 'completed')}
+                            disabled={isProcessing}
+                            className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 hover:bg-blue-50 hover:border-blue-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            title="Marcar como concluído"
+                            aria-label="Marcar como concluído"
+                          >
+                            <CheckCircle2 className="w-4 h-4" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => handleDelete(appointment.id)}
+                          disabled={isProcessing}
+                          className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 hover:bg-red-50 hover:border-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          title="Excluir agendamento"
+                          aria-label="Excluir agendamento"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   )
                 })}
@@ -460,6 +535,6 @@ export default function SchedulingManager() {
           </div>
         </div>
       </div>
-    </div>
+    </>
   )
 }

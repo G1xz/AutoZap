@@ -21,6 +21,10 @@ export async function PATCH(
         id: params.id,
         userId: session.user.id,
       },
+      select: {
+        id: true,
+        status: true,
+      },
     })
 
     if (!appointment) {
@@ -56,6 +60,9 @@ export async function DELETE(
       where: {
         id: params.id,
         userId: session.user.id,
+      },
+      select: {
+        id: true,
       },
     })
 
