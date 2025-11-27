@@ -2021,28 +2021,40 @@ async function executeAIOnlyWorkflow(
     }
 
     // Função auxiliar para calcular a próxima ocorrência de um dia da semana
-    const getNextWeekday = (targetDayOfWeek: number, occurrencesToSkip: number = 0): Date => {
+    // Se forceNextWeek = true, SEMPRE pega da próxima semana (adiciona 7 dias à primeira ocorrência)
+    const getNextWeekday = (targetDayOfWeek: number, forceNextWeek: boolean = false): Date => {
       const baseDate = getBrazilianDate()
-      const result = new Date(baseDate)
-      result.setHours(12, 0, 0, 0)
+      const baseDayOfWeek = baseDate.getDay()
       
-      let iterations = 0
-      while (iterations < 30) {
-        result.setDate(result.getDate() + 1)
-        if (result.getDay() === targetDayOfWeek) {
-          if (occurrencesToSkip === 0) {
-            console.log(`📅 Próximo "${targetDayOfWeek}" = ${result.toLocaleDateString('pt-BR')} (iter=${iterations})`)
-            return result
-          }
-          occurrencesToSkip--
-        }
-        iterations++
+      // Calcula quantos dias até a próxima ocorrência do dia da semana
+      let daysUntilTarget = (targetDayOfWeek - baseDayOfWeek + 7) % 7
+      
+      // Se for 0, significa que é hoje, então pega a próxima ocorrência (7 dias)
+      if (daysUntilTarget === 0) {
+        daysUntilTarget = 7
       }
       
-      console.warn('⚠️ getNextWeekday excedeu 30 iterações, retornando data padrão +7 dias')
-      const fallback = new Date(baseDate)
-      fallback.setDate(baseDate.getDate() + 7)
-      return fallback
+      // Se forceNextWeek = true, adiciona mais 7 dias para garantir que seja da próxima semana
+      if (forceNextWeek) {
+        daysUntilTarget += 7
+      }
+      
+      const result = new Date(baseDate)
+      result.setHours(12, 0, 0, 0)
+      result.setDate(baseDate.getDate() + daysUntilTarget)
+      
+      // Validação: verifica se o dia da semana está correto
+      const resultDayOfWeek = result.getDay()
+      if (resultDayOfWeek !== targetDayOfWeek) {
+        console.error(`❌ ERRO: Dia da semana não corresponde! Esperado: ${targetDayOfWeek}, Obtido: ${resultDayOfWeek}`)
+        // Corrige manualmente se necessário
+        const correction = (targetDayOfWeek - resultDayOfWeek + 7) % 7
+        result.setDate(result.getDate() + correction)
+      }
+      
+      console.log(`📅 getNextWeekday: hoje=${baseDate.toLocaleDateString('pt-BR')} (${baseDayOfWeek}), alvo=${targetDayOfWeek}, forceNextWeek=${forceNextWeek}, dias=${daysUntilTarget}, resultado=${result.toLocaleDateString('pt-BR')} (${result.getDay()})`)
+      
+      return result
     }
 
     // Função auxiliar para converter datas relativas em português
@@ -2084,7 +2096,7 @@ async function executeAIOnlyWorkflow(
             // Mas se X >= 12, já está em formato 24h
             if (targetHour < 12 && !lower.includes('manhã') && !lower.includes('manha')) {
               // Se não especificou manhã e é < 12, assume tarde (mais comum)
-              targetHour += 12
+            targetHour += 12
             }
           }
           break
@@ -2109,9 +2121,9 @@ async function executeAIOnlyWorkflow(
       
       for (const [dayName, dayOfWeek] of Object.entries(weekdays)) {
         if (lower.includes(dayName)) {
-          const skipCount = isNextWeek ? 1 : 0
-          const nextDate = getNextWeekday(dayOfWeek, skipCount)
-          console.log(`📅 Parseado "${dayName}" (flag próxima=${isNextWeek}, skip=${skipCount}) → ocorrência: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
+          // CRÍTICO: Se mencionou "próxima", sempre força próxima semana (não esta semana)
+          const nextDate = getNextWeekday(dayOfWeek, isNextWeek)
+          console.log(`📅 Parseado "${dayName}" (flag próxima=${isNextWeek}) → ocorrência: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
           
           const year = nextDate.getFullYear()
           const month = nextDate.getMonth()
@@ -2391,7 +2403,7 @@ async function executeAIOnlyWorkflow(
             timeMatch = args.time.match(/(\d{1,2}):(\d{2})/)
             
             // Se não encontrou, tenta formato "Xh" ou "X" (ex: "16h", "4", "às 4")
-            if (!timeMatch) {
+          if (!timeMatch) {
               // Remove "às" ou "as" se presente
               const cleanedTime = timeLower.replace(/^às?\s*/, '').replace(/\s*h$/, '')
               const numberMatch = cleanedTime.match(/^(\d{1,2})$/)
@@ -2407,14 +2419,14 @@ async function executeAIOnlyWorkflow(
                   hour += 12
                 }
               } else {
-                return {
-                  success: false,
+            return {
+              success: false,
                   error: `Hora inválida: "${args.time}". Use formato HH:MM (ex: 16:00), apenas o número (ex: 16), ou "meio-dia".`,
-                }
-              }
+            }
+          }
             } else {
-              hour = parseInt(timeMatch[1])
-              minute = parseInt(timeMatch[2])
+            hour = parseInt(timeMatch[1])
+            minute = parseInt(timeMatch[2])
             }
           
           // Valida valores
@@ -2554,7 +2566,7 @@ async function executeAIOnlyWorkflow(
           let matchedService: ServiceWithAppointment | null = null
           
           if (serviceName && servicesWithAppointment.length > 0) {
-            for (const service of servicesWithAppointment) {
+          for (const service of servicesWithAppointment) {
               if (!service.name) continue
               const serviceNameLower = service.name.toLowerCase()
               const firstWord = serviceNameLower.split(' ')[0]
@@ -2567,7 +2579,7 @@ async function executeAIOnlyWorkflow(
               ) {
                 matchedService = service
                 console.log(`✅ [handleFunctionCall] Serviço identificado: ${service.name}`)
-                break
+              break
               }
             }
           }
@@ -2791,7 +2803,7 @@ async function executeAIOnlyWorkflow(
                 caption: `${args.description || 'Serviço'} - confirme o agendamento`,
               }
             : undefined
-          
+
           // Retorna mensagem de confirmação para o usuário
           // IMPORTANTE: Retorna success: false para que a IA não confirme automaticamente
           // A mensagem será exibida diretamente ao usuário
