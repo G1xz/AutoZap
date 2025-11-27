@@ -26,17 +26,13 @@ function cloneAndAddDays(base: Date, days: number): Date {
   return normalize(result)
 }
 
-function getUpcomingWeekday(base: Date, targetDay: number, skipCurrentWeek = false): Date {
+function getUpcomingWeekday(base: Date, targetDay: number): Date {
   const result = new Date(base)
   result.setHours(12, 0, 0, 0)
 
   let days = (targetDay - result.getDay() + 7) % 7
   if (days === 0) {
     days = 7 // nunca retorna hoje; pega a próxima ocorrência
-  }
-
-  if (skipCurrentWeek) {
-    days += 7
   }
 
   result.setDate(result.getDate() + days)
@@ -117,13 +113,9 @@ export function parseRelativeDate(message: string): Date | null {
   }
 
   // Dias da semana (segunda, terça, etc)
-  const isNextWeekMention =
-    includesAny(lowerMessage, ['próxima', 'proxima', 'que vem']) ||
-    includesAny(lowerMessage, ['próximo', 'proximo'])
-
   for (const [name, dayIndex] of Object.entries(weekdayMap)) {
     if (lowerMessage.includes(name)) {
-      return getUpcomingWeekday(today, dayIndex, isNextWeekMention)
+      return getUpcomingWeekday(today, dayIndex)
     }
   }
 
