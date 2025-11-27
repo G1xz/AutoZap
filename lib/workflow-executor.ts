@@ -2269,7 +2269,17 @@ async function executeAIOnlyWorkflow(
           
           // Cria uma string combinada de data e hora para parsePortugueseDate processar
           const dateTimeStr = `${args.date} ${args.time}`
-          const parsedPortugueseDate = parsePortugueseDate(dateTimeStr)
+          let parsedPortugueseDate = parsePortugueseDate(dateTimeStr)
+          
+          // Fallback: se a IA mandou data já convertida (ex: DD/MM) mas o cliente falou em linguagem natural,
+          // tenta interpretar a data direto da mensagem original para evitar erros como "próxima segunda = 29/11".
+          if (!parsedPortugueseDate && userMessage) {
+            const parsedFromUserMessage = parsePortugueseDate(`${userMessage} ${args.time}`)
+            if (parsedFromUserMessage) {
+              parsedPortugueseDate = parsedFromUserMessage
+              console.log(`📅 [handleFunctionCall] Data reinterpretada a partir da mensagem original do cliente: "${userMessage}"`)
+            }
+          }
           
           if (parsedPortugueseDate) {
             // Se conseguiu parsear como data em português, já vem em UTC com hora
