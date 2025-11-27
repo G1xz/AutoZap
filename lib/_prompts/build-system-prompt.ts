@@ -79,37 +79,6 @@ export function buildSystemPrompt(
   
   const currentDateFormatted = `${currentDay.toString().padStart(2, '0')}/${(currentMonth + 1).toString().padStart(2, '0')}/${currentYear}`
   
-  // Calcula próximas datas úteis para ajudar a IA
-  const todayDate = new Date(currentYear, currentMonth, currentDay)
-  
-  const tomorrow = new Date(todayDate)
-  tomorrow.setDate(tomorrow.getDate() + 1)
-  const tomorrowFormatted = `${tomorrow.getDate().toString().padStart(2, '0')}/${(tomorrow.getMonth() + 1).toString().padStart(2, '0')}/${tomorrow.getFullYear()}`
-  
-  // Calcula próxima segunda-feira (desta semana ou próxima)
-  const nextMonday = new Date(todayDate)
-  let daysUntilMonday = (1 - currentWeekday + 7) % 7
-  if (daysUntilMonday === 0) daysUntilMonday = 7 // Se for hoje, pega a próxima
-  nextMonday.setDate(nextMonday.getDate() + daysUntilMonday)
-  const nextMondayFormatted = `${nextMonday.getDate().toString().padStart(2, '0')}/${(nextMonday.getMonth() + 1).toString().padStart(2, '0')}/${nextMonday.getFullYear()}`
-  
-  // Calcula próxima terça-feira (desta semana ou próxima)
-  const nextTuesday = new Date(todayDate)
-  let daysUntilTuesday = (2 - currentWeekday + 7) % 7
-  if (daysUntilTuesday === 0) daysUntilTuesday = 7 // Se for hoje, pega a próxima
-  nextTuesday.setDate(nextTuesday.getDate() + daysUntilTuesday)
-  const nextTuesdayFormatted = `${nextTuesday.getDate().toString().padStart(2, '0')}/${(nextTuesday.getMonth() + 1).toString().padStart(2, '0')}/${nextTuesday.getFullYear()}`
-  
-  // Calcula próxima segunda-feira da PRÓXIMA semana (para quando disser "próxima segunda")
-  const nextWeekMonday = new Date(nextMonday)
-  nextWeekMonday.setDate(nextWeekMonday.getDate() + 7)
-  const nextWeekMondayFormatted = `${nextWeekMonday.getDate().toString().padStart(2, '0')}/${(nextWeekMonday.getMonth() + 1).toString().padStart(2, '0')}/${nextWeekMonday.getFullYear()}`
-  
-  // Calcula próxima terça-feira da PRÓXIMA semana (para quando disser "próxima terça")
-  const nextWeekTuesday = new Date(nextTuesday)
-  nextWeekTuesday.setDate(nextWeekTuesday.getDate() + 7)
-  const nextWeekTuesdayFormatted = `${nextWeekTuesday.getDate().toString().padStart(2, '0')}/${(nextWeekTuesday.getMonth() + 1).toString().padStart(2, '0')}/${nextWeekTuesday.getFullYear()}`
-
   // Determina o que o negócio oferece
   const sellsProducts = businessType === 'products' || businessType === 'both'
   const sellsServices = businessType === 'services' || businessType === 'both'
@@ -124,17 +93,10 @@ export function buildSystemPrompt(
   // ==========================================
   prompt += `📅 INFORMAÇÃO IMPORTANTE SOBRE A DATA ATUAL:\n`
   prompt += `- Hoje é ${currentWeekdayName}, dia ${currentDay} de ${getMonthName(currentMonth + 1)} de ${currentYear} (${currentDateFormatted})\n`
-  prompt += `- Quando o cliente perguntar "que dia é hoje?", "que dia é amanhã?", "que mês estamos?", etc., use esta informação\n\n`
-  prompt += `📅 DATAS PRÉ-CALCULADAS PARA VOCÊ USAR:\n`
-  prompt += `- Hoje: ${currentDateFormatted}\n`
-  prompt += `- Amanhã: ${tomorrowFormatted}\n`
-  prompt += `- Próxima segunda-feira (desta semana): ${nextMondayFormatted}\n`
-  prompt += `- Próxima terça-feira (desta semana): ${nextTuesdayFormatted}\n`
-  prompt += `- Próxima segunda-feira (da PRÓXIMA semana): ${nextWeekMondayFormatted}\n`
-  prompt += `- Próxima terça-feira (da PRÓXIMA semana): ${nextWeekTuesdayFormatted}\n\n`
-  prompt += `⚠️ CRÍTICO: Quando o cliente disser "próxima segunda-feira" ou "próxima segunda", use SEMPRE ${nextWeekMondayFormatted}\n`
-  prompt += `⚠️ CRÍTICO: Quando o cliente disser "próxima terça-feira" ou "próxima terça", use SEMPRE ${nextWeekTuesdayFormatted}\n`
-  prompt += `⚠️ CRÍTICO: "Próxima" significa sempre da próxima semana, não desta semana. Use as datas da PRÓXIMA semana acima.\n\n`
+  prompt += `- Quando o cliente perguntar "que dia é hoje?", "que dia é amanhã?", "que mês estamos?", etc., use esta informação\n`
+  prompt += `- Ao calcular "amanhã", use: ${getTomorrowDate(currentDay, currentMonth + 1, currentYear)}\n`
+  prompt += `- Ao calcular "depois de amanhã", use: ${getDayAfterTomorrowDate(currentDay, currentMonth + 1, currentYear)}\n`
+  prompt += `- ⚠️ CRÍTICO: SEMPRE use o ano ${currentYear} e o mês ${currentMonth + 1} ao calcular datas relativas. O sistema também converte datas como "próxima terça" automaticamente.\n\n`
 
   // ==========================================
   // SOBRE O NEGÓCIO
@@ -391,13 +353,10 @@ function addAppointmentRules(businessName: string): string {
 - PROCESSO DE COLETA (CONVERSA NATURAL):
   1. Se o cliente já mencionou data E hora completa (ex: "amanhã às 7 da manhã", "próxima terça-feira às 3 da tarde"), você DEVE:
      - Entender a linguagem natural do cliente
-     - ⚠️ CRÍTICO: Você DEVE CALCULAR a data correta baseado na data atual e passar no formato DD/MM/YYYY
-     - ⚠️ CRÍTICO: Se o cliente disser "próxima segunda-feira" ou "próxima segunda", calcule qual será a data da próxima segunda-feira a partir de hoje e passe no formato DD/MM/YYYY (ex: "01/12/2025")
-     - ⚠️ CRÍTICO: Se o cliente disser "próxima terça-feira" ou "próxima terça", calcule qual será a data da próxima terça-feira e passe no formato DD/MM/YYYY
-     - ⚠️ CRÍTICO: "Próxima" significa sempre da próxima semana, não desta semana. Se hoje é quarta-feira e o cliente pede "próxima segunda", calcule a segunda-feira da próxima semana, não a segunda-feira desta semana
-     - Converter a hora: "7 da manhã" → "07:00", "3 da tarde" → "15:00", "2 da tarde" → "14:00"
+     - ⚠️ CRÍTICO: Para datas em linguagem natural (ex: "amanhã", "próxima terça-feira"), passe a STRING ORIGINAL no parâmetro "date" (ex: "amanhã", "próxima terça-feira", "segunda-feira"). O sistema converte automaticamente usando a data atual.
+     - Converter apenas a hora: "7 da manhã" → "07:00", "3 da tarde" → "15:00", "2 da tarde" → "14:00"
      - Chamar a função create_appointment IMEDIATAMENTE:
-       * date: formato DD/MM/YYYY calculado (ex: "01/12/2025" para próxima segunda, "02/12/2025" para próxima terça)
+       * date: passe a string original (ex: "amanhã", "próxima terça-feira", "segunda-feira")
        * time: formato HH:MM (ex: "07:00", "15:00", "14:00")
      - NÃO pergunte mais nada - apenas confirme os dados e peça confirmação
 

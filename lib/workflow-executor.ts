@@ -4,6 +4,7 @@ import { generateAIResponse } from './openai'
 import { createAppointment, checkAvailability, getAvailableTimes, getUserAppointments, updateAppointment, cancelAppointment } from './appointments'
 import { buildSystemPrompt } from './_prompts/build-system-prompt'
 import { generateEnhancedAppointmentContext } from './_context/enhanced-appointment-context'
+import { getBrazilDate, parseRelativeDate } from './utils/date'
 
 export interface WhatsAppMessage {
   from: string
@@ -1946,7 +1947,7 @@ async function executeAIOnlyWorkflow(
         properties: {
           date: {
             type: 'string',
-            description: 'Data do agendamento no formato DD/MM/YYYY (ex: "24/11/2025", "30/12/2025"). ⚠️ CRÍTICO: Você DEVE calcular a data correta baseado na data atual. Se o cliente disser "amanhã", calcule a data de amanhã. Se disser "próxima segunda-feira" ou "próxima segunda", calcule qual será a data da próxima segunda-feira a partir de hoje e passe no formato DD/MM/YYYY. Se disser "próxima terça-feira", calcule a próxima terça-feira. SEMPRE calcule a data correta e passe no formato DD/MM/YYYY. Use a data atual como referência para seus cálculos.',
+            description: 'Data do agendamento. Você pode passar no formato DD/MM/YYYY (ex: "24/11/2025") OU linguagem natural em português (ex: "amanhã", "próxima segunda-feira", "terça que vem"). ⚠️ CRÍTICO: SEMPRE repasse exatamente o que o cliente disse ("amanhã", "próxima terça", etc.) que o sistema converte automaticamente usando a data atual.',
           },
           time: {
             type: 'string',
@@ -1961,33 +1962,6 @@ async function executeAIOnlyWorkflow(
       },
     }
 
-    // Função auxiliar para obter data/hora atual no fuso horário do Brasil
-    // Usa a API nativa do JavaScript para obter o horário correto do Brasil
-    const getBrazilianDate = (): Date => {
-      const now = new Date()
-      // Obtém componentes de data/hora no fuso horário do Brasil
-      const brazilianParts = new Intl.DateTimeFormat('pt-BR', {
-        timeZone: 'America/Sao_Paulo',
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-      }).formatToParts(now)
-      
-      // Cria uma data local com os componentes do Brasil (para comparação)
-      const year = parseInt(brazilianParts.find(p => p.type === 'year')!.value)
-      const month = parseInt(brazilianParts.find(p => p.type === 'month')!.value) - 1
-      const day = parseInt(brazilianParts.find(p => p.type === 'day')!.value)
-      const hour = parseInt(brazilianParts.find(p => p.type === 'hour')!.value)
-      const minute = parseInt(brazilianParts.find(p => p.type === 'minute')!.value)
-      const second = parseInt(brazilianParts.find(p => p.type === 'second')!.value)
-      
-      return new Date(year, month, day, hour, minute, second)
-    }
-    
     // Função auxiliar para criar uma data no fuso horário do Brasil e converter para UTC
     // Recebe componentes de data/hora no horário do Brasil e retorna um Date em UTC
     const createBrazilianDateAsUTC = (year: number, month: number, day: number, hour: number, minute: number): Date => {
@@ -2020,47 +1994,10 @@ async function executeAIOnlyWorkflow(
       }
     }
 
-    // Função auxiliar para calcular a próxima ocorrência de um dia da semana
-    // Se forceNextWeek = true, SEMPRE pega da próxima semana (adiciona 7 dias à primeira ocorrência)
-    const getNextWeekday = (targetDayOfWeek: number, forceNextWeek: boolean = false): Date => {
-      const baseDate = getBrazilianDate()
-      const baseDayOfWeek = baseDate.getDay()
-      
-      // Calcula quantos dias até a próxima ocorrência do dia da semana
-      let daysUntilTarget = (targetDayOfWeek - baseDayOfWeek + 7) % 7
-      
-      // Se for 0, significa que é hoje, então pega a próxima ocorrência (7 dias)
-      if (daysUntilTarget === 0) {
-        daysUntilTarget = 7
-      }
-      
-      // Se forceNextWeek = true, adiciona mais 7 dias para garantir que seja da próxima semana
-      if (forceNextWeek) {
-        daysUntilTarget += 7
-      }
-      
-      const result = new Date(baseDate)
-      result.setHours(12, 0, 0, 0)
-      result.setDate(baseDate.getDate() + daysUntilTarget)
-      
-      // Validação: verifica se o dia da semana está correto
-      const resultDayOfWeek = result.getDay()
-      if (resultDayOfWeek !== targetDayOfWeek) {
-        console.error(`❌ ERRO: Dia da semana não corresponde! Esperado: ${targetDayOfWeek}, Obtido: ${resultDayOfWeek}`)
-        // Corrige manualmente se necessário
-        const correction = (targetDayOfWeek - resultDayOfWeek + 7) % 7
-        result.setDate(result.getDate() + correction)
-      }
-      
-      console.log(`📅 getNextWeekday: hoje=${baseDate.toLocaleDateString('pt-BR')} (${baseDayOfWeek}), alvo=${targetDayOfWeek}, forceNextWeek=${forceNextWeek}, dias=${daysUntilTarget}, resultado=${result.toLocaleDateString('pt-BR')} (${result.getDay()})`)
-      
-      return result
-    }
-
     // Função auxiliar para converter datas relativas em português
     const parsePortugueseDate = (dateStr: string): Date | null => {
       const lower = dateStr.toLowerCase().trim()
-      const nowBrazilian = getBrazilianDate() // Usa horário do Brasil
+      const nowBrazilian = getBrazilDate() // Usa horário do Brasil
       
       // Extrai hora se mencionada (ex: "5 da tarde", "17h", "17:00", "meio-dia")
       let targetHour = 14 // Padrão: 14:00
@@ -2104,131 +2041,17 @@ async function executeAIOnlyWorkflow(
         }
       }
       
-      // CRÍTICO: Verifica primeiro se mencionou "próxima" + dia da semana
-      // Se sim, sempre pega a próxima semana (não a atual)
-      const isNextWeek = lower.includes('próxima') || lower.includes('proxima')
-      
-      // Dias da semana em português (calcula a próxima ocorrência)
-      const weekdays: Record<string, number> = {
-        'domingo': 0,
-        'segunda': 1, 'segunda-feira': 1, 'segunda feira': 1,
-        'terça': 2, 'terça-feira': 2, 'terca': 2, 'terca-feira': 2, 'terça feira': 2, 'terca feira': 2,
-        'quarta': 3, 'quarta-feira': 3, 'quarta feira': 3,
-        'quinta': 4, 'quinta-feira': 4, 'quinta feira': 4,
-        'sexta': 5, 'sexta-feira': 5, 'sexta feira': 5,
-        'sábado': 6, 'sabado': 6,
-      }
-      
-      for (const [dayName, dayOfWeek] of Object.entries(weekdays)) {
-        if (lower.includes(dayName)) {
-          // CRÍTICO: Se mencionou "próxima", sempre força próxima semana (não esta semana)
-          const nextDate = getNextWeekday(dayOfWeek, isNextWeek)
-          console.log(`📅 Parseado "${dayName}" (flag próxima=${isNextWeek}) → ocorrência: ${nextDate.getDate()}/${nextDate.getMonth() + 1}/${nextDate.getFullYear()}`)
-          
-          const year = nextDate.getFullYear()
-          const month = nextDate.getMonth()
-          const day = nextDate.getDate()
-          console.log(`📅 Parseado "${dayName}" → próxima ocorrência: ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
-          const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
-          
-          // Validação: verifica se a data está correta após conversão
-          const brazilianCheck = utcToBrazilianComponents(utcDate)
-          console.log(`📅 Validação (UTC→Brasil): ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year}`)
-          if (brazilianCheck.month + 1 !== month + 1 || brazilianCheck.day !== day || brazilianCheck.year !== year) {
-            console.error(`⚠️ AVISO: Data pode estar incorreta após conversão! Esperado: ${day}/${month + 1}/${year}, Obtido: ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year}`)
-          }
-          
-          return utcDate
-        }
-      }
-      
-      // Datas relativas em português (usando horário do Brasil)
-      if (lower.includes('amanhã') || lower.includes('amanha')) {
-        // Obtém a data atual no fuso do Brasil usando Intl para garantir precisão
-        const now = new Date()
-        const brazilianParts = new Intl.DateTimeFormat('pt-BR', {
-          timeZone: 'America/Sao_Paulo',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        }).formatToParts(now)
-        
-        const currentYear = parseInt(brazilianParts.find(p => p.type === 'year')!.value)
-        const currentMonth = parseInt(brazilianParts.find(p => p.type === 'month')!.value) - 1 // JavaScript usa 0-11
-        const currentDay = parseInt(brazilianParts.find(p => p.type === 'day')!.value)
-        
-        // Cria uma data temporária para calcular amanhã corretamente
-        // Usa os componentes brasileiros diretamente
-        const tempDate = new Date(currentYear, currentMonth, currentDay)
-        tempDate.setDate(tempDate.getDate() + 1)
-        
-        const year = tempDate.getFullYear()
-        const month = tempDate.getMonth() // 0-11
-        const day = tempDate.getDate()
-        
-        console.log(`📅 Parseado "amanhã" (Brasil):`)
-        console.log(`   Data atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear}`)
-        console.log(`   Amanhã calculado: ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
-        
+      // Usa utilitário compartilhado (estilo Midas) para converter datas relativas
+      const relativeDate = parseRelativeDate(lower)
+      if (relativeDate) {
+        const year = relativeDate.getFullYear()
+        const month = relativeDate.getMonth()
+        const day = relativeDate.getDate()
         const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
-        console.log(`📅 Convertido para UTC: ${utcDate.toISOString()}`)
-        const brazilianCheck = utcToBrazilianComponents(utcDate)
-        console.log(`📅 UTC convertido de volta para Brasil: ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year} às ${brazilianCheck.hour}:${brazilianCheck.minute.toString().padStart(2, '0')}`)
-        
-        // Validação: verifica se o mês está correto após conversão
-        if (brazilianCheck.month + 1 !== month + 1 || brazilianCheck.day !== day || brazilianCheck.year !== year) {
-          console.error(`⚠️ AVISO: Data pode estar incorreta após conversão! Esperado: ${day}/${month + 1}/${year}, Obtido: ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year}`)
-        }
-        
+        console.log(`📅 parseRelativeDate → ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
         return utcDate
       }
-      if (lower.includes('hoje')) {
-        // Obtém a data atual no fuso do Brasil usando Intl para garantir precisão
-        const now = new Date()
-        const brazilianParts = new Intl.DateTimeFormat('pt-BR', {
-          timeZone: 'America/Sao_Paulo',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        }).formatToParts(now)
-        
-        const year = parseInt(brazilianParts.find(p => p.type === 'year')!.value)
-        const month = parseInt(brazilianParts.find(p => p.type === 'month')!.value) - 1 // JavaScript usa 0-11
-        const day = parseInt(brazilianParts.find(p => p.type === 'day')!.value)
-        
-        console.log(`📅 Parseado "hoje" (Brasil): ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
-        const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
-        return utcDate
-      }
-      if (lower.includes('depois de amanhã') || lower.includes('depois de amanha')) {
-        // Obtém a data atual no fuso do Brasil usando Intl para garantir precisão
-        const now = new Date()
-        const brazilianParts = new Intl.DateTimeFormat('pt-BR', {
-          timeZone: 'America/Sao_Paulo',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-        }).formatToParts(now)
-        
-        const currentYear = parseInt(brazilianParts.find(p => p.type === 'year')!.value)
-        const currentMonth = parseInt(brazilianParts.find(p => p.type === 'month')!.value) - 1 // JavaScript usa 0-11
-        const currentDay = parseInt(brazilianParts.find(p => p.type === 'day')!.value)
-        
-        // Cria uma data temporária para calcular depois de amanhã corretamente
-        const tempDate = new Date(currentYear, currentMonth, currentDay)
-        tempDate.setDate(tempDate.getDate() + 2)
-        
-        const year = tempDate.getFullYear()
-        const month = tempDate.getMonth() // 0-11
-        const day = tempDate.getDate()
-        
-        console.log(`📅 Parseado "depois de amanhã" (Brasil):`)
-        console.log(`   Data atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear}`)
-        console.log(`   Depois de amanhã calculado: ${day}/${month + 1}/${year} às ${targetHour}:${targetMinute.toString().padStart(2, '0')}`)
-        const utcDate = createBrazilianDateAsUTC(year, month, day, targetHour, targetMinute)
-        return utcDate
-      }
-      
+
       // Tenta parsear como ISO primeiro
       const isoDate = new Date(dateStr)
       if (!isNaN(isoDate.getTime())) {
@@ -2471,7 +2294,7 @@ async function executeAIOnlyWorkflow(
             let year = parseInt(dateMatch[3])
           
           // Cria a data no horário do Brasil
-          const nowBrazilian = getBrazilianDate()
+          const nowBrazilian = getBrazilDate()
           const currentYear = nowBrazilian.getFullYear()
           
           // Corrige o ano se necessário
@@ -2505,7 +2328,7 @@ async function executeAIOnlyWorkflow(
           
           
           // Cria a data no horário do Brasil para comparação
-          const nowBrazilian = getBrazilianDate()
+          const nowBrazilian = getBrazilDate()
           const currentYear = nowBrazilian.getFullYear()
           const currentMonth = nowBrazilian.getMonth()
           const currentDay = nowBrazilian.getDate()
