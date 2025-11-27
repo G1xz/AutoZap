@@ -1946,7 +1946,7 @@ async function executeAIOnlyWorkflow(
         properties: {
           date: {
             type: 'string',
-            description: 'Data do agendamento no formato DD/MM/YYYY (ex: "24/11/2025", "30/12/2025"). Se o cliente disser "amanhã", calcule a data de amanhã no formato DD/MM/YYYY. Se disser "hoje", use a data de hoje. Se disser "depois de amanhã", calcule a data correspondente.',
+            description: 'Data do agendamento no formato DD/MM/YYYY (ex: "24/11/2025", "30/12/2025"). ⚠️ CRÍTICO: Você DEVE calcular a data correta baseado na data atual. Se o cliente disser "amanhã", calcule a data de amanhã. Se disser "próxima segunda-feira" ou "próxima segunda", calcule qual será a data da próxima segunda-feira a partir de hoje e passe no formato DD/MM/YYYY. Se disser "próxima terça-feira", calcule a próxima terça-feira. SEMPRE calcule a data correta e passe no formato DD/MM/YYYY. Use a data atual como referência para seus cálculos.',
           },
           time: {
             type: 'string',
