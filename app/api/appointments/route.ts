@@ -176,29 +176,66 @@ export async function POST(request: NextRequest) {
     const appointmentId = result.appointment.id
 
     if (status && status !== 'pending') {
-      await prisma.appointment.update({
-        where: { id: appointmentId },
-        data: { status },
-      })
+      try {
+        await prisma.appointment.update({
+          where: { id: appointmentId },
+          data: { status },
+        })
+      } catch (updateError: any) {
+        if (updateError.code === 'P2022' || updateError.message?.includes('endDate')) {
+          console.warn('⚠️ [POST /api/appointments] Não foi possível atualizar status com Prisma (sem endDate). Atualizando via SQL raw.')
+          await prisma.$executeRawUnsafe(
+            `UPDATE "Appointment" SET status = $1 WHERE id = $2`,
+            status,
+            appointmentId
+          )
+        } else {
+          throw updateError
+        }
+      }
     }
 
-    const createdAppointment = await prisma.appointment.findUnique({
-      where: { id: appointmentId },
-      select: {
-        id: true,
-        userId: true,
-        instanceId: true,
-        contactNumber: true,
-        contactName: true,
-        date: true,
-        endDate: true,
-        duration: true,
-        description: true,
-        status: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    })
+    let createdAppointment
+    try {
+      createdAppointment = await prisma.appointment.findUnique({
+        where: { id: appointmentId },
+        select: {
+          id: true,
+          userId: true,
+          instanceId: true,
+          contactNumber: true,
+          contactName: true,
+          date: true,
+          endDate: true,
+          duration: true,
+          description: true,
+          status: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
+    } catch (selectError: any) {
+      if (selectError.code === 'P2022' || selectError.message?.includes('endDate')) {
+        console.warn('⚠️ [POST /api/appointments] Não foi possível buscar agendamento com endDate/duration. Buscando apenas campos existentes.')
+        createdAppointment = await prisma.appointment.findUnique({
+          where: { id: appointmentId },
+          select: {
+            id: true,
+            userId: true,
+            instanceId: true,
+            contactNumber: true,
+            contactName: true,
+            date: true,
+            description: true,
+            status: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        })
+      } else {
+        throw selectError
+      }
+    }
 
     return NextResponse.json(createdAppointment)
   } catch (error) {
