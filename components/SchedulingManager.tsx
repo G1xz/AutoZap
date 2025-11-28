@@ -24,6 +24,22 @@ interface Appointment {
   instanceName?: string
 }
 
+interface AppointmentServiceOption {
+  name: string
+  duration?: number | null
+  imageUrl?: string | null
+}
+
+interface CreateAppointmentFormState {
+  contactName: string
+  contactNumber: string
+  description: string
+  status: string
+  dateTime: string
+  duration: string
+  serviceName: string
+}
+
 export default function SchedulingManager() {
   const { data: session } = useSession()
   const { toast } = useToast()
@@ -36,14 +52,17 @@ export default function SchedulingManager() {
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [createLoading, setCreateLoading] = useState(false)
-  const [createForm, setCreateForm] = useState({
+  const [createForm, setCreateForm] = useState<CreateAppointmentFormState>({
     contactName: '',
     contactNumber: '',
     description: '',
-    status: 'pending',
+    status: 'confirmed',
     dateTime: '',
     duration: '60',
+    serviceName: '',
   })
+  const [appointmentServices, setAppointmentServices] = useState<AppointmentServiceOption[]>([])
+  const [servicesLoading, setServicesLoading] = useState(false)
 
   useEffect(() => {
     fetchAppointments()
@@ -63,6 +82,28 @@ export default function SchedulingManager() {
       toast.error('Erro ao buscar agendamentos')
     } finally {
       setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchAppointmentServices()
+  }, [])
+
+  const fetchAppointmentServices = async () => {
+    try {
+      setServicesLoading(true)
+      const response = await fetch('/api/appointment-services')
+      if (response.ok) {
+        const data = await response.json()
+        setAppointmentServices(data.services || [])
+      } else {
+        toast.error('Erro ao buscar serviços com agendamento')
+      }
+    } catch (error) {
+      console.error('Erro ao buscar serviços com agendamento:', error)
+      toast.error('Erro ao buscar serviços com agendamento')
+    } finally {
+      setServicesLoading(false)
     }
   }
 
@@ -124,11 +165,31 @@ export default function SchedulingManager() {
     }
   }
 
-  const handleCreateInputChange = (field: string, value: string) => {
+  const handleCreateInputChange = (field: keyof CreateAppointmentFormState, value: string) => {
     setCreateForm((prev) => ({
       ...prev,
       [field]: value,
     }))
+  }
+
+  const handleServiceChange = (value: string) => {
+    setCreateForm((prev) => {
+      const updated: CreateAppointmentFormState = {
+        ...prev,
+        serviceName: value,
+      }
+      const service = appointmentServices.find((s) => s.name === value)
+      if (service?.duration) {
+        updated.duration = service.duration.toString()
+      }
+      if (value && !prev.description) {
+        updated.description = value
+      }
+      if (!value) {
+        // Keep duration as user-set value (already stored)
+      }
+      return updated
+    })
   }
 
   const resetCreateForm = () => {
@@ -136,9 +197,10 @@ export default function SchedulingManager() {
       contactName: '',
       contactNumber: '',
       description: '',
-      status: 'pending',
+    status: 'confirmed',
       dateTime: '',
     duration: '60',
+    serviceName: '',
     })
   }
 
@@ -150,17 +212,26 @@ export default function SchedulingManager() {
     }
 
     try {
+      const service = createForm.serviceName
+        ? appointmentServices.find((srv) => srv.name === createForm.serviceName)
+        : undefined
       setCreateLoading(true)
       const isoDate = new Date(createForm.dateTime).toISOString()
+      const finalDescription = createForm.description || createForm.serviceName || ''
+      const durationNumber = Number(createForm.duration)
+      const finalDuration =
+        Number.isFinite(durationNumber) && durationNumber > 0
+          ? durationNumber
+          : service?.duration ?? 60
       const response = await fetch('/api/appointments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contactName: createForm.contactName,
           contactNumber: createForm.contactNumber,
-          description: createForm.description,
+          description: finalDescription,
           status: createForm.status,
-          duration: Number(createForm.duration),
+          duration: finalDuration,
           dateTime: isoDate,
         }),
       })
@@ -343,6 +414,10 @@ export default function SchedulingManager() {
   const emptyStateMessage = isDayFilterActive
     ? 'Nenhum agendamento para esta data.'
     : 'Nenhum agendamento próximo.'
+  const selectedService = createForm.serviceName
+    ? appointmentServices.find((service) => service.name === createForm.serviceName)
+    : undefined
+  const isDurationLocked = !!(selectedService && selectedService.duration)
 
   return (
     <>
@@ -397,6 +472,31 @@ export default function SchedulingManager() {
               />
             </div>
             <div className="grid gap-2">
+              <label className="text-sm font-medium text-gray-700">Serviço</label>
+              <select
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-autozap-primary focus:outline-none"
+                value={createForm.serviceName}
+                onChange={(e) => handleServiceChange(e.target.value)}
+                disabled={servicesLoading}
+              >
+                <option value="">Sem serviço (preencher manualmente)</option>
+                {appointmentServices.map((service) => (
+                  <option key={service.name} value={service.name}>
+                    {service.name}
+                    {service.duration ? ` (${service.duration} min)` : ''}
+                  </option>
+                ))}
+              </select>
+              {!servicesLoading && appointmentServices.length === 0 && (
+                <span className="text-xs text-gray-500">
+                  Nenhum serviço com agendamento configurado no catálogo.
+                </span>
+              )}
+              {servicesLoading && (
+                <span className="text-xs text-gray-500">Carregando serviços...</span>
+              )}
+            </div>
+            <div className="grid gap-2">
               <label className="text-sm font-medium text-gray-700">Duração (minutos)</label>
               <input
                 type="number"
@@ -405,7 +505,13 @@ export default function SchedulingManager() {
                 className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-autozap-primary focus:outline-none"
                 value={createForm.duration}
                 onChange={(e) => handleCreateInputChange('duration', e.target.value)}
+                disabled={isDurationLocked}
               />
+              {isDurationLocked && selectedService?.duration && (
+                <span className="text-xs text-gray-500">
+                  Duração definida automaticamente pelo serviço selecionado ({selectedService.duration} min).
+                </span>
+              )}
             </div>
             <div className="grid gap-2">
               <label className="text-sm font-medium text-gray-700">Status</label>

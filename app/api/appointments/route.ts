@@ -128,7 +128,7 @@ export async function POST(request: NextRequest) {
       description,
       dateTime,
       duration,
-      status = 'pending',
+      status = 'confirmed',
     } = body
 
     if (!contactNumber || !dateTime) {
