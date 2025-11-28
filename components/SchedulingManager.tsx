@@ -276,10 +276,10 @@ export default function SchedulingManager() {
           <h2 className="text-xl font-semibold text-gray-900">Agenda</h2>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:items-stretch">
         {/* Calendário */}
-        <div className="lg:col-span-2">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
+        <div className="lg:col-span-2 h-full">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 h-full flex flex-col">
             {/* Navegação do mês */}
             <div className="flex items-center justify-between mb-4">
               <button
@@ -344,7 +344,7 @@ export default function SchedulingManager() {
 
         {/* Lista dinâmica (próximos ou filtro por dia) */}
         <div className="lg:col-span-1">
-          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 sticky top-4">
+          <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 h-full flex flex-col sticky top-4">
             <div className="flex items-center justify-between mb-4 gap-2">
               <h3 className="text-lg font-semibold text-gray-900">
                 {sidebarTitle}
@@ -359,11 +359,11 @@ export default function SchedulingManager() {
               )}
             </div>
             {appointmentsToDisplay.length === 0 ? (
-              <p className="text-sm text-gray-500 text-center py-4">
+              <p className="text-sm text-gray-500 text-center py-4 flex-1 flex items-center justify-center">
                 {emptyStateMessage}
               </p>
             ) : (
-              <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+              <div className="space-y-3 overflow-y-auto pr-1 flex-1">
                 {appointmentsToDisplay.map((appointment) => {
                   const utcDate = new Date(appointment.date)
                   const aptDateBrazilian = utcToBrazilian(utcDate)
