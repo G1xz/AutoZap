@@ -74,7 +74,7 @@ export function groupConsecutiveTimes(times: string[], durationMinutes: number =
 
 export interface CreateAppointmentParams {
   userId: string
-  instanceId: string
+  instanceId: string | null
   contactNumber: string
   contactName?: string
   date: Date // Horário de INÍCIO
@@ -158,7 +158,7 @@ export async function createAppointment(params: CreateAppointmentParams) {
       appointment = await prisma.appointment.create({
       data: {
         userId: params.userId,
-        instanceId: params.instanceId,
+        instanceId: params.instanceId || null,
         contactNumber: params.contactNumber,
         contactName: params.contactName,
           date: params.date, // Horário de início

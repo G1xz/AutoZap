@@ -4,7 +4,15 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useToast } from '@/hooks/use-toast'
 import { useConfirmDialog } from '@/hooks/use-confirm-dialog'
-import { Check, X, Trash2, CheckCircle2 } from 'lucide-react'
+import { Check, X, Trash2, CheckCircle2, Plus } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 interface Appointment {
   id: string
@@ -26,6 +34,16 @@ export default function SchedulingManager() {
   const [filteredDate, setFilteredDate] = useState<Date | null>(null)
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [createLoading, setCreateLoading] = useState(false)
+  const [createForm, setCreateForm] = useState({
+    contactName: '',
+    contactNumber: '',
+    description: '',
+    status: 'pending',
+    dateTime: '',
+    duration: '60',
+  })
 
   useEffect(() => {
     fetchAppointments()
@@ -103,6 +121,64 @@ export default function SchedulingManager() {
       toast.error(error instanceof Error ? error.message : 'Erro ao excluir agendamento')
     } finally {
       setActionInProgress(null)
+    }
+  }
+
+  const handleCreateInputChange = (field: string, value: string) => {
+    setCreateForm((prev) => ({
+      ...prev,
+      [field]: value,
+    }))
+  }
+
+  const resetCreateForm = () => {
+    setCreateForm({
+      contactName: '',
+      contactNumber: '',
+      description: '',
+      status: 'pending',
+      dateTime: '',
+    duration: '60',
+    })
+  }
+
+  const handleCreateAppointment = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!createForm.contactNumber || !createForm.dateTime) {
+      toast.error('Informe telefone e data/horário.')
+      return
+    }
+
+    try {
+      setCreateLoading(true)
+      const isoDate = new Date(createForm.dateTime).toISOString()
+      const response = await fetch('/api/appointments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contactName: createForm.contactName,
+          contactNumber: createForm.contactNumber,
+          description: createForm.description,
+          status: createForm.status,
+          duration: Number(createForm.duration),
+          dateTime: isoDate,
+        }),
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.error || 'Erro ao criar agendamento.')
+      }
+
+      toast.success('Agendamento criado com sucesso!')
+      setIsCreateModalOpen(false)
+      resetCreateForm()
+      fetchAppointments()
+    } catch (error) {
+      console.error('Erro ao criar agendamento manual:', error)
+      toast.error(error instanceof Error ? error.message : 'Erro ao criar agendamento.')
+    } finally {
+      setCreateLoading(false)
     }
   }
 
@@ -271,9 +347,122 @@ export default function SchedulingManager() {
   return (
     <>
       <ConfirmDialog />
+      <Dialog open={isCreateModalOpen} onOpenChange={(open) => {
+        setIsCreateModalOpen(open)
+        if (!open) {
+          resetCreateForm()
+        }
+      }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Novo agendamento manual</DialogTitle>
+            <DialogDescription>
+              Crie um agendamento diretamente, sem passar pelo WhatsApp.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={handleCreateAppointment}>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium text-gray-700">Nome do contato</label>
+              <input
+                type="text"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-autozap-primary focus:outline-none"
+                value={createForm.contactName}
+                onChange={(e) => handleCreateInputChange('contactName', e.target.value)}
+                placeholder="Ex: João Silva"
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium text-gray-700">
+                Telefone / WhatsApp <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="tel"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-autozap-primary focus:outline-none"
+                value={createForm.contactNumber}
+                onChange={(e) => handleCreateInputChange('contactNumber', e.target.value)}
+                placeholder="5599999999999"
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium text-gray-700">
+                Data e horário <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="datetime-local"
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-autozap-primary focus:outline-none"
+                value={createForm.dateTime}
+                onChange={(e) => handleCreateInputChange('dateTime', e.target.value)}
+                required
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium text-gray-700">Duração (minutos)</label>
+              <input
+                type="number"
+                min={15}
+                step={15}
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-autozap-primary focus:outline-none"
+                value={createForm.duration}
+                onChange={(e) => handleCreateInputChange('duration', e.target.value)}
+              />
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium text-gray-700">Status</label>
+              <select
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-autozap-primary focus:outline-none"
+                value={createForm.status}
+                onChange={(e) => handleCreateInputChange('status', e.target.value)}
+              >
+                <option value="pending">Pendente</option>
+                <option value="confirmed">Confirmado</option>
+                <option value="completed">Concluído</option>
+                <option value="cancelled">Cancelado</option>
+              </select>
+            </div>
+            <div className="grid gap-2">
+              <label className="text-sm font-medium text-gray-700">Descrição / Serviço</label>
+              <textarea
+                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-autozap-primary focus:outline-none"
+                rows={3}
+                value={createForm.description}
+                onChange={(e) => handleCreateInputChange('description', e.target.value)}
+                placeholder="Ex: Confronto Abissal"
+              />
+            </div>
+            <DialogFooter className="!flex !flex-row !justify-end space-x-2 pt-2">
+              <button
+                type="button"
+                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
+                onClick={() => {
+                  setIsCreateModalOpen(false)
+                  resetCreateForm()
+                }}
+                disabled={createLoading}
+              >
+                Cancelar
+              </button>
+              <button
+                type="submit"
+                className="rounded-lg bg-autozap-primary px-4 py-2 text-sm font-semibold text-white hover:bg-autozap-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={createLoading}
+              >
+                {createLoading ? 'Salvando...' : 'Criar agendamento'}
+              </button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <div className="space-y-6">
-        <div className="flex justify-between items-center">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-xl font-semibold text-gray-900">Agenda</h2>
+          <button
+            onClick={() => setIsCreateModalOpen(true)}
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-autozap-primary px-4 py-2 text-sm font-medium text-white transition hover:bg-autozap-primary/90"
+          >
+            <Plus className="h-4 w-4" />
+            Novo agendamento
+          </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 lg:items-stretch">
