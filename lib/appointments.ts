@@ -108,11 +108,7 @@ export async function createAppointment(params: CreateAppointmentParams) {
     }
 
     if (!params.instanceId) {
-      console.error('❌ instanceId é obrigatório')
-      return {
-        success: false,
-        error: 'instanceId é obrigatório',
-      }
+      console.warn('⚠️ instanceId não informado - criando agendamento sem vincular a uma instância específica')
     }
 
     if (!params.contactNumber) {
