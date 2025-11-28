@@ -72,6 +72,9 @@ export async function DELETE(
 
     await prisma.appointment.delete({
       where: { id: params.id },
+      select: {
+        id: true,
+      },
     })
 
     return NextResponse.json({ success: true, message: 'Agendamento excluído com sucesso' })

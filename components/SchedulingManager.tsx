@@ -22,7 +22,8 @@ export default function SchedulingManager() {
   const { confirm, ConfirmDialog } = useConfirmDialog()
   const [appointments, setAppointments] = useState<Appointment[]>([])
   const [loading, setLoading] = useState(true)
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date())
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [filteredDate, setFilteredDate] = useState<Date | null>(null)
   const [currentMonth, setCurrentMonth] = useState(new Date())
   const [actionInProgress, setActionInProgress] = useState<string | null>(null)
 
@@ -210,6 +211,17 @@ export default function SchedulingManager() {
     })
   }
 
+  const handleDaySelection = (day: Date | null) => {
+    if (!day) return
+    setSelectedDate(day)
+    setFilteredDate(day)
+  }
+
+  const resetDayFilter = () => {
+    setFilteredDate(null)
+    setSelectedDate(null)
+  }
+
   const getUpcomingAppointments = () => {
     const nowBrazilian = utcToBrazilian(new Date()) // Horário atual no Brasil
     return appointments
@@ -219,28 +231,6 @@ export default function SchedulingManager() {
         return aptDateBrazilian >= nowBrazilian && apt.status !== 'cancelled'
       })
       .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      .slice(0, 5)
-  }
-
-  const getSelectedDateAppointments = () => {
-    // Usa horário do Brasil para comparar datas
-    const dateStr = selectedDate.toLocaleDateString('pt-BR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      timeZone: 'America/Sao_Paulo',
-    })
-    return appointments.filter(apt => {
-      const utcDate = new Date(apt.date)
-      const brazilianDate = utcToBrazilian(utcDate)
-      const aptDateStr = brazilianDate.toLocaleDateString('pt-BR', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        timeZone: 'America/Sao_Paulo',
-      })
-      return aptDateStr === dateStr
-    }).sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
   }
 
   const navigateMonth = (direction: 'prev' | 'next') => {
@@ -268,7 +258,15 @@ export default function SchedulingManager() {
 
   const days = getDaysInMonth(currentMonth)
   const upcomingAppointments = getUpcomingAppointments()
-  const selectedDateAppointments = getSelectedDateAppointments()
+  const isDayFilterActive = !!filteredDate
+  const filteredAppointments = filteredDate ? getAppointmentsForDate(filteredDate) : []
+  const appointmentsToDisplay = isDayFilterActive ? filteredAppointments : upcomingAppointments
+  const sidebarTitle = isDayFilterActive && filteredDate
+    ? `Agendamentos de ${filteredDate.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' })}`
+    : 'Próximos Agendamentos'
+  const emptyStateMessage = isDayFilterActive
+    ? 'Nenhum agendamento para esta data.'
+    : 'Nenhum agendamento próximo.'
 
   return (
     <>
@@ -315,12 +313,12 @@ export default function SchedulingManager() {
               {days.map((day, index) => {
                 const dayAppointments = getAppointmentsForDate(day)
                 const isToday = day && day.toDateString() === new Date().toDateString()
-                const isSelected = day && day.toDateString() === selectedDate.toDateString()
+                const isSelected = !!(day && selectedDate && day.toDateString() === selectedDate.toDateString())
 
                 return (
                   <button
                     key={index}
-                    onClick={() => day && setSelectedDate(day)}
+                    onClick={() => handleDaySelection(day)}
                     className={`
                       aspect-square p-2 rounded border transition-all
                       ${!day ? 'border-transparent' : 'border-gray-200 hover:border-autozap-primary'}
@@ -342,107 +340,31 @@ export default function SchedulingManager() {
             </div>
           </div>
 
-          {/* Agendamentos do dia selecionado */}
-          <div className="mt-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-3">
-              Agendamentos de {selectedDate.toLocaleDateString('pt-BR', { 
-                day: '2-digit', 
-                month: 'long', 
-                year: 'numeric' 
-              })}
-            </h3>
-            {selectedDateAppointments.length === 0 ? (
-              <p className="text-center text-gray-500 py-8 bg-white border border-gray-200 rounded-lg">
-                Nenhum agendamento para este dia.
-              </p>
-            ) : (
-              <div className="space-y-3">
-                {selectedDateAppointments.map((appointment) => {
-                  const isProcessing = actionInProgress === appointment.id
-                  return (
-                  <div
-                    key={appointment.id}
-                    className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm hover:shadow-md transition-shadow"
-                  >
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-3">
-                          <div className="text-lg font-semibold text-gray-900">
-                            {formatTime(appointment.date)}
-                          </div>
-                          <h3 className="font-semibold text-lg text-gray-900">
-                            {appointment.contactName || appointment.contactNumber}
-                          </h3>
-                        </div>
-                        <p className="text-sm text-gray-600 mt-1">{appointment.contactNumber}</p>
-                        {appointment.instanceName && (
-                          <p className="text-xs text-gray-500 mt-1">Conta: {appointment.instanceName}</p>
-                        )}
-                      </div>
-                      <span className={`px-2 py-1 rounded text-xs border ${getStatusColor(appointment.status)}`}>
-                        {getStatusLabel(appointment.status)}
-                      </span>
-                    </div>
-
-                    {appointment.description && (
-                      <p className="text-sm text-gray-600 mb-3">{appointment.description}</p>
-                    )}
-
-                    <div className="flex gap-2 items-center">
-                      {appointment.status === 'pending' && (
-                        <>
-                          <button
-                            onClick={() => handleStatusChange(appointment.id, 'confirmed')}
-                            disabled={isProcessing}
-                            className="flex-1 px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                          >
-                            Confirmar
-                          </button>
-                          <button
-                            onClick={() => handleStatusChange(appointment.id, 'cancelled')}
-                            disabled={isProcessing}
-                            className="flex-1 px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                          >
-                            Cancelar
-                          </button>
-                        </>
-                      )}
-                      {appointment.status === 'confirmed' && (
-                        <button
-                          onClick={() => handleStatusChange(appointment.id, 'completed')}
-                          disabled={isProcessing}
-                          className="flex-1 px-3 py-1 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                        >
-                          Marcar como Concluído
-                        </button>
-                      )}
-                      <button
-                        onClick={() => handleDelete(appointment.id)}
-                        disabled={isProcessing}
-                        className="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                        title="Excluir agendamento"
-                      >
-                        Excluir
-                      </button>
-                    </div>
-                  </div>
-                )})}
-              </div>
-            )}
-          </div>
         </div>
 
-        {/* Próximos agendamentos */}
+        {/* Lista dinâmica (próximos ou filtro por dia) */}
         <div className="lg:col-span-1">
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4 sticky top-4">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Próximos Agendamentos</h3>
-            {upcomingAppointments.length === 0 ? (
+            <div className="flex items-center justify-between mb-4 gap-2">
+              <h3 className="text-lg font-semibold text-gray-900">
+                {sidebarTitle}
+              </h3>
+              {isDayFilterActive && (
+                <button
+                  onClick={resetDayFilter}
+                  className="text-sm text-autozap-primary hover:underline"
+                >
+                  Ver próximos
+                </button>
+              )}
+            </div>
+            {appointmentsToDisplay.length === 0 ? (
               <p className="text-sm text-gray-500 text-center py-4">
-                Nenhum agendamento próximo.
+                {emptyStateMessage}
               </p>
             ) : (
-              <div className="space-y-3">
-                {upcomingAppointments.map((appointment) => {
+              <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
+                {appointmentsToDisplay.map((appointment) => {
                   const utcDate = new Date(appointment.date)
                   const aptDateBrazilian = utcToBrazilian(utcDate)
                   const nowBrazilian = utcToBrazilian(new Date())
