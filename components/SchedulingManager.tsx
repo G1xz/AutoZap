@@ -274,9 +274,9 @@ export default function SchedulingManager() {
     <>
       <ConfirmDialog />
       <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <h2 className="text-xl font-semibold text-gray-900">Agenda</h2>
-      </div>
+        <div className="flex justify-between items-center">
+          <h2 className="text-xl font-semibold text-gray-900">Agenda</h2>
+        </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Calendário */}
