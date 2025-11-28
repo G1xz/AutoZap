@@ -278,7 +278,7 @@ export default function SchedulingManager() {
           <h2 className="text-xl font-semibold text-gray-900">Agenda</h2>
         </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Calendário */}
         <div className="lg:col-span-2">
           <div className="bg-white border border-gray-200 rounded-lg shadow-sm p-4">
@@ -535,6 +535,7 @@ export default function SchedulingManager() {
           </div>
         </div>
       </div>
+    </div>
     </>
   )
 }
