@@ -874,7 +874,8 @@ export async function getUserAppointments(
 export async function updateAppointment(
   appointmentId: string,
   userId: string,
-  newDate: Date
+  newDate: Date,
+  newDuration?: number
 ) {
   try {
     // Verifica se o agendamento existe e pertence ao usuário
@@ -901,32 +902,42 @@ export async function updateAppointment(
       }
     }
 
+    const durationToUse =
+      newDuration && newDuration > 0
+        ? newDuration
+        : appointment.duration || 60
+
     // Atualiza o agendamento
-    // CRÍTICO: Tenta atualizar com endDate, mas se falhar, atualiza sem esse campo
+    // CRÍTICO: Tenta atualizar com endDate/duration, mas se falhar, atualiza sem esses campos
     let updated: any
     try {
-      // Calcula novo endDate baseado na duração existente
-      const newEndDate = appointment.duration 
-        ? new Date(newDate.getTime() + appointment.duration * 60000)
-        : new Date(newDate.getTime() + 60 * 60000) // Padrão 60min se não tiver duração
-      
+      const newEndDate = new Date(newDate.getTime() + durationToUse * 60000)
+      const updateData: any = {
+        date: newDate,
+        endDate: newEndDate,
+      }
+      if (newDuration && newDuration > 0) {
+        updateData.duration = newDuration
+      }
+
       updated = await prisma.appointment.update({
         where: { id: appointmentId },
-        data: {
-          date: newDate,
-          endDate: newEndDate,
-        },
+        data: updateData,
         select: {
           id: true,
           date: true,
           description: true,
           status: true,
+          duration: true,
         },
       })
     } catch (error: any) {
-      // Se falhar porque endDate não existe, atualiza sem esse campo
-      if (error.code === 'P2022' || error.message?.includes('endDate') || error.message?.includes('does not exist')) {
-        console.warn('⚠️ [updateAppointment] Coluna endDate não existe, atualizando sem esse campo')
+      if (
+        error.code === 'P2022' ||
+        error.message?.includes('endDate') ||
+        error.message?.includes('does not exist')
+      ) {
+        console.warn('⚠️ [updateAppointment] Coluna endDate/duration não existe, atualizando apenas data')
         updated = await prisma.appointment.update({
           where: { id: appointmentId },
           data: {
