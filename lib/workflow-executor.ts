@@ -67,6 +67,7 @@ interface PendingRescheduleRequest {
   userId: string
   instanceId: string
   contactNumber: string
+  contactName?: string | null
   previousDate: Date
   newDate: Date
   formattedPreviousDate: string
@@ -75,6 +76,7 @@ interface PendingRescheduleRequest {
   formattedNewTime: string
   duration: number
   serviceDescription?: string
+  previousStatus: string
   expiresAt: Date
 }
 
@@ -1247,17 +1249,27 @@ export async function processAppointmentConfirmation(
             return true
           }
           
-          const updateResult = await updateAppointment(
-            pendingReschedule.appointmentId,
-            pendingReschedule.userId,
-            pendingReschedule.newDate
-          )
+          // Cancela o agendamento atual antes de criar o novo
+          await prisma.appointment.update({
+            where: { id: pendingReschedule.appointmentId },
+            data: { status: 'cancelled' },
+          })
           
-          if (updateResult.success) {
+          const createResult = await createAppointment({
+            userId: pendingReschedule.userId,
+            instanceId: pendingReschedule.instanceId,
+            contactNumber: pendingReschedule.contactNumber,
+            contactName: pendingReschedule.contactName || undefined,
+            date: pendingReschedule.newDate,
+            duration: pendingReschedule.duration,
+            description: pendingReschedule.serviceDescription || 'Reagendamento',
+          })
+          
+          if (createResult.success && createResult.appointment) {
             const successMessage = [
-              '✅ Agendamento alterado com sucesso!',
+              '✅ Reagendamento concluído!',
               '',
-              'Antes:',
+              'Agendamento anterior cancelado:',
               `📅 ${pendingReschedule.formattedPreviousDate}`,
               `🕐 ${pendingReschedule.formattedPreviousTime}`,
               '',
@@ -1278,7 +1290,11 @@ export async function processAppointmentConfirmation(
             }
             return true
           } else {
-            const errorMessage = updateResult.error || 'Não consegui alterar esse horário agora. Pode tentar outro horário ou falar comigo novamente?'
+            await prisma.appointment.update({
+              where: { id: pendingReschedule.appointmentId },
+              data: { status: pendingReschedule.previousStatus },
+            })
+            const errorMessage = createResult.error || 'Não consegui criar o novo horário agora. Pode tentar outro horário ou falar comigo novamente?'
             const contactKey = `${instanceId}-${contactNumber}`
             await queueMessage(contactKey, async () => {
               await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
@@ -1287,6 +1303,10 @@ export async function processAppointmentConfirmation(
           }
         } catch (rescheduleError) {
           console.error('❌ [processAppointmentConfirmation] Erro ao processar reagendamento:', rescheduleError)
+          await prisma.appointment.update({
+            where: { id: pendingReschedule.appointmentId },
+            data: { status: pendingReschedule.previousStatus },
+          })
           const errorMessage = 'Tive um problema para alterar o horário agora. Pode me informar novamente o horário desejado?'
           const contactKey = `${instanceId}-${contactNumber}`
           await queueMessage(contactKey, async () => {
@@ -2794,6 +2814,7 @@ async function executeAIOnlyWorkflow(
               userId,
               instanceId,
               contactNumber: normalizedContactNumber,
+              contactName: contactNameFinal || contactName || null,
               previousDate: existingDate,
               newDate: appointmentDateUTC,
               formattedPreviousDate: formattedExistingDate,
@@ -2802,6 +2823,7 @@ async function executeAIOnlyWorkflow(
               formattedNewTime,
               duration: serviceDuration,
               serviceDescription: args.description || existingActiveAppointment.description || undefined,
+              previousStatus: existingActiveAppointment.status,
               expiresAt,
             })
             
@@ -2809,8 +2831,8 @@ async function executeAIOnlyWorkflow(
             
             const limitMessage = [
               `Você já tem um agendamento ativo em ${formattedExistingDate} às ${formattedExistingTime}.`,
-              `Para alterar para ${formattedNewDate} às ${formattedNewTime}, responda "confirmar".`,
-              `Se preferir outro horário, é só me avisar que ajusto novamente.`,
+              `Se quiser trocar para ${formattedNewDate} às ${formattedNewTime}, responda "confirmar" e eu cancelo o horário atual e crio um novo automaticamente.`,
+              `Caso prefira outro horário, é só me avisar que ajusto novamente.`,
             ].join(' ')
             
             return {
