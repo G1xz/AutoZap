@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
 import { useToast } from '@/hooks/use-toast'
 import { useConfirmDialog } from '@/hooks/use-confirm-dialog'
-import { Check, X, Trash2, CheckCircle2, Plus, RefreshCcw } from 'lucide-react'
+import { Check, X, Trash2, CheckCircle2, Plus } from 'lucide-react'
 import {
   Dialog,
   DialogContent,
@@ -22,7 +22,6 @@ interface Appointment {
   description: string | null
   status: string
   instanceName?: string
-  duration?: number | null
 }
 
 interface AppointmentServiceOption {
@@ -39,15 +38,6 @@ interface CreateAppointmentFormState {
   dateTime: string
   duration: string
   serviceName: string
-}
-
-interface RescheduleFormState {
-  appointmentId: string
-  contactName: string
-  contactNumber: string
-  description: string
-  dateTime: string
-  duration: string
 }
 
 export default function SchedulingManager() {
@@ -73,16 +63,6 @@ export default function SchedulingManager() {
   })
   const [appointmentServices, setAppointmentServices] = useState<AppointmentServiceOption[]>([])
   const [servicesLoading, setServicesLoading] = useState(false)
-  const [isRescheduleModalOpen, setIsRescheduleModalOpen] = useState(false)
-  const [rescheduleLoading, setRescheduleLoading] = useState(false)
-  const [rescheduleForm, setRescheduleForm] = useState<RescheduleFormState>({
-    appointmentId: '',
-    contactName: '',
-    contactNumber: '',
-    description: '',
-    dateTime: '',
-    duration: '60',
-  })
 
   useEffect(() => {
     fetchAppointments()
@@ -102,63 +82,6 @@ export default function SchedulingManager() {
       toast.error('Erro ao buscar agendamentos')
     } finally {
       setLoading(false)
-    }
-  }
-  const handleOpenReschedule = (appointment: Appointment) => {
-    const dateLocal = new Date(appointment.date)
-    const tzOffset = dateLocal.getTimezoneOffset()
-    const localISO = new Date(dateLocal.getTime() - tzOffset * 60000).toISOString().slice(0, 16)
-
-    setRescheduleForm({
-      appointmentId: appointment.id,
-      contactName: appointment.contactName || '',
-      contactNumber: appointment.contactNumber,
-      description: appointment.description || '',
-      dateTime: localISO,
-      duration: appointment.duration ? String(appointment.duration) : '60',
-    })
-    setIsRescheduleModalOpen(true)
-  }
-
-  const handleRescheduleInputChange = (field: keyof RescheduleFormState, value: string) => {
-    setRescheduleForm((prev) => ({
-      ...prev,
-      [field]: value,
-    }))
-  }
-
-  const handleRescheduleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault()
-    if (!rescheduleForm.appointmentId || !rescheduleForm.dateTime) {
-      toast.error('Informe a nova data/horário.')
-      return
-    }
-
-    try {
-      setRescheduleLoading(true)
-      const isoDate = new Date(rescheduleForm.dateTime).toISOString()
-      const response = await fetch(`/api/appointments/${rescheduleForm.appointmentId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          dateTime: isoDate,
-          duration: Number(rescheduleForm.duration) || 60,
-        }),
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Erro ao reagendar.')
-      }
-
-      toast.success('Agendamento reagendado com sucesso!')
-      setIsRescheduleModalOpen(false)
-      fetchAppointments()
-    } catch (error) {
-      console.error('Erro ao reagendar agendamento:', error)
-      toast.error(error instanceof Error ? error.message : 'Erro ao reagendar.')
-    } finally {
-      setRescheduleLoading(false)
     }
   }
 
@@ -636,75 +559,6 @@ export default function SchedulingManager() {
           </form>
         </DialogContent>
       </Dialog>
-      <Dialog open={isRescheduleModalOpen} onOpenChange={(open) => {
-        setIsRescheduleModalOpen(open)
-        if (!open) {
-          setRescheduleForm({
-            appointmentId: '',
-            contactName: '',
-            contactNumber: '',
-            description: '',
-            dateTime: '',
-            duration: '60',
-          })
-        }
-      }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Reagendar horário</DialogTitle>
-            <DialogDescription>
-              Ajuste data e horário de um agendamento existente.
-            </DialogDescription>
-          </DialogHeader>
-          <form className="space-y-4" onSubmit={handleRescheduleSubmit}>
-            <div className="grid gap-1 text-sm">
-              <span className="font-medium text-gray-700">Contato</span>
-              <span className="text-gray-900">{rescheduleForm.contactName || rescheduleForm.contactNumber}</span>
-              <span className="text-xs text-gray-500">{rescheduleForm.description}</span>
-            </div>
-            <div className="grid gap-2">
-              <label className="text-sm font-medium text-gray-700">
-                Nova data e horário <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="datetime-local"
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-autozap-primary focus:outline-none"
-                value={rescheduleForm.dateTime}
-                onChange={(e) => handleRescheduleInputChange('dateTime', e.target.value)}
-                required
-              />
-            </div>
-            <div className="grid gap-2">
-              <label className="text-sm font-medium text-gray-700">Duração (minutos)</label>
-              <input
-                type="number"
-                min={15}
-                step={15}
-                className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-autozap-primary focus:outline-none"
-                value={rescheduleForm.duration}
-                onChange={(e) => handleRescheduleInputChange('duration', e.target.value)}
-              />
-            </div>
-            <DialogFooter className="!flex !flex-row !justify-end space-x-2 pt-2">
-              <button
-                type="button"
-                className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-100"
-                onClick={() => setIsRescheduleModalOpen(false)}
-                disabled={rescheduleLoading}
-              >
-                Cancelar
-              </button>
-              <button
-                type="submit"
-                className="rounded-lg bg-autozap-primary px-4 py-2 text-sm font-semibold text-white hover:bg-autozap-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={rescheduleLoading}
-              >
-                {rescheduleLoading ? 'Salvando...' : 'Reagendar'}
-              </button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
       <div className="space-y-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <h2 className="text-xl font-semibold text-gray-900">Agenda</h2>
@@ -880,15 +734,6 @@ export default function SchedulingManager() {
                             <CheckCircle2 className="w-4 h-4" />
                           </button>
                         )}
-                        <button
-                          onClick={() => handleOpenReschedule(appointment)}
-                          disabled={isProcessing}
-                          className="w-8 h-8 flex items-center justify-center rounded-full border border-gray-300 bg-white text-gray-700 hover:bg-purple-50 hover:border-purple-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          title="Reagendar"
-                          aria-label="Reagendar"
-                        >
-                          <RefreshCcw className="w-4 h-4" />
-                        </button>
                         <button
                           onClick={() => handleDelete(appointment.id)}
                           disabled={isProcessing}

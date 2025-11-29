@@ -62,25 +62,6 @@ const workflowExecutions = new Map<string, WorkflowExecutionContext>()
 // Fila de mensagens por contato para garantir ordem de envio
 // Evita que mensagens sejam enviadas fora de ordem (ex: imagem depois de texto)
 const messageQueues = new Map<string, Promise<void>>()
-interface PendingRescheduleRequest {
-  appointmentId: string
-  userId: string
-  instanceId: string
-  contactNumber: string
-  contactName?: string | null
-  previousDate: Date
-  newDate: Date
-  formattedPreviousDate: string
-  formattedPreviousTime: string
-  formattedNewDate: string
-  formattedNewTime: string
-  duration: number
-  serviceDescription?: string
-  previousStatus: string
-  expiresAt: Date
-}
-
-const pendingReschedules = new Map<string, PendingRescheduleRequest>()
 
 /**
  * Adiciona uma mensagem à fila sequencial do contato
@@ -139,84 +120,6 @@ function replaceVariables(text: string, variables: Record<string, any>): string 
   result = result.replace(/\{\{datahora\}\}/g, `${dateStr} às ${timeStr}`)
 
   return result
-}
-
-function normalizeText(value: string): string {
-  return value
-    ? value
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-    : ''
-}
-
-function buildContactNumberVariants(rawNumber: string): string[] {
-  const variants = new Set<string>()
-
-  const addVariant = (value?: string) => {
-    if (value && value.trim()) {
-      variants.add(value.trim())
-    }
-  }
-
-  addVariant(rawNumber)
-
-  const digitsOnly = rawNumber ? rawNumber.replace(/\D/g, '') : ''
-  if (digitsOnly) {
-    addVariant(digitsOnly)
-
-    if (digitsOnly.startsWith('55')) {
-      addVariant(digitsOnly.substring(2))
-      addVariant(`+${digitsOnly}`)
-    } else {
-      const withCountry = `55${digitsOnly}`
-      addVariant(withCountry)
-      addVariant(`+${withCountry}`)
-    }
-  }
-
-  return Array.from(variants).filter(Boolean)
-}
-
-const RESCHEDULE_CONFIRMATION_KEYWORDS = ['sim', 'confirmo', 'confirmar', 'confirmado', 'confirmada', 'ok', 'certo', 'perfeito', 'fechado', 'beleza', 'claro']
-const RESCHEDULE_CONFIRMATION_PHRASES = ['isso mesmo', 'pode sim', 'tudo certo', 'pode deixar', 'manda ver', 'claro que sim']
-
-function hasRescheduleConfirmation(message?: string): boolean {
-  if (!message) return false
-  const normalized = normalizeText(message)
-  if (!normalized) return false
-
-  if (RESCHEDULE_CONFIRMATION_PHRASES.some((phrase) => normalized.includes(phrase))) {
-    return true
-  }
-
-  const padded = ` ${normalized} `
-  return RESCHEDULE_CONFIRMATION_KEYWORDS.some((keyword) => padded.includes(` ${keyword} `))
-}
-
-function formatBrazilianDateTime(date: Date): { date: string; time: string } {
-  const formattedDate = date.toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    timeZone: 'America/Sao_Paulo',
-  })
-  const formattedTime = date.toLocaleTimeString('pt-BR', {
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone: 'America/Sao_Paulo',
-  })
-  return { date: formattedDate, time: formattedTime }
-}
-
-function getRescheduleKey(instanceId: string, contactNumber: string) {
-  return `${instanceId}-${contactNumber}`
-}
-
-function clearPendingReschedule(key: string) {
-  if (pendingReschedules.has(key)) {
-    pendingReschedules.delete(key)
-  }
 }
 
 /**
@@ -1198,133 +1101,8 @@ export async function processAppointmentConfirmation(
         normalizedMessage.startsWith('confirmar') ||
       (userMessageLower.length <= 20 && (userMessageLower.includes('confirm') || normalizedMessage.includes('confirm')))
     
-    const rescheduleKey = getRescheduleKey(instanceId, normalizedContactNumber)
-    const pendingReschedule = pendingReschedules.get(rescheduleKey)
-    if (pendingReschedule && pendingReschedule.expiresAt < new Date()) {
-      clearPendingReschedule(rescheduleKey)
-    }
-    
-    if (pendingReschedule) {
-      const isRescheduleCancellation =
-        userMessageLower === 'cancelar' ||
-        normalizedMessage === 'cancelar' ||
-        (userMessageLower.includes('cancelar') && userMessageLower.length <= 20)
-      
-      if (isRescheduleCancellation) {
-        clearPendingReschedule(rescheduleKey)
-        const cancelMessage = 'Reagendamento cancelado. O horário atual continua reservado. Se quiser alterar para outro dia/horário, é só me avisar.'
-        const contactKey = `${instanceId}-${contactNumber}`
-        await queueMessage(contactKey, async () => {
-          await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
-        })
-        return true
-      }
-      
-      if (hasRescheduleConfirmation(userMessage)) {
-        console.log(`✅ [processAppointmentConfirmation] Confirmando reagendamento pendente.`)
-        try {
-          const availabilityCheck = await checkAvailability(
-            pendingReschedule.userId,
-            pendingReschedule.newDate,
-            pendingReschedule.instanceId
-          )
-          
-          if (
-            availabilityCheck.success &&
-            availabilityCheck.appointments?.some((apt: any) => {
-              if (!apt.id || apt.id === pendingReschedule.appointmentId) return false
-              const existingStart = new Date(apt.date)
-              const existingEnd = apt.endDate
-                ? new Date(apt.endDate)
-                : new Date(existingStart.getTime() + (apt.duration || pendingReschedule.duration) * 60000)
-              return pendingReschedule.newDate < existingEnd &&
-                new Date(pendingReschedule.newDate.getTime() + pendingReschedule.duration * 60000) > existingStart
-            })
-          ) {
-            const conflictMessage = 'Este horário acabou de ser ocupado. Por favor, escolha outro horário e me avise para que eu faça o ajuste.'
-            const contactKey = `${instanceId}-${contactNumber}`
-            await queueMessage(contactKey, async () => {
-              await sendWhatsAppMessage(instanceId, contactNumber, conflictMessage, 'service')
-            })
-            return true
-          }
-          
-          // Cancela o agendamento atual antes de criar o novo
-          await prisma.appointment.update({
-            where: { id: pendingReschedule.appointmentId },
-            data: { status: 'cancelled' },
-          })
-          
-          const createResult = await createAppointment({
-            userId: pendingReschedule.userId,
-            instanceId: pendingReschedule.instanceId,
-            contactNumber: pendingReschedule.contactNumber,
-            contactName: pendingReschedule.contactName || undefined,
-            date: pendingReschedule.newDate,
-            duration: pendingReschedule.duration,
-            description: pendingReschedule.serviceDescription || 'Reagendamento',
-          })
-          
-          if (createResult.success && createResult.appointment) {
-            const successMessage = [
-              '✅ Reagendamento concluído!',
-              '',
-              'Agendamento anterior cancelado:',
-              `📅 ${pendingReschedule.formattedPreviousDate}`,
-              `🕐 ${pendingReschedule.formattedPreviousTime}`,
-              '',
-              'Novo horário:',
-              `📅 ${pendingReschedule.formattedNewDate}`,
-              `🕐 ${pendingReschedule.formattedNewTime}`,
-            ].join('\n')
-            
-            const contactKey = `${instanceId}-${contactNumber}`
-            await queueMessage(contactKey, async () => {
-              await sendWhatsAppMessage(instanceId, contactNumber, successMessage, 'service')
-            })
-            
-            clearPendingReschedule(rescheduleKey)
-            const executionKey = `${instanceId}-${contactNumber}`
-            if (workflowExecutions.has(executionKey)) {
-              workflowExecutions.delete(executionKey)
-            }
-            return true
-          } else {
-            await prisma.appointment.update({
-              where: { id: pendingReschedule.appointmentId },
-              data: { status: pendingReschedule.previousStatus },
-            })
-            const errorMessage = createResult.error || 'Não consegui criar o novo horário agora. Pode tentar outro horário ou falar comigo novamente?'
-            const contactKey = `${instanceId}-${contactNumber}`
-            await queueMessage(contactKey, async () => {
-              await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
-            })
-            return true
-          }
-        } catch (rescheduleError) {
-          console.error('❌ [processAppointmentConfirmation] Erro ao processar reagendamento:', rescheduleError)
-          await prisma.appointment.update({
-            where: { id: pendingReschedule.appointmentId },
-            data: { status: pendingReschedule.previousStatus },
-          })
-          const errorMessage = 'Tive um problema para alterar o horário agora. Pode me informar novamente o horário desejado?'
-          const contactKey = `${instanceId}-${contactNumber}`
-          await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
-          })
-          return true
-        }
-      }
-    }
-    
     if (!pendingAppointment) {
       if (looksLikeConfirmation) {
-        const executionKey = `${instanceId}-${contactNumber}`
-        if (workflowExecutions.has(executionKey)) {
-          console.log('⚠️ [processAppointmentConfirmation] Confirmação sem pendente, mas há workflow ativo. Deixando IA conduzir (possível reagendamento).')
-          return false
-        }
-
         console.log(`⚠️⚠️⚠️ [processAppointmentConfirmation] Mensagem parece confirmação mas NÃO há agendamento pendente!`)
         console.log(`   Verificando se há agendamento criado recentemente...`)
         
@@ -2341,14 +2119,6 @@ async function executeAIOnlyWorkflow(
       const normalizedContactNumber = contactNumber.replace(/\D/g, '')
       console.log(`🔧 handleFunctionCall - contactNumber original: "${contactNumber}"`)
       console.log(`🔧 handleFunctionCall - contactNumber normalizado: "${normalizedContactNumber}"`)
-      const contactNumberVariants = Array.from(
-        new Set(
-          [
-            ...buildContactNumberVariants(contactNumber),
-            normalizedContactNumber,
-          ].filter(Boolean)
-        )
-      )
       
       if (functionName === 'create_appointment' && userId) {
         try {
@@ -2778,71 +2548,6 @@ async function executeAIOnlyWorkflow(
             }
           }
           
-          // Limite: apenas 1 agendamento ativo por contato → inicia fluxo de reagendamento
-          const existingActiveAppointment = await prisma.appointment.findFirst({
-            where: {
-              userId,
-              contactNumber: {
-                in: contactNumberVariants,
-              },
-              status: {
-                in: ['pending', 'confirmed'],
-              },
-            },
-            select: {
-              id: true,
-              date: true,
-              description: true,
-              status: true,
-              duration: true,
-            },
-            orderBy: {
-              date: 'asc',
-            },
-          })
-          
-          if (existingActiveAppointment) {
-            const existingDate = new Date(existingActiveAppointment.date)
-            const { date: formattedExistingDate, time: formattedExistingTime } = formatBrazilianDateTime(existingDate)
-            const { date: formattedNewDate, time: formattedNewTime } = formatBrazilianDateTime(appointmentDateUTC)
-            
-            const rescheduleKey = getRescheduleKey(instanceId, normalizedContactNumber)
-            const expiresAt = new Date(Date.now() + 5 * 60 * 1000)
-            clearPendingReschedule(rescheduleKey)
-            pendingReschedules.set(rescheduleKey, {
-              appointmentId: existingActiveAppointment.id,
-              userId,
-              instanceId,
-              contactNumber: normalizedContactNumber,
-              contactName: contactNameFinal || contactName || null,
-              previousDate: existingDate,
-              newDate: appointmentDateUTC,
-              formattedPreviousDate: formattedExistingDate,
-              formattedPreviousTime: formattedExistingTime,
-              formattedNewDate,
-              formattedNewTime,
-              duration: serviceDuration,
-              serviceDescription: args.description || existingActiveAppointment.description || undefined,
-              previousStatus: existingActiveAppointment.status,
-              expiresAt,
-            })
-            
-            console.log(`⚠️ [handleFunctionCall] Reschedule pendente criado. Aguarda confirmação do cliente.`)
-            
-            const limitMessage = [
-              `Você já tem um agendamento ativo em ${formattedExistingDate} às ${formattedExistingTime}.`,
-              `Se quiser trocar para ${formattedNewDate} às ${formattedNewTime}, responda "confirmar" e eu cancelo o horário atual e crio um novo automaticamente.`,
-              `Caso prefira outro horário, é só me avisar que ajusto novamente.`,
-            ].join(' ')
-            
-            return {
-              success: false,
-              error: limitMessage,
-              message: limitMessage,
-              pendingReschedule: true,
-            }
-          }
-          
           console.log(`✅ [handleFunctionCall] Horário disponível! Prosseguindo com criação do agendamento pendente.`)
           
           // Armazena temporariamente o agendamento pendente
@@ -3196,13 +2901,6 @@ async function executeAIOnlyWorkflow(
       // Função para alterar horário de um agendamento
       if (functionName === 'update_appointment' && userId) {
         try {
-          if (!hasRescheduleConfirmation(userMessage)) {
-            return {
-              success: false,
-              error: 'Peça ao cliente uma confirmação clara (ex: "sim, pode alterar") antes de chamar update_appointment.',
-            }
-          }
-          
           if (!args.new_date || !args.new_time) {
             return {
               success: false,
@@ -3255,24 +2953,20 @@ async function executeAIOnlyWorkflow(
           }
           
           // Verifica disponibilidade do novo horário
-          const availabilityCheck = await checkAvailability(userId, parsedNewDate, instanceId)
+          const availabilityCheck = await checkAvailability(userId, parsedNewDate)
           if (availabilityCheck.success && availabilityCheck.appointments) {
-            const updateDuration = appointmentToUpdate.duration || 60
-            const newAppointmentEnd = new Date(parsedNewDate.getTime() + updateDuration * 60000)
-            
             for (const existingApt of availabilityCheck.appointments) {
-              if (existingApt.id && appointmentToUpdate.id && existingApt.id === appointmentToUpdate.id) {
-                continue
-              }
-              
               const existingStart = new Date(existingApt.date)
-              const existingDuration = existingApt.duration || 60
-              const existingEnd = existingApt.endDate ? new Date(existingApt.endDate) : new Date(existingStart.getTime() + existingDuration * 60000)
+              const existingEnd = new Date(existingStart.getTime() + 60 * 60000)
               
-              if (parsedNewDate < existingEnd && newAppointmentEnd > existingStart) {
-                return {
-                  success: false,
-                  error: 'Este horário já está ocupado. Escolha outro horário.',
+              if (parsedNewDate < existingEnd && new Date(parsedNewDate.getTime() + 60 * 60000) > existingStart) {
+                // Ignora o próprio agendamento que está sendo alterado
+                const existingAptDate = new Date(existingApt.date)
+                if (Math.abs(existingAptDate.getTime() - new Date(appointmentToUpdate.date).getTime()) > 60000) {
+                  return {
+                    success: false,
+                    error: 'Este horário já está ocupado. Escolha outro horário.',
+                  }
                 }
               }
             }
@@ -3281,16 +2975,6 @@ async function executeAIOnlyWorkflow(
           const result = await updateAppointment(appointmentToUpdate.id, userId, parsedNewDate)
           
           if (result.success) {
-            const previousDate = new Date(appointmentToUpdate.date)
-            const formattedPreviousDate = previousDate.toLocaleDateString('pt-BR', {
-              day: '2-digit',
-              month: '2-digit',
-              year: 'numeric',
-            })
-            const formattedPreviousTime = previousDate.toLocaleTimeString('pt-BR', {
-              hour: '2-digit',
-              minute: '2-digit',
-            })
             const formattedDate = parsedNewDate.toLocaleDateString('pt-BR', {
               day: '2-digit',
               month: '2-digit',
@@ -3303,7 +2987,7 @@ async function executeAIOnlyWorkflow(
             
             return {
               success: true,
-              message: `✅ Agendamento alterado!\n\nAntes:\n📅 ${formattedPreviousDate}\n🕐 ${formattedPreviousTime}\n\nNovo horário:\n📅 ${formattedDate}\n🕐 ${formattedTime}`,
+              message: `✅ Agendamento alterado com sucesso!\n\nNovo horário:\n📅 Data: ${formattedDate}\n🕐 Hora: ${formattedTime}`,
             }
           } else {
             return {

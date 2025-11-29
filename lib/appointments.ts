@@ -119,38 +119,6 @@ export async function createAppointment(params: CreateAppointmentParams) {
       }
     }
 
-    const normalizedContactNumber = params.contactNumber.replace(/\D/g, '')
-    const contactNumber = normalizedContactNumber || params.contactNumber
-
-    // Garante limite de 1 agendamento ativo por contato
-    const existingActiveAppointment = await prisma.appointment.findFirst({
-      where: {
-        userId: params.userId,
-        contactNumber,
-        status: {
-          in: ['pending', 'confirmed'],
-        },
-      },
-      select: {
-        id: true,
-        date: true,
-        description: true,
-        status: true,
-      },
-    })
-
-    if (existingActiveAppointment) {
-      console.warn('⚠️ [createAppointment] Contato já possui agendamento ativo:', {
-        id: existingActiveAppointment.id,
-        date: existingActiveAppointment.date,
-        status: existingActiveAppointment.status,
-      })
-      return {
-        success: false,
-        error: 'Este contato já possui um agendamento ativo. Cancele ou reagende o atual antes de criar outro.',
-      }
-    }
-
     if (!params.date || isNaN(params.date.getTime())) {
       console.error('❌ date é inválida:', params.date)
       return {
@@ -187,7 +155,7 @@ export async function createAppointment(params: CreateAppointmentParams) {
       data: {
         userId: params.userId,
         instanceId: params.instanceId || null,
-        contactNumber,
+        contactNumber: params.contactNumber,
         contactName: params.contactName,
           date: params.date, // Horário de início
           endDate: endDate, // Horário de término calculado
@@ -227,7 +195,7 @@ export async function createAppointment(params: CreateAppointmentParams) {
             appointmentId,
             params.userId,
             params.instanceId || null,
-            contactNumber,
+            params.contactNumber,
             params.contactName || null,
             params.date,
             params.description || null,
@@ -348,7 +316,6 @@ export async function checkAvailability(
     // Ambos devem ser considerados para evitar contradições entre checkAvailability e getAvailableTimes
     // CRÍTICO: Tenta buscar com endDate e duration, mas se falhar, busca sem esses campos
     let appointments: Array<{
-      id: string
       date: Date
       endDate?: Date | null
       duration?: number | null
@@ -368,7 +335,6 @@ export async function checkAvailability(
           },
         },
         select: {
-          id: true,
           date: true,
           endDate: true,
           duration: true,
@@ -394,7 +360,6 @@ export async function checkAvailability(
         },
       },
           select: {
-            id: true,
             date: true,
             description: true,
           },
@@ -405,7 +370,6 @@ export async function checkAvailability(
         
         // Converte para o formato esperado
         appointments = appointmentsWithoutNewFields.map(apt => ({
-          id: apt.id,
           date: apt.date,
           endDate: null,
           duration: null,
@@ -420,7 +384,7 @@ export async function checkAvailability(
 
     // CRÍTICO: Busca também agendamentos PENDENTES (não confirmados ainda)
     // Isso garante consistência com getAvailableTimes e evita contradições
-    const pendingAppointments: Array<{ id: string; date: Date; endDate: Date; duration: number; description?: string }> = []
+    const pendingAppointments: Array<{ date: Date; endDate: Date; duration: number; description?: string }> = []
     if (instanceId) {
       try {
         const targetDateStr = date.toLocaleDateString('pt-BR', {
@@ -438,13 +402,6 @@ export async function checkAvailability(
               gt: new Date(), // Apenas pendentes que não expiraram
             },
           },
-          select: {
-            id: true,
-            time: true,
-            duration: true,
-            service: true,
-            description: true,
-          },
         })
         
         allPending.forEach((pending) => {
@@ -457,7 +414,6 @@ export async function checkAvailability(
           const pendingEnd = new Date(pendingStart.getTime() + pendingDuration * 60000)
           
           pendingAppointments.push({
-            id: pending.id,
             date: pendingStart,
             endDate: pendingEnd,
             duration: pendingDuration,
@@ -482,20 +438,13 @@ export async function checkAvailability(
         // CRÍTICO: Calcula endDate se não existir (para compatibilidade com registros antigos)
         const endDate = apt.endDate || new Date(apt.date.getTime() + (apt.duration || 60) * 60000)
         return {
-          id: apt.id,
           date: apt.date, // Início
           endDate: endDate, // Término
           duration: apt.duration || 60,
           description: apt.description || undefined,
         }
       }),
-      ...pendingAppointments.map((pending) => ({
-        id: `pending:${pending.id}`,
-        date: pending.date,
-        endDate: pending.endDate,
-        duration: pending.duration,
-        description: pending.description,
-      })),
+      ...pendingAppointments,
     ]
 
     return {
@@ -842,7 +791,6 @@ export async function getUserAppointments(
           date: apt.date,
           description: apt.description,
           status: apt.status,
-          duration: apt.duration || null,
           formattedDate: apt.date.toLocaleDateString('pt-BR', {
             day: '2-digit',
             month: '2-digit',
@@ -874,8 +822,7 @@ export async function getUserAppointments(
 export async function updateAppointment(
   appointmentId: string,
   userId: string,
-  newDate: Date,
-  newDuration?: number
+  newDate: Date
 ) {
   try {
     // Verifica se o agendamento existe e pertence ao usuário
@@ -902,42 +849,32 @@ export async function updateAppointment(
       }
     }
 
-    const durationToUse =
-      newDuration && newDuration > 0
-        ? newDuration
-        : appointment.duration || 60
-
     // Atualiza o agendamento
-    // CRÍTICO: Tenta atualizar com endDate/duration, mas se falhar, atualiza sem esses campos
+    // CRÍTICO: Tenta atualizar com endDate, mas se falhar, atualiza sem esse campo
     let updated: any
     try {
-      const newEndDate = new Date(newDate.getTime() + durationToUse * 60000)
-      const updateData: any = {
-        date: newDate,
-        endDate: newEndDate,
-      }
-      if (newDuration && newDuration > 0) {
-        updateData.duration = newDuration
-      }
-
+      // Calcula novo endDate baseado na duração existente
+      const newEndDate = appointment.duration 
+        ? new Date(newDate.getTime() + appointment.duration * 60000)
+        : new Date(newDate.getTime() + 60 * 60000) // Padrão 60min se não tiver duração
+      
       updated = await prisma.appointment.update({
         where: { id: appointmentId },
-        data: updateData,
+        data: {
+          date: newDate,
+          endDate: newEndDate,
+        },
         select: {
           id: true,
           date: true,
           description: true,
           status: true,
-          duration: true,
         },
       })
     } catch (error: any) {
-      if (
-        error.code === 'P2022' ||
-        error.message?.includes('endDate') ||
-        error.message?.includes('does not exist')
-      ) {
-        console.warn('⚠️ [updateAppointment] Coluna endDate/duration não existe, atualizando apenas data')
+      // Se falhar porque endDate não existe, atualiza sem esse campo
+      if (error.code === 'P2022' || error.message?.includes('endDate') || error.message?.includes('does not exist')) {
+        console.warn('⚠️ [updateAppointment] Coluna endDate não existe, atualizando sem esse campo')
         updated = await prisma.appointment.update({
           where: { id: appointmentId },
           data: {
