@@ -1156,6 +1156,12 @@ export async function processAppointmentConfirmation(
     
     if (!pendingAppointment) {
       if (looksLikeConfirmation) {
+        const executionKey = `${instanceId}-${contactNumber}`
+        if (workflowExecutions.has(executionKey)) {
+          console.log('⚠️ [processAppointmentConfirmation] Confirmação sem pendente, mas há workflow ativo. Deixando IA conduzir (possível reagendamento).')
+          return false
+        }
+
         console.log(`⚠️⚠️⚠️ [processAppointmentConfirmation] Mensagem parece confirmação mas NÃO há agendamento pendente!`)
         console.log(`   Verificando se há agendamento criado recentemente...`)
         
