@@ -122,6 +122,59 @@ function replaceVariables(text: string, variables: Record<string, any>): string 
   return result
 }
 
+function normalizeText(value: string): string {
+  return value
+    ? value
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase()
+    : ''
+}
+
+function buildContactNumberVariants(rawNumber: string): string[] {
+  const variants = new Set<string>()
+
+  const addVariant = (value?: string) => {
+    if (value && value.trim()) {
+      variants.add(value.trim())
+    }
+  }
+
+  addVariant(rawNumber)
+
+  const digitsOnly = rawNumber ? rawNumber.replace(/\D/g, '') : ''
+  if (digitsOnly) {
+    addVariant(digitsOnly)
+
+    if (digitsOnly.startsWith('55')) {
+      addVariant(digitsOnly.substring(2))
+      addVariant(`+${digitsOnly}`)
+    } else {
+      const withCountry = `55${digitsOnly}`
+      addVariant(withCountry)
+      addVariant(`+${withCountry}`)
+    }
+  }
+
+  return Array.from(variants).filter(Boolean)
+}
+
+const RESCHEDULE_CONFIRMATION_KEYWORDS = ['sim', 'confirmo', 'confirmar', 'confirmado', 'confirmada', 'ok', 'certo', 'perfeito', 'fechado', 'beleza', 'claro']
+const RESCHEDULE_CONFIRMATION_PHRASES = ['isso mesmo', 'pode sim', 'tudo certo', 'pode deixar', 'manda ver', 'claro que sim']
+
+function hasRescheduleConfirmation(message?: string): boolean {
+  if (!message) return false
+  const normalized = normalizeText(message)
+  if (!normalized) return false
+
+  if (RESCHEDULE_CONFIRMATION_PHRASES.some((phrase) => normalized.includes(phrase))) {
+    return true
+  }
+
+  const padded = ` ${normalized} `
+  return RESCHEDULE_CONFIRMATION_KEYWORDS.some((keyword) => padded.includes(` ${keyword} `))
+}
+
 /**
  * Executa workflows em vez de regras simples
  */
@@ -2119,6 +2172,14 @@ async function executeAIOnlyWorkflow(
       const normalizedContactNumber = contactNumber.replace(/\D/g, '')
       console.log(`🔧 handleFunctionCall - contactNumber original: "${contactNumber}"`)
       console.log(`🔧 handleFunctionCall - contactNumber normalizado: "${normalizedContactNumber}"`)
+      const contactNumberVariants = Array.from(
+        new Set(
+          [
+            ...buildContactNumberVariants(contactNumber),
+            normalizedContactNumber,
+          ].filter(Boolean)
+        )
+      )
       
       if (functionName === 'create_appointment' && userId) {
         try {
@@ -2205,6 +2266,49 @@ async function executeAIOnlyWorkflow(
             return {
               success: false,
               error: 'É necessário informar tanto a data quanto a hora do agendamento.',
+            }
+          }
+          
+          // Limite: apenas um agendamento ativo por contato
+          const existingActiveAppointment = await prisma.appointment.findFirst({
+            where: {
+              userId,
+              contactNumber: {
+                in: contactNumberVariants,
+              },
+              status: {
+                in: ['pending', 'confirmed'],
+              },
+            },
+            select: {
+              id: true,
+              date: true,
+              description: true,
+              status: true,
+            },
+            orderBy: {
+              date: 'asc',
+            },
+          })
+          
+          if (existingActiveAppointment) {
+            const existingDate = new Date(existingActiveAppointment.date)
+            const formattedExistingDate = existingDate.toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            })
+            const formattedExistingTime = existingDate.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })
+            
+            const limitMessage = `Você já tem um agendamento ativo em ${formattedExistingDate} às ${formattedExistingTime}. Posso alterar esse horário para você — é só me passar a nova data e horário e confirmar que faço a mudança imediatamente.`
+            console.log(`⚠️ [handleFunctionCall] Limite de agendamento atingido para ${normalizedContactNumber}`)
+            return {
+              success: false,
+              error: limitMessage,
+              message: limitMessage,
             }
           }
           
@@ -2901,6 +3005,13 @@ async function executeAIOnlyWorkflow(
       // Função para alterar horário de um agendamento
       if (functionName === 'update_appointment' && userId) {
         try {
+          if (!hasRescheduleConfirmation(userMessage)) {
+            return {
+              success: false,
+              error: 'Peça ao cliente uma confirmação clara (ex: "sim, pode alterar") antes de chamar update_appointment.',
+            }
+          }
+          
           if (!args.new_date || !args.new_time) {
             return {
               success: false,
@@ -2953,20 +3064,24 @@ async function executeAIOnlyWorkflow(
           }
           
           // Verifica disponibilidade do novo horário
-          const availabilityCheck = await checkAvailability(userId, parsedNewDate)
+          const availabilityCheck = await checkAvailability(userId, parsedNewDate, instanceId)
           if (availabilityCheck.success && availabilityCheck.appointments) {
+            const updateDuration = appointmentToUpdate.duration || 60
+            const newAppointmentEnd = new Date(parsedNewDate.getTime() + updateDuration * 60000)
+            
             for (const existingApt of availabilityCheck.appointments) {
-              const existingStart = new Date(existingApt.date)
-              const existingEnd = new Date(existingStart.getTime() + 60 * 60000)
+              if (existingApt.id && appointmentToUpdate.id && existingApt.id === appointmentToUpdate.id) {
+                continue
+              }
               
-              if (parsedNewDate < existingEnd && new Date(parsedNewDate.getTime() + 60 * 60000) > existingStart) {
-                // Ignora o próprio agendamento que está sendo alterado
-                const existingAptDate = new Date(existingApt.date)
-                if (Math.abs(existingAptDate.getTime() - new Date(appointmentToUpdate.date).getTime()) > 60000) {
-                  return {
-                    success: false,
-                    error: 'Este horário já está ocupado. Escolha outro horário.',
-                  }
+              const existingStart = new Date(existingApt.date)
+              const existingDuration = existingApt.duration || 60
+              const existingEnd = existingApt.endDate ? new Date(existingApt.endDate) : new Date(existingStart.getTime() + existingDuration * 60000)
+              
+              if (parsedNewDate < existingEnd && newAppointmentEnd > existingStart) {
+                return {
+                  success: false,
+                  error: 'Este horário já está ocupado. Escolha outro horário.',
                 }
               }
             }
@@ -2975,6 +3090,16 @@ async function executeAIOnlyWorkflow(
           const result = await updateAppointment(appointmentToUpdate.id, userId, parsedNewDate)
           
           if (result.success) {
+            const previousDate = new Date(appointmentToUpdate.date)
+            const formattedPreviousDate = previousDate.toLocaleDateString('pt-BR', {
+              day: '2-digit',
+              month: '2-digit',
+              year: 'numeric',
+            })
+            const formattedPreviousTime = previousDate.toLocaleTimeString('pt-BR', {
+              hour: '2-digit',
+              minute: '2-digit',
+            })
             const formattedDate = parsedNewDate.toLocaleDateString('pt-BR', {
               day: '2-digit',
               month: '2-digit',
@@ -2987,7 +3112,7 @@ async function executeAIOnlyWorkflow(
             
             return {
               success: true,
-              message: `✅ Agendamento alterado com sucesso!\n\nNovo horário:\n📅 Data: ${formattedDate}\n🕐 Hora: ${formattedTime}`,
+              message: `✅ Agendamento alterado!\n\nAntes:\n📅 ${formattedPreviousDate}\n🕐 ${formattedPreviousTime}\n\nNovo horário:\n📅 ${formattedDate}\n🕐 ${formattedTime}`,
             }
           } else {
             return {

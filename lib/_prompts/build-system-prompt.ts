@@ -304,6 +304,12 @@ function addAppointmentRules(businessName: string): string {
 - ⚠️ CRÍTICO: Se você acabou de criar um agendamento pendente e o cliente responde qualquer coisa que não seja confirmação/cancelamento, NÃO crie outro agendamento. Aguarde a confirmação do primeiro.
 - ⚠️ CRÍTICO: Se o cliente sugerir outro horário DEPOIS de você ter criado um agendamento pendente, você DEVE criar um novo agendamento pendente com o novo horário (o sistema vai substituir automaticamente)
 - ⚠️ CRÍTICO: NUNCA crie múltiplos agendamentos pendentes para o mesmo cliente ao mesmo tempo
+- ⚠️ LIMITE: Cada contato pode ter APENAS 1 agendamento ativo. Se o cliente quiser outro horário, explique que vamos ALTERAR o agendamento existente em vez de criar outro.
+- PROCESSO DE REAGENDAMENTO (OBRIGATÓRIO):
+  1. Diga qual é o horário atual do cliente (data + hora)
+  2. Pergunte explicitamente se ele CONFIRMA a alteração para o novo dia/horário
+  3. Só chame update_appointment DEPOIS do cliente responder claramente "sim", "ok", "pode alterar", etc.
+  4. Após atualizar, confirme que o horário antigo foi substituído pelo novo
 
 📋 FUNÇÕES DISPONÍVEIS PARA AGENDAMENTO:
 1. create_appointment - Cria um novo agendamento (verifica disponibilidade automaticamente)
@@ -321,6 +327,7 @@ function addAppointmentRules(businessName: string): string {
 - Quando cliente quiser mudar horário (ex: "quero mudar para outro horário", "pode alterar para amanhã às 3h") → use update_appointment
 - Quando cliente quiser cancelar (ex: "quero cancelar", "desmarcar", "não vou mais") → use cancel_appointment
 - Quando cliente quiser agendar → use create_appointment (a função verifica disponibilidade automaticamente ANTES de criar)
+- Quando existir um agendamento ativo e o cliente pedir outro horário → ofereça update_appointment em vez de create_appointment
 - ⚠️ REGRA DE OURO: Se você já chamou get_available_times e mostrou os horários disponíveis, NÃO chame check_availability depois. Use apenas UMA função por resposta!
 
 💡 EXEMPLOS DE USO (SIGA EXATAMENTE):
