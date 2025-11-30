@@ -46,20 +46,13 @@ export default function WorkingHoursManager() {
       })
 
       if (response.ok) {
-        toast({
-          title: 'Horários salvos',
-          description: 'Os horários de funcionamento foram salvos com sucesso.',
-        })
+        toast.success('Os horários de funcionamento foram salvos com sucesso.')
       } else {
         throw new Error('Erro ao salvar horários')
       }
     } catch (error) {
       console.error('Erro ao salvar horários:', error)
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível salvar os horários.',
-        variant: 'destructive',
-      })
+      toast.error('Não foi possível salvar os horários.')
     } finally {
       setSaving(false)
     }
