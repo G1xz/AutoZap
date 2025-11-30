@@ -109,20 +109,13 @@ export default function ServiceNode(props: NodeProps) {
       if (response.ok) {
         const data = await response.json()
         setImageUrl(data.url)
-        toast({
-          title: 'Imagem enviada',
-          description: 'A imagem foi enviada com sucesso.',
-        })
+        toast.success('A imagem foi enviada com sucesso.')
       } else {
         throw new Error('Erro ao enviar imagem')
       }
     } catch (error) {
       console.error('Erro ao enviar imagem:', error)
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível enviar a imagem.',
-        variant: 'destructive',
-      })
+      toast.error('Não foi possível enviar a imagem.')
     } finally {
       setUploading(false)
     }
