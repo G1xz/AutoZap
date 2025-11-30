@@ -125,10 +125,11 @@ export async function getRateLimitInfo(
     }
   }
 
+  const opts = rateLimitConfigs[type]
   return {
     remaining: rateLimiterRes.remainingPoints,
     resetTime: Date.now() + rateLimiterRes.msBeforeNext,
-    total: rateLimiterRes.totalHits,
+    total: opts.points,
   }
 }
 
