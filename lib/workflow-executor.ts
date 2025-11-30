@@ -2519,9 +2519,12 @@ async function executeAIOnlyWorkflow(
           // Valida se a data não é no passado (comparando componentes brasileiros)
           const appointmentDateOnly = new Date(year, month, day)
           const todayOnly = new Date(currentYear, currentMonth, currentDay)
+          const msInDay = 24 * 60 * 60 * 1000
+          let diffDays = Math.floor((appointmentDateOnly.getTime() - todayOnly.getTime()) / msInDay)
+          console.log(`📅 Diferença em dias entre data do agendamento e hoje: ${diffDays} dias`)
           
           // Se a data é hoje, verifica se a hora não passou
-          if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
+          if (diffDays === 0) {
             const appointmentTime = hour * 60 + minute
             const currentTime = currentHour * 60 + currentMinute
             if (appointmentTime <= currentTime) {
@@ -2531,12 +2534,23 @@ async function executeAIOnlyWorkflow(
                 error: 'Não é possível agendar para um horário que já passou hoje. Por favor, escolha um horário futuro.',
               }
             }
-          } else if (appointmentDateOnly < todayOnly) {
+          } else if (diffDays < -2) {
             console.error(`❌ Data no passado (Brasil): ${day}/${month + 1}/${year} < ${currentDay}/${currentMonth + 1}/${currentYear}`)
             return {
               success: false,
               error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
             }
+          } else if (diffDays < 0) {
+            console.warn(`⚠️ Data em linguagem natural possivelmente se referindo à próxima ocorrência. Ajustando automaticamente.`)
+            appointmentDateOnly.setDate(appointmentDateOnly.getDate() + 7)
+            diffDays = Math.floor((appointmentDateOnly.getTime() - todayOnly.getTime()) / msInDay)
+            appointmentDateUTC = createBrazilianDateAsUTC(
+              appointmentDateOnly.getFullYear(),
+              appointmentDateOnly.getMonth(),
+              appointmentDateOnly.getDate(),
+              hour,
+              minute
+            )
           }
           
           // Verifica se a conversão está correta
