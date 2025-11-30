@@ -1589,6 +1589,37 @@ async function executeAIOnlyWorkflow(
       .replace(/[.,!?;:]/g, '')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
+
+    const messageContainsExplicitTime = (text: string): boolean => {
+      if (!text) return false
+      const normalized = text
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+
+      const numericTimeRegex = /\b\d{1,2}(:\d{2})?\s*(h|horas)?\b/
+      if (numericTimeRegex.test(normalized)) {
+        return true
+      }
+
+      if (normalized.includes('meio dia') || normalized.includes('meio-dia') || normalized.includes('meia noite')) {
+        return true
+      }
+
+      const textualTimeRegex = /(as|a)\s+(uma|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|onze)(\s+(da|de)\s+(manha|tarde|noite))?/
+      return textualTimeRegex.test(normalized)
+    }
+
+    const messageIndicatesSchedulingWithoutTime = (text: string): boolean => {
+      if (!text) return false
+      const lower = text.toLowerCase()
+      const schedulingKeywords = ['agendar', 'agendamento', 'marcar', 'reservar', 'reserva', 'horário', 'horario', 'agenda']
+      const mentionsScheduling = schedulingKeywords.some((keyword) => lower.includes(keyword))
+      if (!mentionsScheduling) {
+        return false
+      }
+      return !messageContainsExplicitTime(text)
+    }
     
     const looksLikeConfirmation = 
       userMessageLower === 'confirmar' || 
@@ -1902,6 +1933,17 @@ async function executeAIOnlyWorkflow(
       console.log(`🤖 Resposta pré-definida enviada para ${contactNumber} (primeira interação)`)
       return // Não gera resposta da IA na primeira vez, usa a pré-definida
     }
+
+    // Se o cliente pediu para agendar mas não informou horário, responda imediatamente pedindo o horário
+    if (messageIndicatesSchedulingWithoutTime(userMessage)) {
+      const askTimeMessage = `Perfeito! Para agendar certinho, me diz o dia e principalmente o horário que você prefere (ex: "amanhã às 15h"). Assim já deixo tudo reservado pra você.`
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, askTimeMessage, 'service')
+      })
+      console.log(`⏱️ [executeAIOnlyWorkflow] Cliente pediu agendamento sem horário. Mensagem solicitando horário enviada.`)
+      return
+    }
     
     // Para mensagens seguintes, usa IA normalmente
     // MAS sempre força mencionar o negócio mesmo em mensagens seguintes
@@ -2108,26 +2150,6 @@ async function executeAIOnlyWorkflow(
       }
       
       return null
-    }
-
-    const messageContainsExplicitTime = (text: string): boolean => {
-      if (!text) return false
-      const normalized = text
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-
-      const numericTimeRegex = /\b\d{1,2}(:\d{2})?\s*(h|horas)?\b/
-      if (numericTimeRegex.test(normalized)) {
-        return true
-      }
-
-      if (normalized.includes('meio dia') || normalized.includes('meio-dia') || normalized.includes('meia noite')) {
-        return true
-      }
-
-      const textualTimeRegex = /(as|a)\s+(uma|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|onze)(\s+(da|de)\s+(manha|tarde|noite))?/
-      return textualTimeRegex.test(normalized)
     }
 
     // Handler para quando a IA chamar a função de agendamento
