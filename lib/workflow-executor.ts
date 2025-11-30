@@ -65,6 +65,103 @@ const schedulingFollowUps = new Map<string, {
   timeHint?: string
 }>()
 
+interface AppointmentListItem {
+  id: string
+  formattedDate: string
+  formattedTime: string
+  description?: string | null
+}
+
+interface AppointmentActionState {
+  mode: 'cancel' | 'reschedule'
+  stage: 'awaiting_selection' | 'confirm_cancel' | 'awaiting_new_datetime'
+  appointments: AppointmentListItem[]
+  selectedAppointment?: AppointmentListItem
+}
+
+const appointmentActionStates = new Map<string, AppointmentActionState>()
+
+function extractDateHint(text: string): string | null {
+  if (!text) return null
+  const lower = text.toLowerCase()
+
+  const keywordMap: Record<string, string> = {
+    'hoje': 'hoje',
+    'amanhã': 'amanhã',
+    'amanha': 'amanhã',
+    'depois de amanhã': 'depois de amanhã',
+    'depois de amanha': 'depois de amanhã',
+  }
+
+  for (const [keyword, value] of Object.entries(keywordMap)) {
+    if (lower.includes(keyword)) {
+      return value
+    }
+  }
+
+  const weekdays = ['segunda', 'terça', 'terca', 'quarta', 'quinta', 'sexta', 'sábado', 'sabado', 'domingo']
+  for (const day of weekdays) {
+    if (lower.includes(day)) {
+      return day.includes('terca') ? 'terça' : day
+    }
+  }
+
+  const dateMatch = text.match(/(\d{1,2})\/(\d{1,2})(\/\d{2,4})?/)
+  if (dateMatch) {
+    const day = dateMatch[1].padStart(2, '0')
+    const month = dateMatch[2].padStart(2, '0')
+    const year = dateMatch[3]?.replace('/', '') || ''
+    return year ? `${day}/${month}/${year.length === 2 ? `20${year}` : year}` : `${day}/${month}`
+  }
+
+  return null
+}
+
+function extractTimeText(text: string): string | null {
+  if (!text) return null
+  const lower = text.toLowerCase()
+
+  if (lower.includes('meio-dia') || lower.includes('meio dia') || lower.includes('meia noite')) {
+    return lower.includes('meia noite') ? 'meia noite' : 'meio-dia'
+  }
+
+  const patterns = [
+    /às?\s*\d{1,2}:\d{2}/i,
+    /\b\d{1,2}:\d{2}\b/,
+    /às?\s*\d{1,2}\s*(?:h|horas)?/i,
+    /\b\d{1,2}\s*(?:da|de)?\s*(manhã|manha|tarde|noite)\b/i,
+  ]
+
+  for (const pattern of patterns) {
+    const match = text.match(pattern)
+    if (match) {
+      return match[0]
+    }
+  }
+
+  const plainNumber = text.match(/\b\d{1,2}\b/)
+  if (plainNumber) {
+    return plainNumber[0]
+  }
+
+  return null
+}
+
+function messageContainsExplicitTime(text: string): boolean {
+  return !!extractTimeText(text)
+}
+
+function messageIndicatesSchedulingWithoutTime(text: string): boolean {
+  if (!text) return false
+  const lower = text.toLowerCase()
+  const schedulingKeywords = ['agendar', 'agendamento', 'marcar', 'agenda', 'horário', 'horario', 'consulta', 'serviço', 'servico']
+  const mentionsScheduling = schedulingKeywords.some((keyword) => lower.includes(keyword))
+  if (!mentionsScheduling) {
+    return false
+  }
+  return !messageContainsExplicitTime(text)
+}
+
 // Fila de mensagens por contato para garantir ordem de envio
 // Evita que mensagens sejam enviadas fora de ordem (ex: imagem depois de texto)
 const messageQueues = new Map<string, Promise<void>>()
@@ -1556,6 +1653,19 @@ async function executeAIOnlyWorkflow(
       return
     }
 
+    const conversationKey = `${instanceId}-${contactNumber}`
+    const actionStarted = await maybeStartAppointmentAction({
+      conversationKey,
+      userMessageLower: userMessage,
+      instanceId,
+      contactNumber,
+      userId,
+    })
+    if (actionStarted) {
+      return
+    }
+    const hasAppointmentActionState = appointmentActionStates.has(conversationKey)
+
     // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
     // Se processou algo, retorna imediatamente SEM chamar a IA
     console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
@@ -1596,73 +1706,6 @@ async function executeAIOnlyWorkflow(
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
 
-    const extractDateHint = (text: string): string | null => {
-      if (!text) return null
-      const lower = text.toLowerCase()
-
-      const keywordMap: Record<string, string> = {
-        'hoje': 'hoje',
-        'amanhã': 'amanhã',
-        'amanha': 'amanhã',
-        'depois de amanhã': 'depois de amanhã',
-        'depois de amanha': 'depois de amanhã',
-      }
-
-      for (const [keyword, value] of Object.entries(keywordMap)) {
-        if (lower.includes(keyword)) {
-          return value
-        }
-      }
-
-      const weekdays = ['segunda', 'terça', 'terca', 'quarta', 'quinta', 'sexta', 'sábado', 'sabado', 'domingo']
-      for (const day of weekdays) {
-        if (lower.includes(day)) {
-          return day.includes('terca') ? 'terça' : day
-        }
-      }
-
-      const dateMatch = text.match(/(\d{1,2})\/(\d{1,2})(\/\d{2,4})?/)
-      if (dateMatch) {
-        const day = dateMatch[1].padStart(2, '0')
-        const month = dateMatch[2].padStart(2, '0')
-        const year = dateMatch[3]?.replace('/', '') || ''
-        return year ? `${day}/${month}/${year.length === 2 ? `20${year}` : year}` : `${day}/${month}`
-      }
-
-      return null
-    }
-
-    const messageContainsExplicitTime = (text: string): boolean => {
-      if (!text) return false
-      const normalized = text
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-
-      const numericTimeRegex = /\b\d{1,2}(:\d{2})?\s*(h|horas)?\b/
-      if (numericTimeRegex.test(normalized)) {
-        return true
-      }
-
-      if (normalized.includes('meio dia') || normalized.includes('meio-dia') || normalized.includes('meia noite')) {
-        return true
-      }
-
-      const textualTimeRegex = /(as|a)\s+(uma|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|onze)(\s+(da|de)\s+(manha|tarde|noite))?/
-      return textualTimeRegex.test(normalized)
-    }
-
-    const messageIndicatesSchedulingWithoutTime = (text: string): boolean => {
-      if (!text) return false
-      const lower = text.toLowerCase()
-      const schedulingKeywords = ['agendar', 'agendamento', 'marcar', 'reservar', 'reserva', 'horário', 'horario', 'agenda']
-      const mentionsScheduling = schedulingKeywords.some((keyword) => lower.includes(keyword))
-      if (!mentionsScheduling) {
-        return false
-      }
-      return !messageContainsExplicitTime(text)
-    }
-    
     const looksLikeConfirmation = 
       userMessageLower === 'confirmar' || 
       normalizedMsg === 'confirmar' ||
@@ -1905,7 +1948,6 @@ async function executeAIOnlyWorkflow(
       hasBusinessDetails: !!workflow.aiBusinessDetails
     })
     
-    const conversationKey = `${instanceId}-${contactNumber}`
     const schedulingHint = schedulingFollowUps.get(conversationKey)
     let schedulingExtraContext = ''
 
@@ -1929,7 +1971,7 @@ async function executeAIOnlyWorkflow(
       businessName: businessDetails.businessName
     })
     
-    if (shouldUsePredefined) {
+    if (!hasAppointmentActionState && shouldUsePredefined) {
       const servicesList = businessDetails.services?.join(', ') || ''
       const productsList = businessDetails.products?.join(', ') || ''
       const howToBuyText = businessDetails.howToBuy || ''
@@ -1988,7 +2030,7 @@ async function executeAIOnlyWorkflow(
     }
 
     // Se o cliente pediu para agendar mas não informou horário, responda imediatamente pedindo o horário
-    if (messageIndicatesSchedulingWithoutTime(userMessage)) {
+    if (!hasAppointmentActionState && messageIndicatesSchedulingWithoutTime(userMessage)) {
       const dateHint = extractDateHint(userMessage)
       schedulingFollowUps.set(conversationKey, {
         waitingFor: 'time',
@@ -3239,6 +3281,19 @@ async function executeAIOnlyWorkflow(
     let forcedServiceResponse: string | null = null
     let forcedServiceMedia: MediaAttachment | null = null
     
+    const appointmentActionHandled = await processAppointmentActionState({
+      conversationKey,
+      userMessage,
+      userMessageLower: userMessage,
+      instanceId,
+      contactNumber,
+      userId,
+      handleFunctionCall,
+    })
+    if (appointmentActionHandled) {
+      return
+    }
+
     const interceptedFunctionCall = async (functionName: string, args: any) => {
       console.log(`🔧 [interceptedFunctionCall] Interceptando chamada de função: ${functionName}`)
       console.log(`🔧 [interceptedFunctionCall] Argumentos:`, JSON.stringify(args, null, 2))
@@ -3482,6 +3537,296 @@ async function executeAIOnlyWorkflow(
       await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
     })
   }
+}
+
+interface AppointmentActionStartParams {
+  conversationKey: string
+  userMessageLower: string
+  instanceId: string
+  contactNumber: string
+  userId: string
+}
+
+interface AppointmentActionProcessParams {
+  conversationKey: string
+  userMessage: string
+  userMessageLower: string
+  instanceId: string
+  contactNumber: string
+  userId: string
+  handleFunctionCall: (functionName: string, args: any) => Promise<any>
+}
+
+async function maybeStartAppointmentAction(params: AppointmentActionStartParams): Promise<boolean> {
+  const { conversationKey, userMessageLower, instanceId, contactNumber, userId } = params
+  
+  if (appointmentActionStates.has(conversationKey)) {
+    return false
+  }
+  
+  const mode = detectAppointmentActionMode(userMessageLower)
+  if (!mode) {
+    return false
+  }
+  
+  try {
+    const result = await getUserAppointments(userId, instanceId, contactNumber, false)
+    if (!result.success || !result.appointments || result.appointments.length === 0) {
+      await queueMessage(conversationKey, async () => {
+        await sendWhatsAppMessage(
+          instanceId,
+          contactNumber,
+          'Você não tem agendamentos futuros para gerenciar no momento.',
+          'service'
+        )
+      })
+      return true
+    }
+    
+    const appointments: AppointmentListItem[] = result.appointments.map((apt) => ({
+      id: apt.id,
+      formattedDate: apt.formattedDate,
+      formattedTime: apt.formattedTime,
+      description: apt.description,
+    }))
+    
+    const listText = appointments
+      .map((apt, index) => {
+        const label = formatAppointmentLabel(apt)
+        return `*${index + 1}.* ${label}`
+      })
+      .join('\n')
+    
+    const instruction =
+      mode === 'cancel'
+        ? 'Digite o número do agendamento que deseja cancelar.'
+        : 'Digite o número do agendamento que deseja reagendar.'
+    
+    appointmentActionStates.set(conversationKey, {
+      mode,
+      stage: 'awaiting_selection',
+      appointments,
+    })
+    
+    await queueMessage(conversationKey, async () => {
+      await sendWhatsAppMessage(
+        instanceId,
+        contactNumber,
+        `${mode === 'cancel' ? 'Cancelar agendamento' : 'Reagendar agendamento'}:\n${listText}\n\n${instruction}`,
+        'service'
+      )
+    })
+    
+    return true
+  } catch (error) {
+    console.error('❌ [maybeStartAppointmentAction] Erro ao listar agendamentos:', error)
+    await queueMessage(conversationKey, async () => {
+      await sendWhatsAppMessage(
+        instanceId,
+        contactNumber,
+        'Não consegui listar seus agendamentos agora. Tente novamente em instantes.',
+        'service'
+      )
+    })
+    return true
+  }
+}
+
+async function processAppointmentActionState(params: AppointmentActionProcessParams): Promise<boolean> {
+  const {
+    conversationKey,
+    userMessage,
+    userMessageLower,
+    instanceId,
+    contactNumber,
+    userId,
+    handleFunctionCall,
+  } = params
+  
+  const state = appointmentActionStates.get(conversationKey)
+  if (!state) {
+    return false
+  }
+  
+  const contactKey = conversationKey
+  const selected = state.selectedAppointment
+  
+  if (state.stage === 'awaiting_selection') {
+    const selectionMatch = userMessageLower.match(/(\d+)/)
+    if (!selectionMatch) {
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(
+          instanceId,
+          contactNumber,
+          'Por favor, responda com o número do agendamento que deseja selecionar.',
+          'service'
+        )
+      })
+      return true
+    }
+    
+    const index = parseInt(selectionMatch[1], 10) - 1
+    if (isNaN(index) || index < 0 || index >= state.appointments.length) {
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(
+          instanceId,
+          contactNumber,
+          'Número inválido. Responda com um dos números da lista.',
+          'service'
+        )
+      })
+      return true
+    }
+    
+    const appointment = state.appointments[index]
+    if (state.mode === 'cancel') {
+      appointmentActionStates.set(conversationKey, {
+        ...state,
+        stage: 'confirm_cancel',
+        selectedAppointment: appointment,
+      })
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(
+          instanceId,
+          contactNumber,
+          `Confirma que deseja cancelar ${formatAppointmentLabel(appointment)}? Responda com "sim" para confirmar ou "não" para manter.`,
+          'service'
+        )
+      })
+    } else {
+      appointmentActionStates.set(conversationKey, {
+        ...state,
+        stage: 'awaiting_new_datetime',
+        selectedAppointment: appointment,
+      })
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(
+          instanceId,
+          contactNumber,
+          `Perfeito! Qual novo dia e horário você deseja para ${formatAppointmentLabel(appointment)}?`,
+          'service'
+        )
+      })
+    }
+    return true
+  }
+  
+  if (state.stage === 'confirm_cancel' && selected) {
+    if (isAffirmative(userMessageLower)) {
+      const result = await handleFunctionCall('cancel_appointment', { appointment_id: selected.id })
+      appointmentActionStates.delete(conversationKey)
+      const messageText =
+        (result && (result.message || result.error)) ||
+        'Agendamento cancelado com sucesso.'
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service')
+      })
+      return true
+    }
+    
+    if (isNegative(userMessageLower)) {
+      appointmentActionStates.delete(conversationKey)
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(
+          instanceId,
+          contactNumber,
+          'Sem problemas! O agendamento foi mantido.',
+          'service'
+        )
+      })
+      return true
+    }
+    
+    await queueMessage(contactKey, async () => {
+      await sendWhatsAppMessage(
+        instanceId,
+        contactNumber,
+        'Responda com "sim" para confirmar o cancelamento ou "não" para manter o agendamento.',
+        'service'
+      )
+    })
+    return true
+  }
+  
+  if (state.stage === 'awaiting_new_datetime' && selected) {
+    const dateHint = extractDateHint(userMessage)
+    if (!dateHint) {
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(
+          instanceId,
+          contactNumber,
+          'Preciso saber o dia desejado para reagendar. Pode me informar? (ex: "amanhã", "terça-feira", "25/11")',
+          'service'
+        )
+      })
+      return true
+    }
+    
+    const timeText = extractTimeText(userMessage)
+    if (!timeText || !messageContainsExplicitTime(userMessage)) {
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(
+          instanceId,
+          contactNumber,
+          'Agora me diga o horário desejado (ex: "às 16h", "3 da tarde").',
+          'service'
+        )
+      })
+      return true
+    }
+    
+    const result = await handleFunctionCall('update_appointment', {
+      appointment_id: selected.id,
+      new_date: dateHint,
+      new_time: timeText,
+    })
+    
+    if (result?.success) {
+      appointmentActionStates.delete(conversationKey)
+    }
+    
+    const responseMessage =
+      (result && (result.message || result.error)) ||
+      'Pronto! Horário atualizado.'
+    
+    await queueMessage(contactKey, async () => {
+      await sendWhatsAppMessage(instanceId, contactNumber, responseMessage, 'service')
+    })
+    return true
+  }
+  
+  return false
+}
+
+function detectAppointmentActionMode(messageLower: string): 'cancel' | 'reschedule' | null {
+  const cancelKeywords = ['cancelar', 'cancelamento', 'desmarcar', 'desmarque', 'anular', 'remover', 'não vou', 'nao vou']
+  const rescheduleKeywords = ['reagendar', 'reagendamento', 'remarcar', 'mudar horário', 'mudar horario', 'alterar horário', 'trocar horário', 'trocar horario', 'adiar']
+  
+  if (cancelKeywords.some((keyword) => messageLower.includes(keyword))) {
+    return 'cancel'
+  }
+  if (rescheduleKeywords.some((keyword) => messageLower.includes(keyword))) {
+    return 'reschedule'
+  }
+  return null
+}
+
+function formatAppointmentLabel(appointment: AppointmentListItem): string {
+  const base = `${appointment.formattedDate} às ${appointment.formattedTime}`
+  if (appointment.description) {
+    return `${base} - ${appointment.description}`
+  }
+  return base
+}
+
+function isAffirmative(messageLower: string): boolean {
+  const affirmative = ['sim', 'confirmar', 'confirmo', 'isso', 'ok', 'claro', 'pode', 'positivo']
+  return affirmative.some((keyword) => messageLower === keyword || messageLower.includes(keyword))
+}
+
+function isNegative(messageLower: string): boolean {
+  const negative = ['não', 'nao', 'negativo', 'cancelar', 'melhor não', 'melhor nao']
+  return negative.some((keyword) => messageLower === keyword || messageLower.includes(keyword))
 }
 
 /**
