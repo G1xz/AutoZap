@@ -2,9 +2,16 @@
  * Utilitários para gerenciar horários de funcionamento
  */
 
+export interface TimeSlot {
+  openTime: string // Formato HH:mm (ex: "09:00")
+  closeTime: string // Formato HH:mm (ex: "18:00")
+}
+
 export interface DayWorkingHours {
   day: number // 0 = domingo, 1 = segunda, ..., 6 = sábado
   isOpen: boolean
+  slots?: TimeSlot[] // Array de turnos (permite múltiplos períodos no mesmo dia)
+  // Compatibilidade com versão antiga (um único turno)
   openTime?: string // Formato HH:mm (ex: "09:00")
   closeTime?: string // Formato HH:mm (ex: "18:00")
 }
@@ -68,30 +75,47 @@ export function isWithinWorkingHours(
     }
   }
 
-  if (!dayConfig.openTime || !dayConfig.closeTime) {
+  const appointmentTime = date.getHours() * 60 + date.getMinutes()
+  
+  // Suporta múltiplos turnos (slots) ou formato antigo (openTime/closeTime)
+  let slots: TimeSlot[] = []
+  
+  if (dayConfig.slots && dayConfig.slots.length > 0) {
+    // Novo formato: múltiplos turnos
+    slots = dayConfig.slots
+  } else if (dayConfig.openTime && dayConfig.closeTime) {
+    // Formato antigo: um único turno (compatibilidade)
+    slots = [{ openTime: dayConfig.openTime, closeTime: dayConfig.closeTime }]
+  } else {
     // Se está aberto mas não tem horários definidos, permite
     return { valid: true }
   }
 
-  const appointmentTime = date.getHours() * 60 + date.getMinutes()
-  const openMinutes = timeToMinutes(dayConfig.openTime)
-  const closeMinutes = timeToMinutes(dayConfig.closeTime)
-
-  if (appointmentTime < openMinutes) {
-    return {
-      valid: false,
-      reason: `Nosso horário de funcionamento começa às ${formatTimeString24h(dayConfig.openTime)}.`,
+  // Verifica se o horário está dentro de algum turno
+  for (const slot of slots) {
+    const openMinutes = timeToMinutes(slot.openTime)
+    const closeMinutes = timeToMinutes(slot.closeTime)
+    
+    if (appointmentTime >= openMinutes && appointmentTime < closeMinutes) {
+      return { valid: true }
     }
   }
 
-  if (appointmentTime >= closeMinutes) {
+  // Se não está em nenhum turno, retorna erro
+  const firstSlot = slots[0]
+  const lastSlot = slots[slots.length - 1]
+  
+  if (appointmentTime < timeToMinutes(firstSlot.openTime)) {
     return {
       valid: false,
-      reason: `Nosso horário de funcionamento termina às ${formatTimeString24h(dayConfig.closeTime)}.`,
+      reason: `Nosso horário de funcionamento começa às ${formatTimeString24h(firstSlot.openTime)}.`,
     }
   }
-
-  return { valid: true }
+  
+  return {
+    valid: false,
+    reason: `Nosso horário de funcionamento termina às ${formatTimeString24h(lastSlot.closeTime)}.`,
+  }
 }
 
 /**
@@ -126,24 +150,43 @@ export function canFitAppointment(
   const dayKey = dayMap[dayOfWeek]
   const dayConfig = workingHours[dayKey]
 
-  if (!dayConfig || !dayConfig.isOpen || !dayConfig.closeTime) {
+  if (!dayConfig || !dayConfig.isOpen) {
+    return { valid: true }
+  }
+
+  // Suporta múltiplos turnos (slots) ou formato antigo (openTime/closeTime)
+  let slots: TimeSlot[] = []
+  
+  if (dayConfig.slots && dayConfig.slots.length > 0) {
+    slots = dayConfig.slots
+  } else if (dayConfig.openTime && dayConfig.closeTime) {
+    slots = [{ openTime: dayConfig.openTime, closeTime: dayConfig.closeTime }]
+  } else {
     return { valid: true }
   }
 
   // Calcula horário de término do agendamento
   const endDate = new Date(startDate.getTime() + durationMinutes * 60000)
   const endMinutes = endDate.getHours() * 60 + endDate.getMinutes()
-  const closeMinutes = timeToMinutes(dayConfig.closeTime)
+  const startMinutes = startDate.getHours() * 60 + startDate.getMinutes()
 
-  // Se o agendamento termina depois do fechamento, não é válido
-  if (endMinutes > closeMinutes) {
-    return {
-      valid: false,
-      reason: `O agendamento terminaria após nosso horário de fechamento (${formatTimeString24h(dayConfig.closeTime)}). Por favor, escolha um horário mais cedo.`,
+  // Verifica se o agendamento cabe em algum turno
+  for (const slot of slots) {
+    const openMinutes = timeToMinutes(slot.openTime)
+    const closeMinutes = timeToMinutes(slot.closeTime)
+    
+    // Se o início está dentro deste turno e o fim também está
+    if (startMinutes >= openMinutes && startMinutes < closeMinutes && endMinutes <= closeMinutes) {
+      return { valid: true }
     }
   }
 
-  return { valid: true }
+  // Se não cabe em nenhum turno, retorna erro
+  const lastSlot = slots[slots.length - 1]
+  return {
+    valid: false,
+    reason: `O agendamento terminaria após nosso horário de fechamento (${formatTimeString24h(lastSlot.closeTime)}). Por favor, escolha um horário mais cedo.`,
+  }
 }
 
 /**
@@ -188,11 +231,23 @@ export function formatWorkingHours(workingHours: WorkingHoursConfig | null | und
   dayKeys.forEach((key, index) => {
     const config = workingHours[key]
     if (config) {
-      if (config.isOpen && config.openTime && config.closeTime) {
-        // Garante formato 24h na exibição
-        const openTime = formatTimeString24h(config.openTime)
-        const closeTime = formatTimeString24h(config.closeTime)
-        lines.push(`${dayNames[index]}: ${openTime} às ${closeTime}`)
+      if (config.isOpen) {
+        let slots: TimeSlot[] = []
+        
+        if (config.slots && config.slots.length > 0) {
+          slots = config.slots
+        } else if (config.openTime && config.closeTime) {
+          slots = [{ openTime: config.openTime, closeTime: config.closeTime }]
+        }
+        
+        if (slots.length > 0) {
+          const slotsStr = slots.map(slot => 
+            `${formatTimeString24h(slot.openTime)} às ${formatTimeString24h(slot.closeTime)}`
+          ).join(', ')
+          lines.push(`${dayNames[index]}: ${slotsStr}`)
+        } else {
+          lines.push(`${dayNames[index]}: Aberto (horários não especificados)`)
+        }
       } else {
         lines.push(`${dayNames[index]}: Fechado`)
       }

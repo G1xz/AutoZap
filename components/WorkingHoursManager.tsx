@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useToast } from '@/hooks/use-toast'
-import { WorkingHoursConfig } from '@/lib/working-hours'
+import { WorkingHoursConfig, TimeSlot } from '@/lib/working-hours'
+import { Plus, X } from 'lucide-react'
 
 export default function WorkingHoursManager() {
   const { data: session } = useSession()
@@ -58,17 +59,70 @@ export default function WorkingHoursManager() {
     }
   }
 
+  const getDaySlots = (key: keyof WorkingHoursConfig): TimeSlot[] => {
+    const dayConfig = workingHours[key]
+    if (!dayConfig) return []
+    
+    if (dayConfig.slots && dayConfig.slots.length > 0) {
+      return dayConfig.slots
+    } else if (dayConfig.openTime && dayConfig.closeTime) {
+      // Migra formato antigo para novo formato
+      return [{ openTime: dayConfig.openTime, closeTime: dayConfig.closeTime }]
+    }
+    return []
+  }
+
   const updateDayConfig = (
     key: keyof WorkingHoursConfig,
-    updates: Partial<{ isOpen: boolean; openTime?: string; closeTime?: string }>
+    updates: Partial<{ isOpen: boolean; slots?: TimeSlot[] }>
   ) => {
-    setWorkingHours((prev) => ({
-      ...prev,
-      [key]: {
-        ...prev[key],
-        ...updates,
-      },
-    }))
+    setWorkingHours((prev) => {
+      const current = prev[key] || { isOpen: false }
+      return {
+        ...prev,
+        [key]: {
+          ...current,
+          ...updates,
+          // Remove campos antigos quando usa slots
+          ...(updates.slots ? { openTime: undefined, closeTime: undefined } : {}),
+        },
+      }
+    })
+  }
+
+  const addSlot = (key: keyof WorkingHoursConfig) => {
+    const currentSlots = getDaySlots(key)
+    const newSlot: TimeSlot = {
+      openTime: '09:00',
+      closeTime: '18:00',
+    }
+    updateDayConfig(key, {
+      isOpen: true,
+      slots: [...currentSlots, newSlot],
+    })
+  }
+
+  const removeSlot = (key: keyof WorkingHoursConfig, index: number) => {
+    const currentSlots = getDaySlots(key)
+    const newSlots = currentSlots.filter((_, i) => i !== index)
+    
+    if (newSlots.length === 0) {
+      updateDayConfig(key, { isOpen: false, slots: [] })
+    } else {
+      updateDayConfig(key, { slots: newSlots })
+    }
+  }
+
+  const updateSlot = (
+    key: keyof WorkingHoursConfig,
+    index: number,
+    field: 'openTime' | 'closeTime',
+    value: string
+  ) => {
+    const currentSlots = getDaySlots(key)
+    const newSlots = [...currentSlots]
+    newSlots[index] = { ...newSlots[index], [field]: value }
+    updateDayConfig(key, { slots: newSlots })
   }
 
   if (loading) {
@@ -82,11 +136,11 @@ export default function WorkingHoursManager() {
           Horários de Funcionamento
         </h3>
         <p className="text-sm text-gray-600">
-          Configure os horários de funcionamento do seu negócio. Estes horários serão aplicados a todos os fluxos e impedirão agendamentos fora do horário configurado.
+          Configure os horários de funcionamento do seu negócio. Você pode adicionar múltiplos turnos por dia (ex: 7h-11h e 13h-21h). Estes horários serão aplicados a todos os fluxos e impedirão agendamentos fora do horário configurado.
         </p>
       </div>
 
-      <div className="space-y-3 mb-6">
+      <div className="space-y-4 mb-6">
         {[
           { key: 'monday' as const, label: 'Segunda-feira' },
           { key: 'tuesday' as const, label: 'Terça-feira' },
@@ -98,54 +152,84 @@ export default function WorkingHoursManager() {
         ].map(({ key, label }) => {
           const dayConfig = workingHours[key] || { isOpen: false }
           const isOpen = dayConfig.isOpen || false
-          const openTime = 'openTime' in dayConfig ? dayConfig.openTime : undefined
-          const closeTime = 'closeTime' in dayConfig ? dayConfig.closeTime : undefined
+          const slots = getDaySlots(key)
 
           return (
             <div
               key={key}
-              className="flex items-center gap-3 p-3 bg-gray-50 rounded border border-gray-200"
+              className="p-4 bg-gray-50 rounded-lg border border-gray-200"
             >
-              <div className="flex items-center gap-2 flex-1">
+              <div className="flex items-center gap-3 mb-3">
                 <input
                   type="checkbox"
                   checked={isOpen}
                   onChange={(e) => {
-                    updateDayConfig(key, {
-                      isOpen: e.target.checked,
-                      openTime: e.target.checked ? openTime || '09:00' : undefined,
-                      closeTime: e.target.checked ? closeTime || '18:00' : undefined,
-                    })
+                    if (e.target.checked) {
+                      // Ao ativar, adiciona um turno padrão se não houver nenhum
+                      if (slots.length === 0) {
+                        updateDayConfig(key, {
+                          isOpen: true,
+                          slots: [{ openTime: '09:00', closeTime: '18:00' }],
+                        })
+                      } else {
+                        updateDayConfig(key, { isOpen: true })
+                      }
+                    } else {
+                      updateDayConfig(key, { isOpen: false, slots: [] })
+                    }
                   }}
                   className="w-4 h-4 rounded border-gray-300 text-autozap-primary focus:ring-autozap-primary"
                 />
-                <span className="text-sm font-medium text-gray-700 w-32">{label}</span>
+                <span className="text-sm font-medium text-gray-700 flex-1">{label}</span>
+                {isOpen && (
+                  <button
+                    onClick={() => addSlot(key)}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-autozap-primary text-white rounded hover:bg-autozap-light transition-colors"
+                  >
+                    <Plus size={14} />
+                    Adicionar Turno
+                  </button>
+                )}
               </div>
 
-              {isOpen && (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="time"
-                    value={openTime || '09:00'}
-                    onChange={(e) => {
-                      updateDayConfig(key, { openTime: e.target.value })
-                    }}
-                    className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
-                  />
-                  <span className="text-sm text-gray-600">às</span>
-                  <input
-                    type="time"
-                    value={closeTime || '18:00'}
-                    onChange={(e) => {
-                      updateDayConfig(key, { closeTime: e.target.value })
-                    }}
-                    className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
-                  />
+              {isOpen && slots.length > 0 && (
+                <div className="space-y-2 ml-7">
+                  {slots.map((slot, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 p-2 bg-white rounded border border-gray-300"
+                    >
+                      <input
+                        type="time"
+                        value={slot.openTime}
+                        onChange={(e) => updateSlot(key, index, 'openTime', e.target.value)}
+                        className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+                      />
+                      <span className="text-sm text-gray-600">às</span>
+                      <input
+                        type="time"
+                        value={slot.closeTime}
+                        onChange={(e) => updateSlot(key, index, 'closeTime', e.target.value)}
+                        className="px-2 py-1 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+                      />
+                      {slots.length > 1 && (
+                        <button
+                          onClick={() => removeSlot(key, index)}
+                          className="ml-auto p-1 text-red-600 hover:bg-red-50 rounded transition-colors"
+                          title="Remover turno"
+                        >
+                          <X size={16} />
+                        </button>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
 
-              {!dayConfig.isOpen && (
-                <span className="text-sm text-gray-500">Fechado</span>
+              {!isOpen && (
+                <div className="ml-7">
+                  <span className="text-sm text-gray-500">Fechado</span>
+                </div>
               )}
             </div>
           )
@@ -164,10 +248,9 @@ export default function WorkingHoursManager() {
 
       <div className="mt-4 pt-4 border-t border-gray-200">
         <p className="text-xs text-gray-500">
-          ⚠️ Os horários configurados aqui serão aplicados a todos os fluxos de automação. Agendamentos só poderão ser feitos dentro dos horários configurados acima.
+          ⚠️ Os horários configurados aqui serão aplicados a todos os fluxos de automação. Agendamentos só poderão ser feitos dentro dos turnos configurados acima.
         </p>
       </div>
     </div>
   )
 }
-

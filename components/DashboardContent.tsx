@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from 'next-auth/react'
 import { useEffect, useState } from 'react'
-import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings } from 'lucide-react'
+import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings, ShoppingBag } from 'lucide-react'
 import WorkflowsManager from './WorkflowsManager'
 import ChatManager from './ChatManager'
 import ServicesManager from './ServicesManager'
@@ -10,11 +10,12 @@ import SchedulingManager from './SchedulingManager'
 import ClientsManager from './ClientsManager'
 import ReportsManager from './ReportsManager'
 import SettingsManager from './SettingsManager'
+import ProductsManager from './ProductsManager'
 import StaggeredMenu, { StaggeredMenuSocialItem } from './StaggeredMenu'
 
 export default function DashboardContent() {
   const { data: session } = useSession()
-  const [activeTab, setActiveTab] = useState<'chat' | 'scheduling' | 'services' | 'clients' | 'workflows' | 'reports' | 'settings'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'scheduling' | 'services' | 'clients' | 'workflows' | 'reports' | 'settings' | 'products'>('chat')
 
   // Mapeia o activeTab para o label do menu
   const getActiveLabel = () => {
@@ -33,6 +34,8 @@ export default function DashboardContent() {
         return 'Relatórios'
       case 'settings':
         return 'Configurações'
+      case 'products':
+        return 'Produtos'
       default:
         return undefined
     }
@@ -56,6 +59,12 @@ export default function DashboardContent() {
       ariaLabel: 'Gerenciar catálogo de serviços e produtos',
       onClick: () => setActiveTab('services'),
       icon: <Package size={28} strokeWidth={2} />
+    },
+    { 
+      label: 'Produtos', 
+      ariaLabel: 'Ver produtos comprados',
+      onClick: () => setActiveTab('products'),
+      icon: <ShoppingBag size={28} strokeWidth={2} />
     },
     { 
       label: 'Clientes', 
@@ -113,6 +122,7 @@ export default function DashboardContent() {
             {activeTab === 'chat' && <ChatManager />}
             {activeTab === 'scheduling' && <SchedulingManager />}
             {activeTab === 'services' && <ServicesManager />}
+            {activeTab === 'products' && <ProductsManager />}
             {activeTab === 'clients' && <ClientsManager />}
             {activeTab === 'workflows' && <WorkflowsManager />}
             {activeTab === 'reports' && <ReportsManager />}
