@@ -161,20 +161,13 @@ export default function AIWorkflowConfig({
       if (response.ok) {
         const data = await response.json()
         setDetails({ ...details, businessImage: data.url })
-        toast({
-          title: 'Imagem enviada',
-          description: 'A imagem do negócio foi enviada com sucesso.',
-        })
+        toast.success('A imagem do negócio foi enviada com sucesso.')
       } else {
         throw new Error('Erro ao enviar imagem')
       }
     } catch (error) {
       console.error('Erro ao enviar imagem:', error)
-      toast({
-        title: 'Erro',
-        description: 'Não foi possível enviar a imagem.',
-        variant: 'destructive',
-      })
+      toast.error('Não foi possível enviar a imagem.')
     } finally {
       setUploadingImage(false)
     }
