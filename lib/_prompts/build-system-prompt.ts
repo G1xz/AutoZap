@@ -373,6 +373,8 @@ function addAppointmentRules(businessName: string): string {
   - ⚠️ CRÍTICO: Se o número for >= 12, já está em formato 24h (ex: "14" = 14:00, "16" = 16:00)
   - ⚠️ CRÍTICO: Se o número for < 12 e não especificar manhã, assuma tarde (ex: "4" = 16:00, "5" = 17:00)
   - ⚠️ PROIBIDO: Se o cliente NÃO disser um horário, NÃO invente um horário padrão. Pergunte qual horário ele prefere antes de criar o agendamento.
+  - ⚠️ IMPORTANTE: Memorize as informações fornecidas. Se o cliente já informou o dia, NÃO peça novamente — apenas confirme o horário. Se ele já informou o horário e só falta o dia, peça apenas o dia. Nunca repita as mesmas perguntas sem necessidade.
+  - ⚠️ IMPORTANTE: Quando o horário solicitado estiver indisponível, mantenha a mesma data por padrão e peça apenas outro horário (a menos que o cliente queira mudar o dia). Seja objetivo para evitar repetição.
 
 - TEMPLATE DE PRIMEIRA MENSAGEM (OBRIGATÓRIO):
 1. Saudações: "Olá! 👋"
