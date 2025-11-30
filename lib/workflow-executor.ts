@@ -1951,7 +1951,7 @@ async function executeAIOnlyWorkflow(
           },
           time: {
             type: 'string',
-            description: 'Hora do agendamento no formato HH:MM em horário de 24 horas (ex: "14:00", "16:00", "19:00"). Se o cliente disser "4 da tarde", converta para "16:00". Se disser "7 da manhã", converta para "07:00". Se disser "9 da noite", converta para "21:00". Se não especificar hora, use "14:00" como padrão.',
+                description: 'Hora do agendamento no formato HH:MM em horário de 24 horas (ex: "14:00", "16:00", "19:00"). Se o cliente disser "4 da tarde", converta para "16:00". Se disser "7 da manhã", converta para "07:00". Se disser "9 da noite", converta para "21:00". ⚠️ Se o cliente não disser um horário, NÃO escolha um por conta própria: peça explicitamente para ele informar.',
           },
           description: {
             type: 'string',
@@ -3645,7 +3645,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `  - ⚠️ CRÍTICO: Se o cliente disser apenas um número (ex: "4", "às 4"), SEMPRE assuma que é da tarde (formato 24h)\n`
   prompt += `  - ⚠️ CRÍTICO: Se o número for >= 12, já está em formato 24h (ex: "14" = 14:00, "16" = 16:00)\n`
   prompt += `  - ⚠️ CRÍTICO: Se o número for < 12 e não especificar manhã, assuma tarde (ex: "4" = 16:00, "5" = 17:00)\n`
-  prompt += `  - Se não especificar hora, use "14:00" como padrão\n`
+  prompt += `  - ⚠️ PROIBIDO: Se o cliente NÃO disser um horário, NÃO invente um horário padrão. Pergunte explicitamente qual horário ele prefere antes de chamar a função.\n`
   prompt += `- FORMATO DA FUNÇÃO (você usa internamente, não menciona ao cliente):\n`
   prompt += `  - A função create_appointment espera:\n`
   prompt += `    * date: pode ser linguagem natural (ex: "amanhã", "próxima terça-feira") OU formato DD/MM/YYYY (ex: "24/11/2025")\n`
