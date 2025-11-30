@@ -162,6 +162,39 @@ function messageIndicatesSchedulingWithoutTime(text: string): boolean {
   return !messageContainsExplicitTime(text)
 }
 
+function getNaturalDateIncrement(dateInput: string): number | null {
+  if (!dateInput) return null
+  const normalized = dateInput.toLowerCase().trim()
+  if (!normalized) return null
+  
+  const containsDigits = /\d/.test(normalized)
+  if (containsDigits) {
+    return null
+  }
+  
+  if (normalized.includes('amanhã') || normalized.includes('amanha')) {
+    return 1
+  }
+  if (normalized.includes('depois de amanhã') || normalized.includes('depois de amanha')) {
+    return 2
+  }
+  
+  const weekdayKeywords = ['segunda', 'terça', 'terca', 'quarta', 'quinta', 'sexta', 'sábado', 'sabado', 'domingo']
+  if (weekdayKeywords.some((keyword) => normalized.includes(keyword))) {
+    return 7
+  }
+  
+  if (normalized.includes('próxima') || normalized.includes('proxima') || normalized.includes('próximo') || normalized.includes('proximo')) {
+    return 7
+  }
+  
+  if (normalized.includes('hoje')) {
+    return 1
+  }
+  
+  return 7
+}
+
 // Fila de mensagens por contato para garantir ordem de envio
 // Evita que mensagens sejam enviadas fora de ordem (ex: imagem depois de texto)
 const messageQueues = new Map<string, Promise<void>>()
@@ -2498,9 +2531,9 @@ async function executeAIOnlyWorkflow(
           
           // Obtém componentes brasileiros para validação
           const brazilianComponents = utcToBrazilianComponents(appointmentDateUTC)
-          const day = brazilianComponents.day
-          const month = brazilianComponents.month
-          const year = brazilianComponents.year
+          let day = brazilianComponents.day
+          let month = brazilianComponents.month
+          let year = brazilianComponents.year
           
           
           // Cria a data no horário do Brasil para comparação
@@ -2523,15 +2556,33 @@ async function executeAIOnlyWorkflow(
           let diffDays = Math.floor((appointmentDateOnly.getTime() - todayOnly.getTime()) / msInDay)
           console.log(`📅 Diferença em dias entre data do agendamento e hoje: ${diffDays} dias`)
           
+          const naturalDateIncrement = getNaturalDateIncrement(args.date)
+          
           // Se a data é hoje, verifica se a hora não passou
           if (diffDays === 0) {
             const appointmentTime = hour * 60 + minute
             const currentTime = currentHour * 60 + currentMinute
             if (appointmentTime <= currentTime) {
-              console.error(`❌ Hora no passado hoje (Brasil): ${hour}:${minute.toString().padStart(2, '0')} <= ${currentHour}:${currentMinute.toString().padStart(2, '0')}`)
-              return {
-                success: false,
-                error: 'Não é possível agendar para um horário que já passou hoje. Por favor, escolha um horário futuro.',
+              if (naturalDateIncrement !== null) {
+                console.warn(`⚠️ Horário já passou hoje, ajustando automaticamente em ${naturalDateIncrement} dia(s).`)
+                appointmentDateOnly.setDate(appointmentDateOnly.getDate() + naturalDateIncrement)
+                diffDays = Math.floor((appointmentDateOnly.getTime() - todayOnly.getTime()) / msInDay)
+                appointmentDateUTC = createBrazilianDateAsUTC(
+                  appointmentDateOnly.getFullYear(),
+                  appointmentDateOnly.getMonth(),
+                  appointmentDateOnly.getDate(),
+                  hour,
+                  minute
+                )
+                day = appointmentDateOnly.getDate()
+                month = appointmentDateOnly.getMonth()
+                year = appointmentDateOnly.getFullYear()
+              } else {
+                console.error(`❌ Hora no passado hoje (Brasil): ${hour}:${minute.toString().padStart(2, '0')} <= ${currentHour}:${currentMinute.toString().padStart(2, '0')}`)
+                return {
+                  success: false,
+                  error: 'Não é possível agendar para um horário que já passou hoje. Por favor, escolha um horário futuro.',
+                }
               }
             }
           } else if (diffDays < -2) {
@@ -2541,16 +2592,29 @@ async function executeAIOnlyWorkflow(
               error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
             }
           } else if (diffDays < 0) {
-            console.warn(`⚠️ Data em linguagem natural possivelmente se referindo à próxima ocorrência. Ajustando automaticamente.`)
-            appointmentDateOnly.setDate(appointmentDateOnly.getDate() + 7)
-            diffDays = Math.floor((appointmentDateOnly.getTime() - todayOnly.getTime()) / msInDay)
-            appointmentDateUTC = createBrazilianDateAsUTC(
-              appointmentDateOnly.getFullYear(),
-              appointmentDateOnly.getMonth(),
-              appointmentDateOnly.getDate(),
-              hour,
-              minute
-            )
+            if (naturalDateIncrement !== null) {
+              console.warn(`⚠️ Data em linguagem natural possivelmente se referindo à próxima ocorrência. Ajustando automaticamente em múltiplos de ${naturalDateIncrement} dia(s).`)
+              do {
+                appointmentDateOnly.setDate(appointmentDateOnly.getDate() + naturalDateIncrement)
+                diffDays = Math.floor((appointmentDateOnly.getTime() - todayOnly.getTime()) / msInDay)
+              } while (diffDays < 0)
+              appointmentDateUTC = createBrazilianDateAsUTC(
+                appointmentDateOnly.getFullYear(),
+                appointmentDateOnly.getMonth(),
+                appointmentDateOnly.getDate(),
+                hour,
+                minute
+              )
+              day = appointmentDateOnly.getDate()
+              month = appointmentDateOnly.getMonth()
+              year = appointmentDateOnly.getFullYear()
+            } else {
+              console.error(`❌ Data no passado (Brasil) sem possibilidade de ajuste automático.`)
+              return {
+                success: false,
+                error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
+              }
+            }
           }
           
           // Verifica se a conversão está correta
