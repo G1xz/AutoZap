@@ -2126,7 +2126,7 @@ async function executeAIOnlyWorkflow(
         return true
       }
 
-      const textualTimeRegex = /(as|a)\s+(uma|duas|tres|tres|quatro|cinco|seis|sete|oito|nove|dez|onze)(\s+(da|de)\s+(manha|tarde|noite))?/
+      const textualTimeRegex = /(as|a)\s+(uma|duas|tr[eê]s|quatro|cinco|seis|sete|oito|nove|dez|onze)(\s+(da|de)\s+(manha|tarde|noite))?/
       return textualTimeRegex.test(normalized)
     }
 
@@ -2230,9 +2230,14 @@ async function executeAIOnlyWorkflow(
 
           const userMentionedExplicitTime = messageContainsExplicitTime(userMessage)
           if (!userMentionedExplicitTime) {
+            const askTimeMessage = args.date
+              ? `Perfeito! Para agendar em "${args.date}", só falta você me dizer o horário (ex: "às 15h" ou "às 10:30"). Qual horário funciona melhor?`
+              : 'Perfeito! Só falta você me dizer o horário (ex: "às 15h" ou "às 10:30") para concluir o agendamento. Qual horário funciona melhor?'
+
             return {
               success: false,
-              error: 'Ainda preciso que o cliente informe o horário exato (ex: "às 15h" ou "às 10:30"). Pergunte qual horário ele prefere antes de tentar criar o agendamento.',
+              forceResponse: true,
+              message: askTimeMessage,
             }
           }
           
@@ -3140,6 +3145,8 @@ async function executeAIOnlyWorkflow(
     // Intercepta chamadas de função para verificar se há agendamento pendente
     let pendingAppointmentResponse: string | null = null
     let pendingAppointmentMedia: MediaAttachment | null = null
+    let forcedServiceResponse: string | null = null
+    let forcedServiceMedia: MediaAttachment | null = null
     
     const interceptedFunctionCall = async (functionName: string, args: any) => {
       console.log(`🔧 [interceptedFunctionCall] Interceptando chamada de função: ${functionName}`)
@@ -3162,6 +3169,18 @@ async function executeAIOnlyWorkflow(
         return {
           success: false,
           error: pendingAppointmentResponse,
+        }
+      }
+
+      if (result && typeof result === 'object' && 'forceResponse' in result && (result as any).forceResponse === true) {
+        const resultAny = result as any
+        forcedServiceResponse = resultAny.message || resultAny.error || 'Preciso de mais informações antes de continuar.'
+        if (resultAny.mediaAttachment) {
+          forcedServiceMedia = resultAny.mediaAttachment as MediaAttachment
+        }
+        return {
+          success: false,
+          error: forcedServiceResponse,
         }
       }
       
@@ -3291,6 +3310,33 @@ async function executeAIOnlyWorkflow(
       onFunctionCall: interceptedFunctionCall,
     })
     
+    // Se há alguma resposta forçada (ex: pedir horário), envia diretamente
+    if (forcedServiceResponse) {
+      const contactKey = `${instanceId}-${contactNumber}`
+      
+      if (isImageAttachment(forcedServiceMedia)) {
+        const media: MediaAttachment = forcedServiceMedia
+        await queueMessage(contactKey, async () => {
+          try {
+            await sendWhatsAppImage(
+              instanceId,
+              contactNumber,
+              media.url,
+              media.caption
+            )
+          } catch (mediaError) {
+            console.error('❌ Erro ao enviar mídia adicional:', mediaError)
+          }
+        })
+      }
+      
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, forcedServiceResponse!, 'service')
+      })
+      console.log(`📩 Resposta forçada enviada diretamente (ex: solicitando horário)`)
+      return
+    }
+
     // Se há uma resposta de agendamento pendente, usa ela diretamente em vez da resposta da IA
     if (pendingAppointmentResponse) {
       const contactKey = `${instanceId}-${contactNumber}`
