@@ -119,6 +119,8 @@ export async function POST(request: NextRequest) {
           name: true,
           active: true,
           userId: true,
+          phone: true,
+          phoneId: true,
         },
       })
 
