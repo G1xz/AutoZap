@@ -58,6 +58,12 @@ interface ServiceWithAppointment {
 
 // Armazena o estado de execução de workflows por contato
 const workflowExecutions = new Map<string, WorkflowExecutionContext>()
+const schedulingFollowUps = new Map<string, {
+  waitingFor: 'time' | 'date'
+  previousMessage: string
+  dateHint?: string
+  timeHint?: string
+}>()
 
 // Fila de mensagens por contato para garantir ordem de envio
 // Evita que mensagens sejam enviadas fora de ordem (ex: imagem depois de texto)
@@ -1590,6 +1596,42 @@ async function executeAIOnlyWorkflow(
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
 
+    const extractDateHint = (text: string): string | null => {
+      if (!text) return null
+      const lower = text.toLowerCase()
+
+      const keywordMap: Record<string, string> = {
+        'hoje': 'hoje',
+        'amanhã': 'amanhã',
+        'amanha': 'amanhã',
+        'depois de amanhã': 'depois de amanhã',
+        'depois de amanha': 'depois de amanhã',
+      }
+
+      for (const [keyword, value] of Object.entries(keywordMap)) {
+        if (lower.includes(keyword)) {
+          return value
+        }
+      }
+
+      const weekdays = ['segunda', 'terça', 'terca', 'quarta', 'quinta', 'sexta', 'sábado', 'sabado', 'domingo']
+      for (const day of weekdays) {
+        if (lower.includes(day)) {
+          return day.includes('terca') ? 'terça' : day
+        }
+      }
+
+      const dateMatch = text.match(/(\d{1,2})\/(\d{1,2})(\/\d{2,4})?/)
+      if (dateMatch) {
+        const day = dateMatch[1].padStart(2, '0')
+        const month = dateMatch[2].padStart(2, '0')
+        const year = dateMatch[3]?.replace('/', '') || ''
+        return year ? `${day}/${month}/${year.length === 2 ? `20${year}` : year}` : `${day}/${month}`
+      }
+
+      return null
+    }
+
     const messageContainsExplicitTime = (text: string): boolean => {
       if (!text) return false
       const normalized = text
@@ -1863,6 +1905,17 @@ async function executeAIOnlyWorkflow(
       hasBusinessDetails: !!workflow.aiBusinessDetails
     })
     
+    const conversationKey = `${instanceId}-${contactNumber}`
+    const schedulingHint = schedulingFollowUps.get(conversationKey)
+    let schedulingExtraContext = ''
+
+    if (schedulingHint?.waitingFor === 'time') {
+      if (messageContainsExplicitTime(userMessage)) {
+        schedulingExtraContext = `\n\n[CONTEXTO EXTRA IMPORTANTE: O cliente já havia dito "${schedulingHint.previousMessage}" (isso contém a data desejada${schedulingHint.dateHint ? `: ${schedulingHint.dateHint}` : ''}). Agora ele informou o horário na mensagem atual. Combine esses dados e siga o fluxo de agendamento normalmente.]`
+        schedulingFollowUps.delete(conversationKey)
+      }
+    }
+
     // SEMPRE usa resposta pré-definida se:
     // 1. É primeira interação E tem nome do negócio
     // 2. OU se não há resposta da IA ainda (primeira vez que o workflow responde)
@@ -1936,7 +1989,17 @@ async function executeAIOnlyWorkflow(
 
     // Se o cliente pediu para agendar mas não informou horário, responda imediatamente pedindo o horário
     if (messageIndicatesSchedulingWithoutTime(userMessage)) {
-      const askTimeMessage = `Perfeito! Para agendar certinho, me diz o dia e principalmente o horário que você prefere (ex: "amanhã às 15h"). Assim já deixo tudo reservado pra você.`
+      const dateHint = extractDateHint(userMessage)
+      schedulingFollowUps.set(conversationKey, {
+        waitingFor: 'time',
+        previousMessage: userMessage,
+        dateHint: dateHint || undefined,
+      })
+
+      const askTimeMessage = dateHint
+        ? `Perfeito! Já reservei o dia (${dateHint}). Qual horário funciona melhor pra você? Pode responder algo como "às 16h" ou "3 da tarde".`
+        : `Perfeito! Para agendar certinho, me diz o dia e principalmente o horário que você prefere (ex: "amanhã às 15h"). Assim já deixo tudo reservado pra você.`
+
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, askTimeMessage, 'service')
@@ -1966,7 +2029,7 @@ async function executeAIOnlyWorkflow(
         listFormatting += `NUNCA use vírgulas. SEMPRE use marcadores (-) e quebra de linha.`
       }
       
-      userMessageWithContext = `[CONTEXTO: Você é assistente de vendas da ${businessDetails.businessName}. Seja NATURAL e CONVERSACIONAL. Mencione o negócio quando relevante, mas não seja repetitivo. Varie suas respostas - não termine sempre com "Como posso te ajudar?". Seja direto e objetivo, como em uma conversa normal. NUNCA seja genérico como "teste de eco".${listFormatting}]\n\nMensagem do cliente: ${userMessage}`
+      userMessageWithContext = `[CONTEXTO: Você é assistente de vendas da ${businessDetails.businessName}. Seja NATURAL e CONVERSACIONAL. Mencione o negócio quando relevante, mas não seja repetitivo. Varie suas respostas - não termine sempre com "Como posso te ajudar?". Seja direto e objetivo, como em uma conversa normal. NUNCA seja genérico como "teste de eco".${listFormatting}${schedulingExtraContext}]\n\nMensagem do cliente: ${userMessage}`
     }
 
     // Gera resposta usando IA
@@ -2255,6 +2318,12 @@ async function executeAIOnlyWorkflow(
             const askTimeMessage = args.date
               ? `Perfeito! Para agendar em "${args.date}", só falta você me dizer o horário (ex: "às 15h" ou "às 10:30"). Qual horário funciona melhor?`
               : 'Perfeito! Só falta você me dizer o horário (ex: "às 15h" ou "às 10:30") para concluir o agendamento. Qual horário funciona melhor?'
+
+            schedulingFollowUps.set(`${instanceId}-${contactNumber}`, {
+              waitingFor: 'time',
+              previousMessage: userMessage,
+              dateHint: args.date,
+            })
 
             return {
               success: false,
