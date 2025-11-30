@@ -14,11 +14,16 @@ export async function GET(request: NextRequest) {
     const status = searchParams.get('status') || 'converted' // Por padrão, apenas produtos comprados
 
     // Busca produtos comprados (ProductInterest com status converted)
+    const whereClause: any = {
+      userId: session.user.id,
+    }
+    
+    if (status !== 'all') {
+      whereClause.status = status
+    }
+
     const purchasedProducts = await prisma.productInterest.findMany({
-      where: {
-        userId: session.user.id,
-        status: status === 'all' ? undefined : status,
-      },
+      where: whereClause,
       include: {
         instance: {
           select: {
@@ -37,11 +42,21 @@ export async function GET(request: NextRequest) {
         },
       },
       orderBy: {
-        convertedAt: 'desc', // Mais recentes primeiro
+        lastInteraction: 'desc', // Ordena por última interação (mais recentes primeiro)
       },
     })
+    
+    // Ordena manualmente para colocar convertedAt primeiro quando existir
+    const sortedProducts = purchasedProducts.sort((a, b) => {
+      if (a.convertedAt && b.convertedAt) {
+        return new Date(b.convertedAt).getTime() - new Date(a.convertedAt).getTime()
+      }
+      if (a.convertedAt && !b.convertedAt) return -1
+      if (!a.convertedAt && b.convertedAt) return 1
+      return 0
+    })
 
-    return NextResponse.json({ products: purchasedProducts })
+    return NextResponse.json({ products: sortedProducts })
   } catch (error) {
     console.error('Erro ao buscar produtos comprados:', error)
     return NextResponse.json(

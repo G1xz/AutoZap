@@ -35,7 +35,7 @@ export default function DashboardContent() {
       case 'settings':
         return 'Configurações'
       case 'products':
-        return 'Produtos'
+        return 'Pedidos'
       default:
         return undefined
     }
@@ -61,8 +61,8 @@ export default function DashboardContent() {
       icon: <Package size={28} strokeWidth={2} />
     },
     { 
-      label: 'Produtos', 
-      ariaLabel: 'Ver produtos comprados',
+      label: 'Pedidos', 
+      ariaLabel: 'Ver pedidos realizados',
       onClick: () => setActiveTab('products'),
       icon: <ShoppingBag size={28} strokeWidth={2} />
     },

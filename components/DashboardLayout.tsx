@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
-import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings } from 'lucide-react'
+import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings, ShoppingBag } from 'lucide-react'
 import StaggeredMenu, { StaggeredMenuSocialItem } from './StaggeredMenu'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -17,6 +17,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (pathname?.startsWith('/dashboard/chat')) return 'Chat'
     if (pathname?.startsWith('/dashboard/agenda')) return 'Agenda'
     if (pathname?.startsWith('/dashboard/catalogo')) return 'Catálogo'
+    if (pathname?.startsWith('/dashboard/pedidos')) return 'Pedidos'
     if (pathname?.startsWith('/dashboard/clientes')) return 'Clientes'
     if (pathname?.startsWith('/dashboard/fluxos')) return 'Fluxos'
     if (pathname?.startsWith('/dashboard/relatorios')) return 'Relatórios'
@@ -42,6 +43,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       ariaLabel: 'Gerenciar catálogo de serviços e produtos',
       link: '/dashboard/catalogo',
       icon: <Package size={28} strokeWidth={2} />
+    },
+    { 
+      label: 'Pedidos', 
+      ariaLabel: 'Ver pedidos realizados',
+      link: '/dashboard/pedidos',
+      icon: <ShoppingBag size={28} strokeWidth={2} />
     },
     { 
       label: 'Clientes', 

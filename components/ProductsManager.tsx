@@ -85,10 +85,10 @@ export default function ProductsManager() {
         <div>
           <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
             <ShoppingBag size={24} />
-            Produtos Comprados
+            Pedidos
           </h2>
           <p className="text-sm text-gray-600 mt-1">
-            Visualize todos os produtos e serviços que foram comprados pelos seus clientes
+            Visualize todos os pedidos realizados pelos seus clientes
           </p>
         </div>
         <div className="flex gap-2">
@@ -118,7 +118,7 @@ export default function ProductsManager() {
       {/* Estatísticas */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-          <div className="text-sm text-gray-600 mb-1">Total de Compras</div>
+          <div className="text-sm text-gray-600 mb-1">Total de Pedidos</div>
           <div className="text-2xl font-bold text-gray-900">
             {products.filter(p => p.status === 'converted').length}
           </div>
@@ -147,8 +147,8 @@ export default function ProductsManager() {
           <Package size={48} className="mx-auto text-gray-400 mb-4" />
           <p className="text-gray-600">
             {filterStatus === 'converted'
-              ? 'Nenhum produto comprado ainda.'
-              : 'Nenhum produto encontrado.'}
+              ? 'Nenhum pedido realizado ainda.'
+              : 'Nenhum pedido encontrado.'}
           </p>
         </div>
       ) : (
@@ -170,7 +170,7 @@ export default function ProductsManager() {
                     Instância
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                    Data da Compra
+                    Data do Pedido
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Status
@@ -237,7 +237,7 @@ export default function ProductsManager() {
                         }`}
                       >
                         {product.status === 'converted'
-                          ? 'Comprado'
+                          ? 'Confirmado'
                           : product.status === 'pending'
                           ? 'Pendente'
                           : 'Abandonado'}
