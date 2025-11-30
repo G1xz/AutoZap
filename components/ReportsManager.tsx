@@ -16,13 +16,26 @@ interface ReportData {
   messagesByDay: Array<{ date: string; count: number }>
 }
 
+interface AIMetricsData {
+  totalRequests: number
+  totalTokens: number
+  totalCost: number
+  averageTokens: number
+  averageCost: number
+  cachedRequests: number
+  averageDuration: number
+  byModel: Record<string, { requests: number; tokens: number; cost: number }>
+}
+
 export default function ReportsManager() {
   const { data: session } = useSession()
   const [reportData, setReportData] = useState<ReportData | null>(null)
+  const [aiMetrics, setAiMetrics] = useState<AIMetricsData | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     fetchReports()
+    fetchAIMetrics()
   }, [])
 
   const fetchReports = async () => {
@@ -36,6 +49,18 @@ export default function ReportsManager() {
       console.error('Erro ao buscar relatórios:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchAIMetrics = async () => {
+    try {
+      const response = await fetch('/api/ai-metrics')
+      if (response.ok) {
+        const data = await response.json()
+        setAiMetrics(data)
+      }
+    } catch (error) {
+      console.error('Erro ao buscar métricas de IA:', error)
     }
   }
 
@@ -110,6 +135,76 @@ export default function ReportsManager() {
           </div>
         </div>
       </div>
+
+      {/* Métricas de IA */}
+      {aiMetrics && (
+        <div className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">🤖 Métricas de Inteligência Artificial</h3>
+          
+          {/* Cards principais */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <div className="text-sm text-purple-700 mb-1">Total de Requisições</div>
+              <div className="text-2xl font-bold text-purple-900">{aiMetrics.totalRequests}</div>
+            </div>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <div className="text-sm text-blue-700 mb-1">Total de Tokens</div>
+              <div className="text-2xl font-bold text-blue-900">{aiMetrics.totalTokens.toLocaleString('pt-BR')}</div>
+            </div>
+            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+              <div className="text-sm text-green-700 mb-1">Custo Total</div>
+              <div className="text-2xl font-bold text-green-900">${aiMetrics.totalCost.toFixed(4)}</div>
+            </div>
+            <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+              <div className="text-sm text-orange-700 mb-1">Respostas em Cache</div>
+              <div className="text-2xl font-bold text-orange-900">{aiMetrics.cachedRequests}</div>
+            </div>
+          </div>
+
+          {/* Estatísticas detalhadas */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+            <div className="text-center p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl font-bold text-gray-900">{Math.round(aiMetrics.averageTokens).toLocaleString('pt-BR')}</div>
+              <div className="text-sm text-gray-600 mt-1">Tokens Médios por Requisição</div>
+            </div>
+            <div className="text-center p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl font-bold text-gray-900">${aiMetrics.averageCost.toFixed(6)}</div>
+              <div className="text-sm text-gray-600 mt-1">Custo Médio por Requisição</div>
+            </div>
+            <div className="text-center p-4 bg-gray-50 rounded-lg">
+              <div className="text-2xl font-bold text-gray-900">{Math.round(aiMetrics.averageDuration)}ms</div>
+              <div className="text-sm text-gray-600 mt-1">Tempo Médio de Resposta</div>
+            </div>
+          </div>
+
+          {/* Estatísticas por modelo */}
+          {Object.keys(aiMetrics.byModel).length > 0 && (
+            <div className="mt-6">
+              <h4 className="text-md font-semibold text-gray-800 mb-3">Estatísticas por Modelo</h4>
+              <div className="space-y-3">
+                {Object.entries(aiMetrics.byModel).map(([model, stats]) => (
+                  <div key={model} className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+                    <div className="flex justify-between items-start mb-2">
+                      <span className="font-medium text-gray-900">{model}</span>
+                      <span className="text-sm text-gray-600">{stats.requests} requisições</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-600">Tokens: </span>
+                        <span className="font-semibold text-gray-900">{stats.tokens.toLocaleString('pt-BR')}</span>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">Custo: </span>
+                        <span className="font-semibold text-gray-900">${stats.cost.toFixed(4)}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Gráfico de mensagens por dia */}
       {reportData.messagesByDay.length > 0 && (

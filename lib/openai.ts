@@ -279,9 +279,9 @@ export async function generateAIResponse(
         userId: context?.userId,
         instanceId: context?.instanceId,
         model: 'gpt-3.5-turbo',
-        promptTokens: finalResponse.usage?.promptTokens || 0,
-        completionTokens: finalResponse.usage?.completionTokens || 0,
-        totalTokens: finalResponse.usage?.totalTokens || 0,
+        promptTokens: (finalResponse.usage?.promptTokens || 0) + (response.usage?.promptTokens || 0),
+        completionTokens: (finalResponse.usage?.completionTokens || 0) + (response.usage?.completionTokens || 0),
+        totalTokens: (finalResponse.usage?.totalTokens || 0) + (response.usage?.totalTokens || 0),
         duration,
         cached: false,
       })
@@ -296,24 +296,6 @@ export async function generateAIResponse(
           cacheConfig.general
         )
       }
-
-      // Registra métricas da resposta final
-      const duration = Date.now() - startTime
-      const { recordAIMetric } = await import('./ai-metrics')
-      const { setCachedResponse, cacheConfig } = await import('./ai-cache')
-      
-      recordAIMetric({
-        userId: context?.userId,
-        instanceId: context?.instanceId,
-        model: 'gpt-3.5-turbo',
-        promptTokens: (finalResponse.usage?.promptTokens || 0) + (response.usage?.promptTokens || 0),
-        completionTokens: (finalResponse.usage?.completionTokens || 0) + (response.usage?.completionTokens || 0),
-        totalTokens: (finalResponse.usage?.totalTokens || 0) + (response.usage?.totalTokens || 0),
-        duration,
-        cached: false,
-      })
-
-      // Não armazena no cache quando há function calling (muito específico)
       
       return finalResponse.content
     } catch (error) {
