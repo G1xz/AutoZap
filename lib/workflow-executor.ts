@@ -5,6 +5,8 @@ import { createAppointment, checkAvailability, getAvailableTimes, getUserAppoint
 import { buildSystemPrompt } from './_prompts/build-system-prompt'
 import { generateEnhancedAppointmentContext } from './_context/enhanced-appointment-context'
 import { getBrazilDate, parseRelativeDate } from './utils/date'
+import { log } from './logger'
+import { normalizeText, matchesTrigger } from './workflow-helpers'
 
 export interface WhatsAppMessage {
   from: string
@@ -78,7 +80,7 @@ async function queueMessage(
   const newPromise = previousPromise
     .then(() => sendFunction())
     .catch((error) => {
-      console.error(`Erro ao enviar mensagem na fila para ${contactKey}:`, error)
+      log.error(`Erro ao enviar mensagem na fila para ${contactKey}`, error)
       throw error
     })
     .finally(() => {
@@ -135,7 +137,7 @@ export async function executeWorkflows(
 
     // ⚠️ CRÍTICO: Processa confirmação/cancelamento de agendamento ANTES de qualquer lógica de workflow
     // Isso garante que confirmações sejam processadas imediatamente e não entrem em loop
-    console.log(`🔍 [executeWorkflows] Verificando confirmação de agendamento ANTES de processar workflows`)
+    log.debug('Verificando confirmação de agendamento antes de processar workflows')
     
     try {
       // Busca userId da instância para processar agendamento
@@ -145,7 +147,7 @@ export async function executeWorkflows(
       })
       
       if (instance?.userId) {
-        console.log(`🔍 [executeWorkflows] userId encontrado: ${instance.userId}`)
+        log.debug('userId encontrado para verificação de agendamento', { userId: instance.userId })
         
         // Processa confirmação/cancelamento de agendamento pendente
         // Usa a mensagem ORIGINAL (não lowercase) para melhor detecção
@@ -158,16 +160,16 @@ export async function executeWorkflows(
         )
         
         if (processedAppointment) {
-          console.log(`✅✅✅ [executeWorkflows] Agendamento processado, RETORNANDO SEM PROCESSAR WORKFLOWS ✅✅✅`)
+          log.debug('Agendamento processado, retornando sem processar workflows')
           return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO PROCESSA WORKFLOWS
         } else {
-          console.log(`📝 [executeWorkflows] Nenhum agendamento pendente processado, continuando com workflows`)
+          log.debug('Nenhum agendamento pendente processado, continuando com workflows')
         }
       } else {
-        console.log(`⚠️ [executeWorkflows] userId não encontrado para instância ${instanceId}, pulando verificação de agendamento`)
+        log.warn('userId não encontrado para instância, pulando verificação de agendamento', { instanceId })
       }
     } catch (error) {
-      console.error(`❌ [executeWorkflows] Erro ao verificar agendamento pendente:`, error)
+      log.error('Erro ao verificar agendamento pendente', error)
       // Continua com workflows mesmo se houver erro na verificação de agendamento
     }
 
@@ -208,7 +210,7 @@ export async function executeWorkflows(
         
         // Se o workflow não existe mais ou não está ativo, limpa a execução
         if (!workflow || !workflow.isActive) {
-          console.log(`🧹 [executeWorkflows] Limpando execução inválida: workflow não existe ou não está ativo`)
+          log.debug('Limpando execução inválida: workflow não existe ou não está ativo')
           workflowExecutions.delete(executionKey)
           // Continua o fluxo normalmente abaixo
         } else if (workflow.isAIOnly) {
@@ -222,7 +224,7 @@ export async function executeWorkflows(
         }
       } else {
         // Execução sem workflowId válido, limpa
-        console.log(`🧹 [executeWorkflows] Limpando execução sem workflowId válido`)
+        log.debug('Limpando execução sem workflowId válido')
         workflowExecutions.delete(executionKey)
         // Continua o fluxo normalmente abaixo
       }
@@ -251,7 +253,12 @@ export async function executeWorkflows(
       const matchesTrigger = messageBody.includes(workflow.trigger.toLowerCase().trim())
       
       if (hasRecentInteraction || matchesTrigger) {
-        console.log(`🤖 Workflow IA-only "${workflow.name}" respondendo para ${contactNumber} (interação: ${hasRecentInteraction}, trigger: ${matchesTrigger})`)
+        log.debug('Workflow IA-only respondendo', {
+          workflowName: workflow.name,
+          contactNumber,
+          hasRecentInteraction,
+          matchesTrigger,
+        })
         
         // Cria execução contínua para manter a IA ativa
         const execution: WorkflowExecutionContext = {
@@ -273,7 +280,11 @@ export async function executeWorkflows(
       const trigger = workflow.trigger.toLowerCase().trim()
       
       if (messageBody.includes(trigger)) {
-        console.log(`🔄 Workflow "${workflow.name}" acionado para ${contactNumber}`)
+        log.event('workflow_triggered', {
+          workflowId: workflow.id,
+          workflowName: workflow.name,
+          contactNumber,
+        })
         
         // Se for fluxo IA-only, executar de forma autônoma e criar execução contínua
         if (workflow.isAIOnly) {
@@ -295,7 +306,7 @@ export async function executeWorkflows(
         // Cria novo contexto de execução
         const triggerNode = workflow.nodes.find((n) => n.type === 'trigger')
         if (!triggerNode) {
-          console.log('⚠️ Nenhum nó trigger encontrado no workflow')
+          log.warn('Nenhum nó trigger encontrado no workflow', { workflowId: workflow.id })
           continue
         }
 
@@ -332,7 +343,7 @@ export async function executeWorkflows(
       }
     }
   } catch (error) {
-    console.error('Erro ao executar workflows:', error)
+    log.error('Erro ao executar workflows', error)
   }
 }
 
@@ -365,7 +376,7 @@ async function continueWorkflowExecution(
     // Continua execução do workflow
     await executeWorkflow(workflow, execution, instanceId, contactNumber)
   } catch (error) {
-    console.error('Erro ao continuar execução:', error)
+    log.error('Erro ao continuar execução', error)
   }
 }
 
@@ -399,11 +410,11 @@ async function executeWorkflow(
       const currentNode = nodes[currentNodeId]
 
       if (!currentNode) {
-        console.log(`⚠️ Nó ${currentNodeId} não encontrado`)
+        log.warn('Nó não encontrado no workflow', { currentNodeId, workflowId: workflow.id })
         break
       }
 
-      console.log(`▶️ Executando nó: ${currentNode.type} (${currentNodeId})`)
+      log.debug('Executando nó do workflow', { nodeType: currentNode.type, nodeId: currentNodeId })
 
       // Executa o nó atual
       const nextNodeId = await executeNode(
@@ -428,7 +439,7 @@ async function executeWorkflow(
     // Limpa execução quando termina
     workflowExecutions.delete(`${instanceId}-${contactNumber}`)
   } catch (error) {
-    console.error('Erro ao executar workflow:', error)
+    log.error('Erro ao executar workflow', error)
     workflowExecutions.delete(`${instanceId}-${contactNumber}`)
   }
 }
@@ -487,7 +498,7 @@ async function executeNode(
                 )
               }
             } catch (error) {
-              console.error('Erro ao enviar arquivo:', error)
+              log.error('Erro ao enviar arquivo', error)
               // Se falhar, tenta enviar pelo menos a mensagem de texto
               if (messageText) {
                 await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service')
@@ -635,9 +646,9 @@ async function executeNode(
           await sendWhatsAppMessage(instanceId, contactNumber, finalResponse, 'service')
         })
         
-        console.log(`🤖 Resposta de IA gerada para ${contactNumber}`)
+        log.debug('Resposta de IA gerada', { contactNumber })
       } catch (error) {
-        console.error('Erro ao gerar resposta de IA:', error)
+        log.error('Erro ao gerar resposta de IA', error)
         
         // Envia mensagem de erro amigável
         const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Nossa equipe foi notificada.'
@@ -668,14 +679,14 @@ async function executeNode(
           conditionResult = eval(condition.replace(/resposta/g, `'${userResponse}'`))
         }
       } catch (e) {
-        console.error('Erro ao avaliar condição:', e)
+        log.error('Erro ao avaliar condição', e)
       }
 
       const handleId = conditionResult ? 'true' : 'false'
       return getNextNode(node.id, connections, handleId)
 
     default:
-      console.log(`⚠️ Tipo de nó desconhecido: ${type}`)
+      log.warn('Tipo de nó desconhecido', { type, nodeId: node.id })
       return getNextNode(node.id, connections, null)
   }
 }
@@ -723,7 +734,7 @@ export async function processQuestionnaireResponse(
   const execution = workflowExecutions.get(executionKey)
 
   if (!execution) {
-    console.log('⚠️ Nenhuma execução encontrada para processar resposta')
+    log.warn('Nenhuma execução encontrada para processar resposta', { contactNumber, instanceId })
     return
   }
 
@@ -790,7 +801,7 @@ export async function processQuestionnaireResponse(
       const foundOption = options.find((opt: any) => opt.id === extractedId)
       if (foundOption) {
         optionId = extractedId
-        console.log(`✅ Opção identificada pelo buttonId do interactiveData: ${optionId}`)
+        log.debug('Opção identificada pelo buttonId do interactiveData', { optionId })
       }
     }
     
@@ -800,7 +811,7 @@ export async function processQuestionnaireResponse(
       const foundOption = options.find((opt: any) => opt.id === extractedId)
       if (foundOption) {
         optionId = extractedId
-        console.log(`✅ Opção identificada pelo ID do botão: ${optionId}`)
+        log.debug('Opção identificada pelo ID do botão', { optionId })
       }
     }
     
@@ -812,7 +823,7 @@ export async function processQuestionnaireResponse(
       })
       if (foundOptionByLabel) {
         optionId = foundOptionByLabel.id
-        console.log(`✅ Opção identificada pelo título: ${optionId}`)
+        log.debug('Opção identificada pelo título', { optionId })
       }
     }
     
@@ -823,7 +834,7 @@ export async function processQuestionnaireResponse(
         const optionIndex = parseInt(numberMatch[1]) - 1
         if (options[optionIndex]) {
           optionId = options[optionIndex].id
-          console.log(`✅ Opção identificada pelo número: ${optionId} (índice ${optionIndex})`)
+          log.debug('Opção identificada pelo número', { optionId, optionIndex })
         }
       }
     }
@@ -1336,8 +1347,11 @@ export async function processAppointmentConfirmation(
     
     // CRÍTICO: Cria o agendamento PRIMEIRO, só remove o pendente depois de sucesso
     // Isso evita perder o agendamento pendente se houver erro na criação
-    // CRÍTICO: Passa a duração do serviço, não padrão fixo
+        // CRÍTICO: Passa a duração do serviço, não padrão fixo
         const { createAppointment } = await import('./appointments')
+        
+        // Horários agora são globais do usuário, não precisam ser passados
+        // A função createAppointment busca automaticamente do usuário
         const result = await createAppointment({
           userId,
           instanceId,
@@ -1705,7 +1719,8 @@ async function executeAIOnlyWorkflow(
           const catalogServices: string[] = []
           const servicesWithAppointment: ServiceWithAppointment[] = []
 
-          catalog.nodes.forEach((node: any) => {
+          // Processa nós do catálogo de forma assíncrona
+          for (const node of catalog.nodes) {
             try {
               const nodeData = JSON.parse(node.data)
               console.log(`🔍 Processando nó do catálogo:`, {
@@ -1724,6 +1739,25 @@ async function executeAIOnlyWorkflow(
                 }
                 catalogProducts.push(productName)
                 console.log(`✅ Produto adicionado: ${productName}`)
+                
+                // Registra interesse se cliente visualizou produto
+                if (contactNumber) {
+                  try {
+                    const { registerProductInterest } = await import('./promotions')
+                    await registerProductInterest({
+                      userId,
+                      instanceId,
+                      contactNumber,
+                      productId: node.id,
+                      productType: 'catalog',
+                      productName: nodeData.name,
+                      interestType: 'viewed',
+                    })
+                  } catch (error) {
+                    // Ignora erros de registro de interesse
+                    console.error('Erro ao registrar interesse do produto:', error)
+                  }
+                }
               } else if (node.type === 'service' && nodeData.name) {
                 let serviceName = nodeData.name
                 if (nodeData.price) {
@@ -1741,14 +1775,43 @@ async function executeAIOnlyWorkflow(
                   console.log(`📅 Serviço com agendamento: ${nodeData.name} (duração: ${nodeData.appointmentDuration || 'não especificada'} min)`)
                 }
                 
+                // Coleta informações de agendamento do serviço
+                if (nodeData.requiresAppointment) {
+                  servicesWithAppointment.push({
+                    name: nodeData.name,
+                    duration: nodeData.appointmentDuration,
+                    imageUrl: nodeData.imageUrl,
+                  })
+                  console.log(`📅 Serviço com agendamento: ${nodeData.name} (duração: ${nodeData.appointmentDuration || 'não especificada'} min)`)
+                }
+                
                 console.log(`✅ Serviço adicionado: ${serviceName}`)
+                
+                // Registra interesse se cliente visualizou serviço
+                if (contactNumber) {
+                  try {
+                    const { registerProductInterest } = await import('./promotions')
+                    await registerProductInterest({
+                      userId,
+                      instanceId,
+                      contactNumber,
+                      productId: node.id,
+                      productType: 'catalog',
+                      productName: nodeData.name,
+                      interestType: 'viewed',
+                    })
+                  } catch (error) {
+                    // Ignora erros de registro de interesse
+                    console.error('Erro ao registrar interesse do serviço:', error)
+                  }
+                }
               } else {
                 console.log(`⚠️ Nó ignorado: tipo=${node.type}, tem nome=${!!nodeData.name}`)
               }
             } catch (e) {
               console.error('❌ Erro ao parsear dados do nó do catálogo:', e, 'Node data:', node.data)
             }
-          })
+          }
 
           // Se há catalogId, SEMPRE usar produtos/serviços do catálogo (substitui os manuais)
           // Limpa produtos/serviços manuais quando há catálogo
@@ -1859,11 +1922,11 @@ async function executeAIOnlyWorkflow(
       if (howToBuyText && howToBuyText.trim().length > 10) {
         predefinedResponse = `${howToBuyText}`
       } else {
-        predefinedResponse = `Olá! Sou assistente da ${businessDetails.businessName}.`
-      }
-      
-      if (businessDesc) {
-        predefinedResponse += ` ${businessDesc}`
+        // Não precisa sempre mencionar "assistente da..." - seja mais natural
+        predefinedResponse = `Olá! 👋`
+        if (businessDesc) {
+          predefinedResponse += ` ${businessDesc}`
+        }
       }
       
       if (servicesList || productsList) {
@@ -1893,11 +1956,21 @@ async function executeAIOnlyWorkflow(
       const randomClosing = closings[Math.floor(Math.random() * closings.length)]
       predefinedResponse += `\n\n${randomClosing}`
       
-      // Envia a resposta pré-definida primeiro
-      const contactKey = `${instanceId}-${contactNumber}`
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, predefinedResponse.trim(), 'service')
-      })
+      // Envia imagem primeiro se configurado
+      if (businessDetails.businessImage && businessDetails.sendImageInFirstMessage) {
+        const { sendWhatsAppImage } = await import('./whatsapp-cloud-api')
+        const contactKeyImage = `${instanceId}-${contactNumber}`
+        await queueMessage(contactKeyImage, async () => {
+          await sendWhatsAppImage(instanceId, contactNumber, businessDetails.businessImage!, predefinedResponse.trim())
+        })
+        console.log(`🖼️ Imagem do negócio enviada na primeira mensagem para ${contactNumber}`)
+      } else {
+        // Envia apenas a mensagem de texto
+        const contactKey = `${instanceId}-${contactNumber}`
+        await queueMessage(contactKey, async () => {
+          await sendWhatsAppMessage(instanceId, contactNumber, predefinedResponse.trim(), 'service')
+        })
+      }
       
       console.log(`🤖 Resposta pré-definida enviada para ${contactNumber} (primeira interação)`)
       return // Não gera resposta da IA na primeira vez, usa a pré-definida
@@ -1924,7 +1997,41 @@ async function executeAIOnlyWorkflow(
         listFormatting += `NUNCA use vírgulas. SEMPRE use marcadores (-) e quebra de linha.`
       }
       
-      userMessageWithContext = `[CONTEXTO: Você é assistente de vendas da ${businessDetails.businessName}. Seja NATURAL e CONVERSACIONAL. Mencione o negócio quando relevante, mas não seja repetitivo. Varie suas respostas - não termine sempre com "Como posso te ajudar?". Seja direto e objetivo, como em uma conversa normal. NUNCA seja genérico como "teste de eco".${listFormatting}]\n\nMensagem do cliente: ${userMessage}`
+      userMessageWithContext = `[CONTEXTO: Você representa ${businessDetails.businessName}. Seja NATURAL e CONVERSACIONAL como uma pessoa real. Não precisa se apresentar repetidamente - apenas na primeira mensagem se necessário. Fale de forma natural, como em uma conversa normal. Varie suas respostas - não termine sempre com "Como posso te ajudar?". Seja direto e objetivo. NUNCA seja genérico como "teste de eco".${listFormatting}]\n\nMensagem do cliente: ${userMessage}`
+    }
+
+    // Registra interesse quando cliente menciona produto/serviço ou pede desconto
+    try {
+      const { registerProductInterest } = await import('./promotions')
+      const { detectDiscountRequest } = await import('./ai-promotions')
+      
+      // Detecta se cliente pediu desconto
+      if (detectDiscountRequest(userMessage)) {
+        // Tenta identificar qual produto/serviço o cliente está interessado
+        // Busca serviços do usuário para ver se algum foi mencionado
+        const userServices = await prisma.service.findMany({
+          where: { userId: workflow.userId },
+          select: { id: true, name: true },
+        })
+        
+        for (const service of userServices) {
+          if (userMessage.toLowerCase().includes(service.name.toLowerCase())) {
+            await registerProductInterest({
+              userId: workflow.userId,
+              instanceId,
+              contactNumber,
+              productId: service.id,
+              productType: 'service',
+              productName: service.name,
+              interestType: 'requested_discount',
+            })
+            break
+          }
+        }
+      }
+    } catch (error) {
+      log.error('Erro ao registrar interesse', error)
+      // Continua mesmo se houver erro
     }
 
     // Gera resposta usando IA
@@ -2816,6 +2923,9 @@ async function executeAIOnlyWorkflow(
           }
           
           console.log(`📅 [get_available_times] Verificando disponibilidade com duração: ${duration} minutos`)
+          
+          // Horários agora são globais do usuário, não precisam ser passados
+          // A função getAvailableTimes busca automaticamente do usuário
           // CRÍTICO: Passa instanceId para considerar agendamentos pendentes também
           const result = await getAvailableTimes(userId, parsedDate, duration, 8, 18, instanceId)
           
@@ -3103,6 +3213,241 @@ async function executeAIOnlyWorkflow(
         }
       }
 
+      // Função para oferecer promoção
+      if (functionName === 'offer_promotion' && userId) {
+        try {
+          const { offerPromotionToAI } = await import('./ai-promotions')
+          
+          if (!args.product_id) {
+            return {
+              success: false,
+              error: 'ID do produto é obrigatório.',
+            }
+          }
+
+          const attempt = args.attempt || 1
+          if (attempt < 1) {
+            return {
+              success: false,
+              error: 'Tentativa deve ser maior que 0.',
+            }
+          }
+
+          // Tenta buscar como Service primeiro
+          let service: any = await prisma.service.findFirst({
+            where: {
+              id: args.product_id,
+              userId,
+            },
+            include: {
+              pixKey: {
+                select: {
+                  pixKey: true,
+                },
+              },
+            },
+          })
+
+          let productName = ''
+          let basePrice = 0
+          let hasPromotions = false
+          let promotionData: any = null
+          let pixKeyId: string | undefined = undefined
+          let pixKeyValue: string | undefined = undefined
+
+          if (service) {
+            // É um Service do modelo separado
+            productName = service.name
+            basePrice = service.price || 0
+            hasPromotions = service.hasPromotions || false
+            pixKeyId = service.pixKeyId || undefined
+            pixKeyValue = service.pixKey?.pixKey
+            
+            // Parse do array dinâmico de promoções
+            const levels: any = {}
+            if (service.promotions) {
+              try {
+                const promotionsArray = JSON.parse(service.promotions)
+                if (Array.isArray(promotionsArray)) {
+                  promotionsArray.forEach((promo: any, index: number) => {
+                    const levelNumber = index + 1
+                    if (levelNumber <= 3) {
+                      levels[`level${levelNumber}`] = {
+                        value: promo.value,
+                        type: promo.type || 'percent',
+                        gatewayLink: promo.gatewayLink,
+                      }
+                    }
+                  })
+                }
+              } catch (error) {
+                console.error('Erro ao parsear promoções:', error)
+              }
+            }
+            
+            promotionData = {
+              hasPromotions,
+              levels,
+              pixKeyId,
+            }
+          } else {
+            // Tenta buscar como CatalogNode
+            const catalogNode = await prisma.catalogNode.findFirst({
+              where: {
+                id: args.product_id,
+                catalog: {
+                  userId,
+                },
+              },
+            })
+
+            if (catalogNode) {
+              const nodeData = JSON.parse(catalogNode.data)
+              productName = nodeData.name || 'Produto'
+              basePrice = nodeData.price || 0
+              hasPromotions = nodeData.hasPromotions || false
+              pixKeyId = nodeData.pixKeyId || undefined
+              
+              if (pixKeyId) {
+                try {
+                  const pixKeyData = await prisma.businessPixKey.findUnique({
+                    where: { id: pixKeyId },
+                    select: { pixKey: true },
+                  })
+                  pixKeyValue = pixKeyData?.pixKey
+                } catch (error) {
+                  // Ignora erro se Prisma Client não foi regenerado ainda
+                  console.error('Erro ao buscar chave Pix:', error)
+                }
+              }
+
+              // Parse do array dinâmico de promoções do CatalogNode
+              const levels: any = {}
+              if (nodeData.promotions && Array.isArray(nodeData.promotions)) {
+                nodeData.promotions.forEach((promo: any, index: number) => {
+                  const levelNumber = index + 1
+                  if (levelNumber <= 3) {
+                    levels[`level${levelNumber}`] = {
+                      value: promo.value,
+                      type: promo.type || 'percent',
+                      gatewayLink: promo.gatewayLink,
+                    }
+                  }
+                })
+              }
+              
+              promotionData = {
+                hasPromotions,
+                levels,
+                pixKeyId,
+              }
+            }
+          }
+
+          if (!productName || basePrice === 0) {
+            return {
+              success: false,
+              error: 'Produto/serviço não encontrado.',
+            }
+          }
+
+          if (!hasPromotions || !promotionData) {
+            return {
+              success: false,
+              error: 'Este produto/serviço não possui promoções configuradas.',
+            }
+          }
+
+          // Determina qual promoção oferecer baseado na tentativa (usa índice do array)
+          const levelKey = `level${attempt}` as 'level1' | 'level2' | 'level3'
+          const selectedPromo = promotionData.levels[levelKey]
+          
+          if (!selectedPromo) {
+            return {
+              success: false,
+              error: `Não há promoção disponível para a tentativa ${attempt}.`,
+            }
+          }
+
+          const promoLevel = attempt as 1 | 2 | 3
+          const promotionValue = selectedPromo.value
+          const promotionType = selectedPromo.type
+          const gatewayLink = selectedPromo.gatewayLink
+
+          if (!promotionValue) {
+            return {
+              success: false,
+              error: 'Não foi possível gerar promoção para este produto.',
+            }
+          }
+
+          // Importa funções necessárias
+          const { formatPromotionMessage, calculatePromotionPrice } = await import('./promotions')
+          const { registerProductInterest } = await import('./promotions')
+
+          // Registra interesse
+          await registerProductInterest({
+            userId,
+            instanceId,
+            contactNumber,
+            productId: args.product_id,
+            productType: service ? 'service' : 'catalog',
+            productName,
+            interestType: 'requested_discount',
+          })
+
+          // Calcula preço final
+          const finalPrice = calculatePromotionPrice(basePrice, promotionValue, promotionType)
+
+          // Formata mensagem
+          const message = formatPromotionMessage(
+            productName,
+            basePrice,
+            promoLevel,
+            promotionValue,
+            promotionType,
+            pixKeyValue,
+            gatewayLink
+          )
+
+          log.event('promotion_offered', {
+            userId,
+            instanceId,
+            contactNumber,
+            productId: args.product_id,
+            promoLevel,
+            finalPrice,
+          })
+
+          // Envia mensagem com promoção
+          const contactKey = `${instanceId}-${contactNumber}`
+          await queueMessage(contactKey, async () => {
+            await sendWhatsAppMessage(instanceId, contactNumber, message, 'service')
+          })
+
+          const promotion = {
+            message,
+            finalPrice,
+            pixKey: pixKeyValue,
+            gatewayLink,
+          }
+
+          return {
+            success: true,
+            message: promotion.message,
+            finalPrice: promotion.finalPrice,
+            pixKey: promotion.pixKey,
+            gatewayLink: promotion.gatewayLink,
+          }
+        } catch (error) {
+          log.error('Erro ao oferecer promoção', error)
+          return {
+            success: false,
+            error: 'Erro ao processar promoção.',
+          }
+        }
+      }
+
       return {
         success: false,
         error: 'Função não reconhecida.',
@@ -3259,6 +3604,24 @@ async function executeAIOnlyWorkflow(
              required: [],
            },
          },
+         {
+           name: 'offer_promotion',
+           description: 'Oferece uma promoção/desconto para um produto ou serviço quando o cliente pedir desconto, achar caro, ou demonstrar interesse mas não comprar. Use quando o cliente pedir desconto, disser que está caro, ou quando quiser oferecer uma oportunidade especial.',
+           parameters: {
+             type: 'object',
+             properties: {
+               product_id: {
+                 type: 'string',
+                 description: 'ID do produto/serviço para oferecer promoção. Use o ID do serviço que o cliente está interessado.',
+               },
+               attempt: {
+                 type: 'number',
+                 description: 'Nível de tentativa de desconto (1, 2 ou 3). Use 1 na primeira vez que o cliente pedir desconto, 2 se ele recusar o nível 1, e 3 se ele recusar o nível 2. Isso determina qual nível de promoção oferecer.',
+               },
+             },
+             required: ['product_id', 'attempt'],
+           },
+         },
        ],
       onFunctionCall: interceptedFunctionCall,
     })
@@ -3290,15 +3653,7 @@ async function executeAIOnlyWorkflow(
       return
     }
     
-    // Validação CRÍTICA: Se a resposta não mencionar o negócio, força mencionar
-    if (businessDetails.businessName && !aiResponse.toLowerCase().includes(businessDetails.businessName.toLowerCase())) {
-      console.warn(`⚠️ Resposta da IA não mencionou o negócio "${businessDetails.businessName}"! Forçando correção...`)
-      const correctedResponse = `Olá! Sou assistente de vendas da ${businessDetails.businessName}.\n\n${aiResponse}`
-      await queueMessage(`${instanceId}-${contactNumber}`, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, correctedResponse, 'service')
-      })
-      return
-    }
+    // Não força mais mencionar o nome do negócio em todas as mensagens para manter naturalidade
 
     // Envia a resposta gerada pela IA
     const contactKey = `${instanceId}-${contactNumber}`

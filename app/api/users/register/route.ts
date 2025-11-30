@@ -1,30 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { prisma } from '@/lib/prisma'
-import { z } from 'zod'
-
-const registerSchema = z.object({
-  name: z.string().min(3),
-  email: z.string().email(),
-  password: z.string().min(6),
-})
+import { registerSchema, validate } from '@/lib/validations'
+import { handleError, ConflictError } from '@/lib/errors'
+import { rateLimitMiddleware } from '@/lib/rate-limiter'
+import { log } from '@/lib/logger'
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json()
-    const { name, email, password } = registerSchema.parse(body)
+    // Rate limiting
+    await rateLimitMiddleware(request, 'auth')
 
+    const body = await request.json()
+    const { name, email, password } = validate(registerSchema, body)
+
+    // Verifica se usuário já existe
     const existingUser = await prisma.user.findUnique({
-      where: { email }
+      where: { email },
+      select: { id: true },
     })
 
     if (existingUser) {
-      return NextResponse.json(
-        { error: 'Email já está em uso' },
-        { status: 400 }
-      )
+      throw new ConflictError('Email já está em uso')
     }
 
+    // Cria usuário
     const hashedPassword = await bcrypt.hash(password, 10)
 
     const user = await prisma.user.create({
@@ -38,22 +38,17 @@ export async function POST(request: NextRequest) {
         name: true,
         email: true,
         createdAt: true,
-      }
+      },
     })
+
+    log.event('user_registered', { userId: user.id, email: user.email })
 
     return NextResponse.json({ user }, { status: 201 })
   } catch (error) {
-    if (error instanceof z.ZodError) {
-      return NextResponse.json(
-        { error: 'Dados inválidos', details: error.errors },
-        { status: 400 }
-      )
-    }
-
-    console.error('Erro ao registrar usuário:', error)
+    const handled = handleError(error)
     return NextResponse.json(
-      { error: 'Erro ao criar conta' },
-      { status: 500 }
+      { error: handled.message, ...(handled.fields && { fields: handled.fields }) },
+      { status: handled.statusCode }
     )
   }
 }

@@ -2,6 +2,26 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { handleError, NotFoundError } from '@/lib/errors'
+import { rateLimitMiddleware } from '@/lib/rate-limiter'
+import { z } from 'zod'
+import { log } from '@/lib/logger'
+
+const updateServiceSchema = z.object({
+  name: z.string().min(1).optional(),
+  description: z.string().nullable().optional(),
+  price: z.number().nullable().optional(),
+  imageUrl: z.string().nullable().optional(),
+  isActive: z.boolean().optional(),
+  // Promoções
+  hasPromotions: z.boolean().optional(),
+  promotions: z.array(z.object({
+    value: z.number(),
+    type: z.enum(['percent', 'value']),
+    gatewayLink: z.string().url().optional(),
+  })).nullable().optional(),
+  pixKeyId: z.string().nullable().optional(),
+})
 
 export async function PATCH(
   request: NextRequest,
@@ -13,32 +33,80 @@ export async function PATCH(
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { isActive } = body
+    await rateLimitMiddleware(request, 'api')
 
-    const service = await prisma.service.findFirst({
+    const body = await request.json()
+    const data = updateServiceSchema.parse(body)
+
+    // Verifica se o serviço existe e pertence ao usuário
+    const existing = await prisma.service.findFirst({
       where: {
         id: params.id,
         userId: session.user.id,
       },
     })
 
-    if (!service) {
-      return NextResponse.json({ error: 'Serviço não encontrado' }, { status: 404 })
+    if (!existing) {
+      throw new NotFoundError('Serviço')
+    }
+
+    // Verifica se a chave Pix pertence ao usuário (se fornecida)
+    if (data.pixKeyId) {
+      const pixKey = await prisma.businessPixKey.findFirst({
+        where: {
+          id: data.pixKeyId,
+          userId: session.user.id,
+        },
+      })
+
+      if (!pixKey) {
+        return NextResponse.json(
+          { error: 'Chave Pix não encontrada ou não pertence ao usuário' },
+          { status: 400 }
+        )
+      }
     }
 
     const updated = await prisma.service.update({
       where: { id: params.id },
-      data: { isActive },
+      data: {
+        ...(data.name && { name: data.name }),
+        ...(data.description !== undefined && { description: data.description }),
+        ...(data.price !== undefined && { price: data.price }),
+        ...(data.imageUrl !== undefined && { imageUrl: data.imageUrl }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+        // Promoções
+        ...(data.hasPromotions !== undefined && { hasPromotions: data.hasPromotions }),
+        ...(data.promotions !== undefined && { promotions: data.promotions ? JSON.stringify(data.promotions) : null }),
+        ...(data.pixKeyId !== undefined && { pixKeyId: data.pixKeyId }),
+      },
+      include: {
+        pixKey: {
+          select: {
+            id: true,
+            name: true,
+            pixKey: true,
+            pixKeyType: true,
+          },
+        },
+      },
     })
 
-    return NextResponse.json(updated)
+    log.event('service_updated', {
+      userId: session.user.id,
+      serviceId: updated.id,
+    })
+
+    // Parse promotions JSON
+    const updatedWithParsedPromotions = {
+      ...updated,
+      promotions: updated.promotions ? JSON.parse(updated.promotions) : null,
+    }
+
+    return NextResponse.json(updatedWithParsedPromotions)
   } catch (error) {
-    console.error('Erro ao atualizar serviço:', error)
-    return NextResponse.json(
-      { error: 'Erro ao atualizar serviço' },
-      { status: 500 }
-    )
+    const handled = handleError(error)
+    return NextResponse.json({ error: handled.message }, { status: handled.statusCode })
   }
 }
 
@@ -52,6 +120,8 @@ export async function DELETE(
       return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
     }
 
+    await rateLimitMiddleware(request, 'api')
+
     const service = await prisma.service.findFirst({
       where: {
         id: params.id,
@@ -60,20 +130,22 @@ export async function DELETE(
     })
 
     if (!service) {
-      return NextResponse.json({ error: 'Serviço não encontrado' }, { status: 404 })
+      throw new NotFoundError('Serviço')
     }
 
     await prisma.service.delete({
       where: { id: params.id },
     })
 
+    log.event('service_deleted', {
+      userId: session.user.id,
+      serviceId: params.id,
+    })
+
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Erro ao excluir serviço:', error)
-    return NextResponse.json(
-      { error: 'Erro ao excluir serviço' },
-      { status: 500 }
-    )
+    const handled = handleError(error)
+    return NextResponse.json({ error: handled.message }, { status: handled.statusCode })
   }
 }
 

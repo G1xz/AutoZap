@@ -3,6 +3,8 @@
  */
 
 import { prisma } from './prisma'
+import { canFitAppointment, WorkingHoursConfig, formatTime24h } from './working-hours'
+import { getUserWorkingHours } from './user-working-hours'
 
 /**
  * Agrupa horários consecutivos em intervalos
@@ -86,7 +88,10 @@ export interface CreateAppointmentParams {
  * Cria um agendamento diretamente no banco de dados
  * Usado pela IA para criar agendamentos automaticamente
  */
-export async function createAppointment(params: CreateAppointmentParams) {
+export async function createAppointment(
+  params: CreateAppointmentParams,
+  workingHours?: WorkingHoursConfig | null
+) {
   try {
     console.log('📅 createAppointment chamado com params:', {
       userId: params.userId,
@@ -124,6 +129,25 @@ export async function createAppointment(params: CreateAppointmentParams) {
       return {
         success: false,
         error: 'date é inválida',
+      }
+    }
+
+    // Busca horários globais do usuário se não foram fornecidos
+    let finalWorkingHours = workingHours
+    if (!finalWorkingHours) {
+      finalWorkingHours = await getUserWorkingHours(params.userId)
+    }
+
+    // Valida horário de funcionamento ANTES de criar o agendamento
+    if (finalWorkingHours) {
+      const duration = params.duration || 60
+      const validation = canFitAppointment(params.date, duration, finalWorkingHours)
+      if (!validation.valid) {
+        console.warn('⚠️ Agendamento fora do horário de funcionamento:', validation.reason)
+        return {
+          success: false,
+          error: validation.reason || 'Agendamento fora do horário de funcionamento',
+        }
       }
     }
 
@@ -475,8 +499,15 @@ export async function getAvailableTimes(
   durationMinutes: number = 60,
   startHour: number = 8,
   endHour: number = 18,
-  instanceId?: string // Opcional: para considerar agendamentos pendentes de uma instância específica
+  instanceId?: string, // Opcional: para considerar agendamentos pendentes de uma instância específica
+  workingHours?: WorkingHoursConfig | null // Opcional: horários de funcionamento estruturados (se não fornecido, busca do usuário)
 ) {
+  // Busca horários globais do usuário se não foram fornecidos
+  let finalWorkingHours = workingHours
+  if (!finalWorkingHours) {
+    finalWorkingHours = await getUserWorkingHours(userId)
+  }
+
   try {
     const startOfDay = new Date(date)
     startOfDay.setHours(0, 0, 0, 0)
@@ -628,7 +659,7 @@ export async function getAvailableTimes(
       
       if (overlapsWithBusinessHours) {
         occupiedIntervals.push({ start: pendingStart, end: pendingEnd })
-        console.log(`📅 [getAvailableTimes] Agendamento pendente adicionado aos ocupados: ${pending.time} (${pendingDuration}min) → ${pendingStart.toLocaleTimeString('pt-BR')} até ${pendingEnd.toLocaleTimeString('pt-BR')}`)
+        console.log(`📅 [getAvailableTimes] Agendamento pendente adicionado aos ocupados: ${pending.time} (${pendingDuration}min) → ${formatTime24h(pendingStart)} até ${formatTime24h(pendingEnd)}`)
       } else {
         console.log(`⚠️ [getAvailableTimes] Agendamento pendente fora do horário de funcionamento: ${pending.time} (${pendingDuration}min)`)
       }
@@ -639,15 +670,56 @@ export async function getAvailableTimes(
     const availableSlots: string[] = []
     const slotInterval = 15 // Verifica a cada 15 minutos para maior precisão
     
-    for (let hour = startHour; hour < endHour; hour++) {
+    // Determina horários de funcionamento do dia
+    let dayStartHour = startHour
+    let dayEndHour = endHour
+    
+    if (finalWorkingHours) {
+      const dayOfWeek = date.getDay()
+      const dayMap: Record<number, keyof WorkingHoursConfig> = {
+        0: 'sunday',
+        1: 'monday',
+        2: 'tuesday',
+        3: 'wednesday',
+        4: 'thursday',
+        5: 'friday',
+        6: 'saturday',
+      }
+      
+      const dayKey = dayMap[dayOfWeek]
+      const dayConfig = finalWorkingHours[dayKey]
+      
+      if (dayConfig && dayConfig.isOpen && dayConfig.openTime && dayConfig.closeTime) {
+        const [openHour, openMinute] = dayConfig.openTime.split(':').map(Number)
+        const [closeHour, closeMinute] = dayConfig.closeTime.split(':').map(Number)
+        dayStartHour = openHour
+        dayEndHour = closeHour + (closeMinute > 0 ? 1 : 0) // Arredonda para cima se tiver minutos
+      } else if (dayConfig && !dayConfig.isOpen) {
+        // Dia fechado - retorna vazio
+        return {
+          success: true,
+          availableTimes: [],
+        }
+      }
+    }
+    
+    for (let hour = dayStartHour; hour < dayEndHour; hour++) {
       for (let minute = 0; minute < 60; minute += slotInterval) {
         const slotStart = new Date(date)
         slotStart.setHours(hour, minute, 0, 0)
         const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60000)
         
-        // Verifica se o slot termina antes do fim do horário de funcionamento
-        if (slotEnd.getHours() > endHour || (slotEnd.getHours() === endHour && slotEnd.getMinutes() > 0)) {
-          continue
+        // Valida se o slot está dentro do horário de funcionamento usando a função de validação
+        if (finalWorkingHours) {
+          const validation = canFitAppointment(slotStart, durationMinutes, finalWorkingHours)
+          if (!validation.valid) {
+            continue
+          }
+        } else {
+          // Fallback para validação antiga
+          if (slotEnd.getHours() > dayEndHour || (slotEnd.getHours() === dayEndHour && slotEnd.getMinutes() > 0)) {
+            continue
+          }
         }
         
         // Verifica se há conflito com algum agendamento existente
@@ -657,7 +729,7 @@ export async function getAvailableTimes(
           // Dois intervalos se sobrepõem se: start1 < end2 && end1 > start2
           if (slotStart < occupied.end && slotEnd > occupied.start) {
             hasConflict = true
-            console.log(`⚠️ [getAvailableTimes] Conflito detectado: slot ${slotStart.toLocaleTimeString('pt-BR')}-${slotEnd.toLocaleTimeString('pt-BR')} conflita com ${occupied.start.toLocaleTimeString('pt-BR')}-${occupied.end.toLocaleTimeString('pt-BR')}`)
+            console.log(`⚠️ [getAvailableTimes] Conflito detectado: slot ${formatTime24h(slotStart)}-${formatTime24h(slotEnd)} conflita com ${formatTime24h(occupied.start)}-${formatTime24h(occupied.end)}`)
             break
           }
         }
@@ -796,14 +868,8 @@ export async function getUserAppointments(
             month: '2-digit',
             year: 'numeric',
           }),
-          formattedTime: apt.date.toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          formattedEndTime: endDate ? endDate.toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }) : undefined,
+          formattedTime: formatTime24h(apt.date),
+          formattedEndTime: endDate ? formatTime24h(endDate) : undefined,
         }
       }),
     }

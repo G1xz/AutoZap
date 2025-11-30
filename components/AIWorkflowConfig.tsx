@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import { useToast } from '@/hooks/use-toast'
 
 interface BusinessDetails {
   businessName: string
@@ -21,6 +22,12 @@ interface BusinessDetails {
   closingMessage?: string // Mensagem de encerramento
   additionalInfo?: string
   aiInstructions?: string // Instruções específicas para a IA sobre como se comportar
+  businessImage?: string // URL da imagem do negócio
+  sendImageInFirstMessage?: boolean // Se deve enviar imagem na primeira mensagem
+  targetAudience?: string // Público-alvo
+  mainBenefits?: string // Principais benefícios/diferenciais
+  businessValues?: string // Valores do negócio
+  workingHours?: string // Horários de funcionamento (texto livre - legado, apenas para exibição)
 }
 
 interface AIWorkflowConfigProps {
@@ -36,6 +43,7 @@ export default function AIWorkflowConfig({
   onCancel,
   onChange,
 }: AIWorkflowConfigProps) {
+  const { toast } = useToast()
   const [details, setDetails] = useState<BusinessDetails>(
     businessDetails || {
       businessName: '',
@@ -52,6 +60,12 @@ export default function AIWorkflowConfig({
       closingMessage: '',
       additionalInfo: '',
       aiInstructions: '',
+      businessImage: '',
+      sendImageInFirstMessage: false,
+      targetAudience: '',
+      mainBenefits: '',
+      businessValues: '',
+      workingHours: '',
     }
   )
 
@@ -59,6 +73,8 @@ export default function AIWorkflowConfig({
   const [newService, setNewService] = useState('')
   const [catalogs, setCatalogs] = useState<any[]>([])
   const [isLoadingCatalogs, setIsLoadingCatalogs] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Atualiza o estado quando businessDetails mudar externamente
   useEffect(() => {
@@ -127,6 +143,43 @@ export default function AIWorkflowConfig({
     fetchCatalogs()
   }, [])
 
+  // Função para upload de imagem do negócio
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    setUploadingImage(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setDetails({ ...details, businessImage: data.url })
+        toast({
+          title: 'Imagem enviada',
+          description: 'A imagem do negócio foi enviada com sucesso.',
+        })
+      } else {
+        throw new Error('Erro ao enviar imagem')
+      }
+    } catch (error) {
+      console.error('Erro ao enviar imagem:', error)
+      toast({
+        title: 'Erro',
+        description: 'Não foi possível enviar a imagem.',
+        variant: 'destructive',
+      })
+    } finally {
+      setUploadingImage(false)
+    }
+  }
+
 
   // Validação dos dados (usado pelo WorkflowEditor ao salvar)
   const validateDetails = (): boolean => {
@@ -168,6 +221,64 @@ export default function AIWorkflowConfig({
               placeholder="Ex: Loja de Roupas Fashion"
               className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
             />
+          </div>
+
+          {/* Imagem do Negócio */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Foto do Negócio (opcional)
+            </label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleImageUpload}
+              className="hidden"
+            />
+            <div className="flex gap-2 items-center">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploadingImage}
+                className="px-4 py-2 bg-autozap-primary text-white rounded-md hover:bg-autozap-light disabled:opacity-50 transition-colors"
+              >
+                {uploadingImage ? 'Enviando...' : details.businessImage ? 'Trocar Imagem' : 'Escolher Imagem'}
+              </button>
+              {details.businessImage && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setDetails({ ...details, businessImage: '', sendImageInFirstMessage: false })}
+                    className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                  >
+                    Remover
+                  </button>
+                  <div className="w-16 h-16 rounded-md overflow-hidden border border-gray-300">
+                    <img src={details.businessImage} alt="Negócio" className="w-full h-full object-cover" />
+                  </div>
+                </>
+              )}
+            </div>
+            {details.businessImage && (
+              <div className="mt-2">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={details.sendImageInFirstMessage || false}
+                    onChange={(e) =>
+                      setDetails({ ...details, sendImageInFirstMessage: e.target.checked })
+                    }
+                    className="w-4 h-4 rounded border-gray-300 text-autozap-primary focus:ring-autozap-primary"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Enviar esta imagem na primeira mensagem (atrativo visual)
+                  </span>
+                </label>
+              </div>
+            )}
+            <p className="text-xs text-gray-500 mt-1">
+              Uma imagem do seu negócio pode tornar a primeira impressão mais atrativa.
+            </p>
           </div>
 
           {/* Descrição do Negócio */}
@@ -404,6 +515,82 @@ export default function AIWorkflowConfig({
             </p>
           </div>
 
+          {/* Público-Alvo */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Público-Alvo (opcional)
+            </label>
+            <textarea
+              value={details.targetAudience || ''}
+              onChange={(e) =>
+                setDetails({ ...details, targetAudience: e.target.value })
+              }
+              placeholder="Ex: Profissionais de 25-45 anos, empresas de pequeno e médio porte, estudantes universitários..."
+              rows={2}
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Descreva quem é seu público-alvo. Isso ajuda a IA a adaptar o tom e a abordagem.
+            </p>
+          </div>
+
+          {/* Principais Benefícios/Diferenciais */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Principais Benefícios e Diferenciais (opcional)
+            </label>
+            <textarea
+              value={details.mainBenefits || ''}
+              onChange={(e) =>
+                setDetails({ ...details, mainBenefits: e.target.value })
+              }
+              placeholder="Ex: Atendimento personalizado, entrega rápida, garantia de qualidade, preços competitivos, experiência de 10 anos..."
+              rows={3}
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Liste os principais diferenciais e benefícios do seu negócio. A IA usará isso para destacar seus pontos fortes.
+            </p>
+          </div>
+
+          {/* Valores do Negócio */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Valores do Negócio (opcional)
+            </label>
+            <textarea
+              value={details.businessValues || ''}
+              onChange={(e) =>
+                setDetails({ ...details, businessValues: e.target.value })
+              }
+              placeholder="Ex: Compromisso com qualidade, transparência, sustentabilidade, inovação, respeito ao cliente..."
+              rows={2}
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Quais são os valores que guiam seu negócio? Isso ajuda a IA a transmitir a identidade da marca.
+            </p>
+          </div>
+
+          {/* Horários de Funcionamento (Texto Livre - Apenas para exibição) */}
+          <div>
+            <label className="block text-sm font-semibold text-gray-900 mb-2">
+              Horários de Funcionamento - Texto Livre (opcional, para exibição)
+            </label>
+            <textarea
+              value={details.workingHours || ''}
+              onChange={(e) =>
+                setDetails({ ...details, workingHours: e.target.value })
+              }
+              placeholder="Ex: Segunda a Sexta: 9h às 18h | Sábado: 9h às 13h | Domingo: Fechado"
+              rows={2}
+              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              Este campo é apenas para exibição na conversa. Os horários estruturados que bloqueiam agendamentos devem ser configurados em <strong>Configurações → Horários de Funcionamento</strong>.
+            </p>
+          </div>
+
           {/* Informações Adicionais */}
           <div>
             <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -414,10 +601,13 @@ export default function AIWorkflowConfig({
               onChange={(e) =>
                 setDetails({ ...details, additionalInfo: e.target.value })
               }
-              placeholder="Horários de funcionamento, políticas, promoções especiais, etc..."
+              placeholder="Políticas, promoções especiais, informações sobre garantia, formas de pagamento, etc..."
               rows={3}
               className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
             />
+            <p className="text-xs text-gray-500 mt-1">
+              Qualquer outra informação relevante que a IA deve conhecer sobre seu negócio.
+            </p>
           </div>
         </div>
 

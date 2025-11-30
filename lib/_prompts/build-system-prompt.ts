@@ -15,6 +15,10 @@ interface BusinessDetails {
   tone?: string
   additionalInfo?: string
   aiInstructions?: string
+  targetAudience?: string
+  mainBenefits?: string
+  businessValues?: string
+  workingHours?: string
 }
 
 interface AppointmentContext {
@@ -40,6 +44,10 @@ export function buildSystemPrompt(
   const tone = businessDetails.tone || 'friendly'
   const additionalInfo = businessDetails.additionalInfo || ''
   const aiInstructions = businessDetails.aiInstructions || ''
+  const targetAudience = businessDetails.targetAudience || ''
+  const mainBenefits = businessDetails.mainBenefits || ''
+  const businessValues = businessDetails.businessValues || ''
+  const workingHours = businessDetails.workingHours || ''
 
   const toneDescriptions: Record<string, string> = {
     friendly: 'amigável, descontraído e prestativo',
@@ -102,9 +110,10 @@ export function buildSystemPrompt(
   // SOBRE O NEGÓCIO
   // ==========================================
   if (businessDescription) {
-    prompt += `\n\nSOBRE O NEGÓCIO (SEMPRE mencione isso nas suas respostas):\n${businessDescription}\n`
+    prompt += `\n\nSOBRE O NEGÓCIO:\n${businessDescription}\n`
+    prompt += `\nUse essas informações para responder perguntas sobre o negócio de forma natural. Não precisa mencionar o nome do negócio em TODAS as respostas - apenas quando fizer sentido no contexto da conversa.\n`
   } else {
-    prompt += `\n\nIMPORTANTE: Você representa ${businessName}. Sempre mencione o nome do negócio e explique o que faz.\n`
+    prompt += `\n\nIMPORTANTE: Você representa ${businessName}. Conheça bem o negócio e responda perguntas sobre ele de forma natural.\n`
   }
 
   // Tipo de negócio
@@ -180,7 +189,8 @@ export function buildSystemPrompt(
   // ==========================================
   prompt += `\n\n🎯 REGRAS DE COMPORTAMENTO:\n`
   prompt += `- Seja ${toneDescription} mas sempre focado em apresentar o negócio\n`
-  prompt += `- ⚠️ OBRIGATÓRIO: Na primeira mensagem, SEMPRE se apresente mencionando ${businessName} e o que oferece\n`
+  prompt += `- Na primeira mensagem, se apresente de forma natural mencionando ${businessName} e o que oferece\n`
+  prompt += `- Após a primeira mensagem, não precisa se apresentar novamente - seja natural como em uma conversa real\n`
   prompt += `- ⚠️ OBRIGATÓRIO: NUNCA responda de forma genérica como "Como posso ajudar?" ou "teste de eco"\n`
   prompt += `- ⚠️ OBRIGATÓRIO: NUNCA ignore que você está vendendo/apresentando produtos ou serviços\n`
   prompt += `- ⚠️ SEMPRE mencione os produtos/serviços disponíveis na primeira interação\n`
@@ -195,6 +205,23 @@ export function buildSystemPrompt(
   prompt += `  - Item 1\n`
   prompt += `  - Item 2\n`
   prompt += `  - Item 3\n`
+  
+  // Instruções sobre promoções
+  prompt += `\n\n🎯 SISTEMA DE PROMOÇÕES E DESCONTOS:\n`
+  prompt += `- Quando o cliente pedir desconto, disser que está caro, ou demonstrar interesse mas não comprar, você PODE oferecer promoções\n`
+  prompt += `- Use a função "offer_promotion" para oferecer descontos quando apropriado\n`
+  prompt += `- A função oferece 3 níveis de desconto progressivos:\n`
+  prompt += `  * Nível 1 (attempt: 1): Primeira tentativa - desconto menor\n`
+  prompt += `  * Nível 2 (attempt: 2): Segunda tentativa - desconto médio (use se cliente recusar nível 1)\n`
+  prompt += `  * Nível 3 (attempt: 3): Terceira tentativa - desconto máximo (use se cliente recusar nível 2)\n`
+  prompt += `- ⚠️ IMPORTANTE: Só ofereça promoção se o produto/serviço tiver promoções configuradas\n`
+  prompt += `- ⚠️ IMPORTANTE: Use o ID correto do produto/serviço ao chamar a função\n`
+  prompt += `- ⚠️ IMPORTANTE: A função retorna mensagem formatada com preço original, desconto e preço final\n`
+  prompt += `- ⚠️ IMPORTANTE: A função também retorna chave Pix e link de gateway se configurados\n`
+  prompt += `- Quando oferecer promoção, seja entusiasmado mas não pressione demais\n`
+  prompt += `- Se o cliente recusar uma promoção, você pode tentar o próximo nível (se disponível)\n`
+  prompt += `- Se o cliente aceitar, forneça as informações de pagamento (Pix ou gateway)\n`
+  prompt += `- Palavras-chave que indicam pedido de desconto: "desconto", "promoção", "mais barato", "está caro", "muito caro", "tem desconto", "negociar"\n`
 
   // Mensagem de boas-vindas personalizada
   if (howToBuy && howToBuy.trim().length > 10) {
@@ -263,8 +290,28 @@ export function buildSystemPrompt(
   prompt += addAppointmentRules(businessName)
 
   // ==========================================
-  // INFORMAÇÕES ADICIONAIS
+  // INFORMAÇÕES ADICIONAIS DETALHADAS
   // ==========================================
+  if (targetAudience) {
+    prompt += `\n\n🎯 PÚBLICO-ALVO:\n${targetAudience}\n`
+    prompt += `Use essas informações para adaptar seu tom e abordagem ao conversar com clientes.\n`
+  }
+
+  if (mainBenefits) {
+    prompt += `\n\n✨ PRINCIPAIS BENEFÍCIOS E DIFERENCIAIS:\n${mainBenefits}\n`
+    prompt += `Destaque esses pontos fortes quando apropriado durante a conversa.\n`
+  }
+
+  if (businessValues) {
+    prompt += `\n\n💎 VALORES DO NEGÓCIO:\n${businessValues}\n`
+    prompt += `Transmita esses valores de forma natural quando relevante.\n`
+  }
+
+  if (workingHours) {
+    prompt += `\n\n🕐 HORÁRIOS DE FUNCIONAMENTO:\n${workingHours}\n`
+    prompt += `Use essas informações quando clientes perguntarem sobre disponibilidade ou horários.\n`
+  }
+
   if (additionalInfo) {
     prompt += `\n\n📌 INFORMAÇÕES ADICIONAIS:\n${additionalInfo}\n`
   }
@@ -374,16 +421,15 @@ function addAppointmentRules(businessName: string): string {
   - ⚠️ CRÍTICO: Se o número for < 12 e não especificar manhã, assuma tarde (ex: "4" = 16:00, "5" = 17:00)
   - Se não especificar hora, use "14:00" como padrão
 
-- TEMPLATE DE PRIMEIRA MENSAGEM (OBRIGATÓRIO):
-1. Saudações: "Olá! 👋"
-2. Apresentação: "Sou o assistente da ${businessName}"
-3. Descrição: Explique o que o negócio faz
-4. Produtos/Serviços: Liste os principais produtos/serviços em formato de lista
-5. Finalize: "Como posso te ajudar hoje?"
+- TEMPLATE DE PRIMEIRA MENSAGEM (GUIA):
+1. Saudações: "Olá! 👋" ou similar
+2. Apresentação natural: Explique o que o negócio faz de forma natural (não precisa sempre dizer "sou assistente da...")
+3. Produtos/Serviços: Liste os principais produtos/serviços em formato de lista quando relevante
+4. Finalize de forma variada: "Em que posso ajudar?", "Tem alguma dúvida?", "Quer saber mais sobre algum deles?", etc.
 
-⚠️ CRÍTICO: Use este template SEMPRE na primeira mensagem. NUNCA seja genérico como "teste de eco" ou "Como posso ajudar?" sem contexto!
-⚠️ PROIBIDO: Respostas genéricas sem mencionar ${businessName}, produtos ou serviços
-⚠️ OBRIGATÓRIO: Sempre se comporte como um VENDEDOR, não como um chatbot genérico
+⚠️ IMPORTANTE: Seja NATURAL e CONVERSACIONAL. Não precisa seguir este template rigidamente - adapte ao contexto.
+⚠️ PROIBIDO: Respostas genéricas como "teste de eco" ou "Como posso ajudar?" sem contexto
+⚠️ IMPORTANTE: Se comporte como um VENDEDOR natural, não como um chatbot robótico
 `
 }
 

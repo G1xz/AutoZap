@@ -15,6 +15,7 @@ model User {
   email     String   @unique
   password  String
   name      String
+  workingHoursConfig String? // JSON com configuração de horários de funcionamento globais
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -25,6 +26,8 @@ model User {
   appointments        Appointment[]
   pendingAppointments PendingAppointment[]
   catalogs            Catalog[]
+  pixKeys             BusinessPixKey[]
+  productInterests    ProductInterest[]
 }
 
 model WhatsAppInstance {
@@ -54,6 +57,7 @@ model WhatsAppInstance {
   appointments         Appointment[]
   pendingAppointments  PendingAppointment[]
   contacts             Contact[]
+  productInterests     ProductInterest[]
 }
 
 model Message {
@@ -188,13 +192,20 @@ model Service {
   price       Float?
   imageUrl    String?
   isActive    Boolean  @default(true)
+  // Promoções (array dinâmico de promoções)
+  hasPromotions     Boolean  @default(false) // Se tem promoções ativadas
+  promotions        String? // JSON array de promoções: [{value: number, type: "percent"|"value", gatewayLink?: string}]
+  pixKeyId           String? // ID da chave Pix selecionada
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pixKey       BusinessPixKey?   @relation(fields: [pixKeyId], references: [id], onDelete: SetNull)
+  interests    ProductInterest[]
 
   @@index([userId])
   @@index([userId, isActive])
+  @@index([hasPromotions])
 }
 
 model Catalog {
@@ -293,3 +304,49 @@ model PendingAppointment {
   @@index([instanceId, contactNumber])
   @@index([expiresAt]) // Para limpar agendamentos expirados
 }
+
+// Chaves Pix do negócio
+model BusinessPixKey {
+  id          String   @id @default(cuid())
+  userId      String
+  name        String // Nome/identificação da chave (ex: "Pix Principal", "Pix Vendas")
+  pixKey      String // Chave Pix (CPF, CNPJ, email, telefone, chave aleatória)
+  pixKeyType  String @default("random") // "cpf", "cnpj", "email", "phone", "random"
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  services Service[]
+
+  @@index([userId])
+  @@index([userId, isActive])
+}
+
+// Rastreamento de interesse do cliente em produtos/serviços
+model ProductInterest {
+  id            String   @id @default(cuid())
+  userId        String
+  instanceId    String
+  contactNumber String
+  productId     String // ID do produto/serviço (pode ser Service.id ou CatalogNode.id)
+  productType   String @default("service") // "service" ou "catalog"
+  productName   String // Nome do produto (para referência rápida)
+  interestType  String @default("viewed") // "viewed", "asked_info", "requested_discount"
+  status        String @default("pending") // "pending", "converted", "abandoned"
+  lastInteraction DateTime @default(now()) // Última vez que demonstrou interesse
+  convertedAt   DateTime? // Data em que converteu (comprou)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  service  Service?         @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, contactNumber, productId, productType]) // Um interesse por produto por contato
+  @@index([userId])
+  @@index([instanceId, contactNumber])
+  @@index([status])
+  @@index([lastInteraction])
+}
+

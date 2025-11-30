@@ -3,6 +3,9 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { verifyWebhook, processIncomingMessage } from '@/lib/whatsapp-cloud-api'
+import { rateLimitMiddleware } from '@/lib/rate-limiter'
+import { log } from '@/lib/logger'
+import { handleError } from '@/lib/errors'
 
 /**
  * GET - Verifica o webhook (requerido pelo WhatsApp)
@@ -10,36 +13,35 @@ import { verifyWebhook, processIncomingMessage } from '@/lib/whatsapp-cloud-api'
  */
 export async function GET(request: NextRequest) {
   try {
+    // Rate limiting mais permissivo para webhook (verificação do WhatsApp)
+    await rateLimitMiddleware(request, 'webhook')
+
     const { searchParams } = new URL(request.url)
     const mode = searchParams.get('hub.mode')
     const token = searchParams.get('hub.verify_token')
     const challenge = searchParams.get('hub.challenge')
 
-    console.log('🔍 Verificação webhook:', { mode, token: token ? '***' : null, challenge })
+    log.debug('Verificação webhook', { mode, hasToken: !!token, hasChallenge: !!challenge })
 
     // Verificação do webhook - tenta com token global ou busca em todas as instâncias
     // Opção 1: Token global (se configurado)
     const globalWebhookToken = process.env.WEBHOOK_VERIFY_TOKEN
-    console.log('🔑 Token global configurado:', globalWebhookToken ? 'Sim' : 'Não')
     
     if (globalWebhookToken && verifyWebhook(mode, token, globalWebhookToken)) {
-      console.log('✅ Verificação OK com token global')
+      log.debug('Verificação webhook OK com token global')
       return new NextResponse(challenge, { status: 200 })
     }
 
     // Opção 2: Tenta verificar com qualquer instância que tenha o token correto
-    // (útil se cada instância tiver seu próprio token)
     if (token) {
-      console.log('🔍 Tentando verificar com token de instância...')
       const instance = await prisma.whatsAppInstance.findFirst({
         where: { webhookVerifyToken: token },
+        select: { id: true },
       })
 
-      if (instance && instance.webhookVerifyToken && verifyWebhook(mode, token, instance.webhookVerifyToken)) {
-        console.log('✅ Verificação OK com token de instância:', instance.id)
+      if (instance && verifyWebhook(mode, token, token)) {
+        log.debug('Verificação webhook OK com token de instância', { instanceId: instance.id })
         return new NextResponse(challenge, { status: 200 })
-      } else {
-        console.log('❌ Instância não encontrada ou token não corresponde')
       }
     }
 
@@ -48,25 +50,32 @@ export async function GET(request: NextRequest) {
     if (instanceId) {
       const instance = await prisma.whatsAppInstance.findUnique({
         where: { id: instanceId },
+        select: { webhookVerifyToken: true },
       })
 
-      if (instance && instance.webhookVerifyToken && verifyWebhook(mode, token, instance.webhookVerifyToken)) {
+      if (instance?.webhookVerifyToken && verifyWebhook(mode, token, instance.webhookVerifyToken)) {
         return new NextResponse(challenge, { status: 200 })
       }
     }
 
-    console.log('❌ Verificação falhou - token inválido ou não encontrado')
+    log.warn('Verificação webhook falhou - token inválido')
     return NextResponse.json({ error: 'Token inválido' }, { status: 403 })
   } catch (error) {
-    console.error('Erro ao verificar webhook:', error)
-    return NextResponse.json({ error: 'Erro ao verificar webhook' }, { status: 500 })
+    const handled = handleError(error)
+    return NextResponse.json({ error: handled.message }, { status: handled.statusCode })
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
+    // Rate limiting para webhook
+    await rateLimitMiddleware(request, 'webhook')
+
     const body = await request.json()
-    console.log('📨 Webhook recebido:', JSON.stringify(body, null, 2))
+    log.debug('Webhook recebido', {
+      hasEntry: !!body.entry,
+      entryCount: body.entry?.length || 0,
+    })
 
     // WhatsApp envia notificações em um formato específico
     const entry = body.entry?.[0]
@@ -74,59 +83,65 @@ export async function POST(request: NextRequest) {
     const value = changes?.value
 
     if (!value) {
-      console.log('⚠️ Sem value no webhook')
+      log.debug('Webhook sem value')
       return NextResponse.json({ success: true })
     }
 
-    console.log('📱 Metadata:', value.metadata)
-
     // Processa mensagens recebidas
     const messages = value.messages || []
-    console.log(`📬 Mensagens recebidas: ${messages.length}`)
+    log.debug('Mensagens recebidas no webhook', {
+      messageCount: messages.length,
+      phoneNumberId: value.metadata?.phone_number_id,
+    })
 
     if (messages.length === 0) {
-      console.log('⚠️ Nenhuma mensagem no webhook. Verificando status...')
       const statuses = value.statuses || []
       if (statuses.length > 0) {
-        console.log('📊 Status recebidos:', statuses)
+        log.debug('Status recebidos no webhook', { statusCount: statuses.length })
       }
       return NextResponse.json({ success: true })
     }
 
     for (const msg of messages) {
-      console.log('📩 Processando mensagem:', msg)
-      
       // Identifica a instância pelo número de telefone
       const phoneNumberId = value.metadata?.phone_number_id
-      console.log(`🔍 Phone Number ID: ${phoneNumberId}`)
       
       if (!phoneNumberId) {
-        console.log('⚠️ Phone Number ID não encontrado')
+        log.warn('Phone Number ID não encontrado no webhook')
         continue
       }
 
       // Busca a instância pelo phoneId
       const instance = await prisma.whatsAppInstance.findFirst({
         where: { phoneId: phoneNumberId },
+        select: {
+          id: true,
+          name: true,
+          active: true,
+          userId: true,
+        },
       })
 
       if (!instance) {
-        console.log(`❌ Instância não encontrada para phoneId: ${phoneNumberId}`)
-        // Lista todos os phoneIds disponíveis para debug
-        const allInstances = await prisma.whatsAppInstance.findMany({
-          select: { id: true, phoneId: true, name: true },
-        })
-        console.log('📋 Instâncias disponíveis:', allInstances)
+        log.warn('Instância não encontrada para phoneId', { phoneNumberId })
         continue
       }
 
       // Verifica se a instância está ativa
       if (!instance.active) {
-        console.log(`⚠️ Instância ${instance.name} (${instance.id}) está desativada. Mensagem ignorada.`)
+        log.warn('Instância desativada - mensagem ignorada', {
+          instanceId: instance.id,
+          instanceName: instance.name,
+        })
         return NextResponse.json({ success: true, message: 'Instância desativada' })
       }
 
-      console.log(`✅ Instância encontrada: ${instance.name} (${instance.id})`)
+      log.debug('Processando mensagem do webhook', {
+        instanceId: instance.id,
+        instanceName: instance.name,
+        messageId: msg.id,
+        messageType: msg.type,
+      })
 
       // Processa a mensagem
       // Verifica se é resposta de botão interativo
@@ -144,9 +159,9 @@ export async function POST(request: NextRequest) {
         try {
           const { downloadAndSaveMedia } = await import('@/lib/whatsapp-cloud-api')
           mediaUrl = await downloadAndSaveMedia(instance.id, msg.image.id, 'image', instance.userId)
-          console.log(`📸 Imagem recebida e salva no Cloudinary: ${mediaUrl}`)
+          log.debug('Imagem recebida e salva no Cloudinary', { mediaUrl })
         } catch (error) {
-          console.error('Erro ao processar imagem recebida:', error)
+          log.error('Erro ao processar imagem recebida', error)
         }
       } else if (msg.type === 'video' && msg.video?.id) {
         messageBody = msg.video.caption || '[Vídeo]'
@@ -228,7 +243,10 @@ export async function POST(request: NextRequest) {
         })
         
         messageType = 'button'
-        console.log(`🔘 Botão clicado: ID=${actualButtonId}, Título=${buttonTitle}, Exibição=${messageBody}`)
+        log.debug('Botão interativo clicado', {
+          buttonId: actualButtonId,
+          buttonTitle,
+        })
       }
 
       // Tenta obter o nome do contato do webhook
@@ -260,8 +278,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Erro ao processar webhook:', error)
-    return NextResponse.json({ error: 'Erro ao processar webhook' }, { status: 500 })
+    const handled = handleError(error)
+    log.error('Erro ao processar webhook', error)
+    return NextResponse.json({ error: handled.message }, { status: handled.statusCode })
   }
 }
 

@@ -137,6 +137,7 @@ export async function callChatGPT(
  * Gera uma resposta de IA para uma mensagem do usuário
  * Usa o contexto da conversa e um prompt do sistema opcional
  * Suporta function calling para permitir ações automáticas
+ * Implementa cache e métricas de uso
  */
 export async function generateAIResponse(
   userMessage: string,
@@ -148,8 +149,33 @@ export async function generateAIResponse(
     maxTokens?: number
     functions?: FunctionDefinition[]
     onFunctionCall?: (functionName: string, args: any) => Promise<any>
+    userId?: string
+    instanceId?: string
+    useCache?: boolean // Se deve usar cache (padrão: true)
   }
 ): Promise<string> {
+  const startTime = Date.now()
+  
+  // Tenta obter do cache se habilitado
+  if (context?.useCache !== false) {
+    const { getCachedResponse } = await import('./ai-cache')
+    const cached = getCachedResponse(userMessage, context?.systemPrompt, context?.variables)
+    if (cached) {
+      const duration = Date.now() - startTime
+      const { recordAIMetric } = await import('./ai-metrics')
+      recordAIMetric({
+        userId: context?.userId,
+        instanceId: context?.instanceId,
+        model: 'gpt-3.5-turbo', // Assumindo modelo padrão
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        duration,
+        cached: true,
+      })
+      return cached
+    }
+  }
   const messages: ChatMessage[] = []
 
   // Adiciona prompt do sistema se fornecido
@@ -184,10 +210,12 @@ export async function generateAIResponse(
   })
 
   // Chama a API com function calling se disponível
-  console.log(`\n🤖🤖🤖 [generateAIResponse] ========== CHAMANDO OPENAI ==========`)
-  console.log(`   📝 Mensagens no histórico: ${messages.length}`)
-  console.log(`   🔧 Funções disponíveis: ${context?.functions?.map(f => f.name).join(', ') || 'nenhuma'}`)
-  console.log(`   📨 Última mensagem do usuário: "${messages[messages.length - 1]?.content?.substring(0, 100)}..."`)
+  const { log } = await import('./logger')
+  log.debug('Chamando OpenAI', {
+    messageCount: messages.length,
+    hasFunctions: !!context?.functions && context.functions.length > 0,
+    functions: context?.functions?.map(f => f.name) || [],
+  })
   
   const response = await callChatGPT(messages, {
     temperature: context?.temperature,
@@ -195,23 +223,19 @@ export async function generateAIResponse(
     functions: context?.functions,
   })
 
-  console.log(`\n✅✅✅ [generateAIResponse] ========== RESPOSTA RECEBIDA DA OPENAI ==========`)
-  console.log(`   🔧 IA quer chamar função? ${!!response.functionCall ? '✅ SIM' : '❌ NÃO'}`)
-  if (response.functionCall) {
-    console.log(`   📞 Nome da função: "${response.functionCall.name}"`)
-    console.log(`   📋 Argumentos recebidos:`)
-    console.log(JSON.stringify(response.functionCall.arguments, null, 2))
-  } else {
-    console.log(`   💬 Resposta de texto (primeiros 200 chars): "${response.content?.substring(0, 200)}..."`)
-  }
-  console.log(`🤖🤖🤖 [generateAIResponse] ============================================\n`)
+  log.debug('Resposta recebida da OpenAI', {
+    hasFunctionCall: !!response.functionCall,
+    functionName: response.functionCall?.name,
+    tokens: response.usage?.totalTokens,
+  })
 
   // Se a IA quer chamar uma função, executa e continua a conversa
   if (response.functionCall && context?.onFunctionCall) {
-    console.log(`\n🔧🔧🔧 [generateAIResponse] ========== EXECUTANDO FUNÇÃO ==========`)
-    console.log(`   📞 Função: "${response.functionCall.name}"`)
-    console.log(`   📋 Argumentos:`)
-    console.log(JSON.stringify(response.functionCall.arguments, null, 2))
+    const { log } = await import('./logger')
+    log.debug('Executando função da IA', {
+      functionName: response.functionCall.name,
+      arguments: response.functionCall.arguments,
+    })
     
     try {
       const functionResult = await context.onFunctionCall(
@@ -219,12 +243,9 @@ export async function generateAIResponse(
         response.functionCall.arguments
       )
       
-      console.log(`\n✅✅✅ [generateAIResponse] ========== FUNÇÃO EXECUTADA ==========`)
-      console.log(`   📞 Função: "${response.functionCall.name}"`)
-      console.log(`   ✅ Status: SUCESSO`)
-      console.log(`   📊 Resultado:`)
-      console.log(JSON.stringify(functionResult, null, 2))
-      console.log(`✅✅✅ [generateAIResponse] ====================================\n`)
+      log.debug('Função executada com sucesso', {
+        functionName: response.functionCall.name,
+      })
 
       // Adiciona a resposta da função e pede para a IA continuar
       messages.push({
@@ -249,24 +270,90 @@ export async function generateAIResponse(
         functions: context?.functions,
       })
 
-      console.log(`\n✅✅✅ [generateAIResponse] ========== RESPOSTA FINAL GERADA ==========`)
-      console.log(`   💬 Resposta (primeiros 200 chars): "${finalResponse.content?.substring(0, 200)}..."`)
-      console.log(`✅✅✅ [generateAIResponse] =========================================\n`)
+      // Registra métricas e armazena no cache
+      const duration = Date.now() - startTime
+      const { recordAIMetric } = await import('./ai-metrics')
+      const { setCachedResponse, cacheConfig } = await import('./ai-cache')
+      
+      recordAIMetric({
+        userId: context?.userId,
+        instanceId: context?.instanceId,
+        model: 'gpt-3.5-turbo',
+        promptTokens: finalResponse.usage?.promptTokens || 0,
+        completionTokens: finalResponse.usage?.completionTokens || 0,
+        totalTokens: finalResponse.usage?.totalTokens || 0,
+        duration,
+        cached: false,
+      })
+
+      // Armazena no cache se não for função calling
+      if (context?.useCache !== false && !response.functionCall) {
+        setCachedResponse(
+          userMessage,
+          finalResponse.content,
+          context?.systemPrompt,
+          context?.variables,
+          cacheConfig.general
+        )
+      }
+
+      // Registra métricas da resposta final
+      const duration = Date.now() - startTime
+      const { recordAIMetric } = await import('./ai-metrics')
+      const { setCachedResponse, cacheConfig } = await import('./ai-cache')
+      
+      recordAIMetric({
+        userId: context?.userId,
+        instanceId: context?.instanceId,
+        model: 'gpt-3.5-turbo',
+        promptTokens: (finalResponse.usage?.promptTokens || 0) + (response.usage?.promptTokens || 0),
+        completionTokens: (finalResponse.usage?.completionTokens || 0) + (response.usage?.completionTokens || 0),
+        totalTokens: (finalResponse.usage?.totalTokens || 0) + (response.usage?.totalTokens || 0),
+        duration,
+        cached: false,
+      })
+
+      // Não armazena no cache quando há function calling (muito específico)
+      
       return finalResponse.content
     } catch (error) {
-      console.error(`\n❌❌❌ [generateAIResponse] ========== ERRO AO EXECUTAR FUNÇÃO ==========`)
-      console.error(`   📞 Função que falhou: "${response.functionCall.name}"`)
-      console.error(`   📋 Argumentos usados:`)
-      console.error(JSON.stringify(response.functionCall.arguments, null, 2))
-      console.error(`   ❌ Erro:`, error)
-      console.error(`   📚 Stack trace:`)
-      console.error(error instanceof Error ? error.stack : 'N/A')
-      console.error(`❌❌❌ [generateAIResponse] ===========================================\n`)
+      const { log } = await import('./logger')
+      log.error('Erro ao executar função da IA', error, {
+        functionName: response.functionCall.name,
+        arguments: response.functionCall.arguments,
+      })
       
       // Retorna mensagem de erro mais específica
       const errorMessage = error instanceof Error ? error.message : String(error)
       return `Desculpe, ocorreu um erro ao processar sua solicitação: ${errorMessage}. Por favor, tente novamente.`
     }
+  }
+
+  // Registra métricas e armazena no cache para resposta simples
+  const duration = Date.now() - startTime
+  const { recordAIMetric } = await import('./ai-metrics')
+  const { setCachedResponse, cacheConfig } = await import('./ai-cache')
+  
+  recordAIMetric({
+    userId: context?.userId,
+    instanceId: context?.instanceId,
+    model: 'gpt-3.5-turbo',
+    promptTokens: response.usage?.promptTokens || 0,
+    completionTokens: response.usage?.completionTokens || 0,
+    totalTokens: response.usage?.totalTokens || 0,
+    duration,
+    cached: false,
+  })
+
+  // Armazena no cache
+  if (context?.useCache !== false) {
+    setCachedResponse(
+      userMessage,
+      response.content,
+      context?.systemPrompt,
+      context?.variables,
+      cacheConfig.general
+    )
   }
 
   return response.content
