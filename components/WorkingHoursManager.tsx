@@ -97,6 +97,9 @@ export default function WorkingHoursManager() {
           { key: 'sunday' as const, label: 'Domingo' },
         ].map(({ key, label }) => {
           const dayConfig = workingHours[key] || { isOpen: false }
+          const isOpen = dayConfig.isOpen || false
+          const openTime = 'openTime' in dayConfig ? dayConfig.openTime : undefined
+          const closeTime = 'closeTime' in dayConfig ? dayConfig.closeTime : undefined
 
           return (
             <div
@@ -106,12 +109,12 @@ export default function WorkingHoursManager() {
               <div className="flex items-center gap-2 flex-1">
                 <input
                   type="checkbox"
-                  checked={dayConfig.isOpen || false}
+                  checked={isOpen}
                   onChange={(e) => {
                     updateDayConfig(key, {
                       isOpen: e.target.checked,
-                      openTime: e.target.checked ? dayConfig.openTime || '09:00' : undefined,
-                      closeTime: e.target.checked ? dayConfig.closeTime || '18:00' : undefined,
+                      openTime: e.target.checked ? openTime || '09:00' : undefined,
+                      closeTime: e.target.checked ? closeTime || '18:00' : undefined,
                     })
                   }}
                   className="w-4 h-4 rounded border-gray-300 text-autozap-primary focus:ring-autozap-primary"
@@ -119,11 +122,11 @@ export default function WorkingHoursManager() {
                 <span className="text-sm font-medium text-gray-700 w-32">{label}</span>
               </div>
 
-              {dayConfig.isOpen && (
+              {isOpen && (
                 <div className="flex items-center gap-2">
                   <input
                     type="time"
-                    value={dayConfig.openTime || '09:00'}
+                    value={openTime || '09:00'}
                     onChange={(e) => {
                       updateDayConfig(key, { openTime: e.target.value })
                     }}
@@ -132,7 +135,7 @@ export default function WorkingHoursManager() {
                   <span className="text-sm text-gray-600">às</span>
                   <input
                     type="time"
-                    value={dayConfig.closeTime || '18:00'}
+                    value={closeTime || '18:00'}
                     onChange={(e) => {
                       updateDayConfig(key, { closeTime: e.target.value })
                     }}
