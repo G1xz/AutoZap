@@ -58,142 +58,6 @@ interface ServiceWithAppointment {
 
 // Armazena o estado de execução de workflows por contato
 const workflowExecutions = new Map<string, WorkflowExecutionContext>()
-const schedulingFollowUps = new Map<string, {
-  waitingFor: 'time' | 'date'
-  previousMessage: string
-  dateHint?: string
-  timeHint?: string
-}>()
-
-interface AppointmentListItem {
-  id: string
-  formattedDate: string
-  formattedTime: string
-  description?: string | null
-}
-
-interface AppointmentActionState {
-  mode: 'cancel' | 'reschedule'
-  stage: 'awaiting_selection' | 'confirm_cancel' | 'awaiting_new_datetime'
-  appointments: AppointmentListItem[]
-  selectedAppointment?: AppointmentListItem
-}
-
-const appointmentActionStates = new Map<string, AppointmentActionState>()
-
-function extractDateHint(text: string): string | null {
-  if (!text) return null
-  const lower = text.toLowerCase()
-
-  const keywordMap: Record<string, string> = {
-    'hoje': 'hoje',
-    'amanhã': 'amanhã',
-    'amanha': 'amanhã',
-    'depois de amanhã': 'depois de amanhã',
-    'depois de amanha': 'depois de amanhã',
-  }
-
-  for (const [keyword, value] of Object.entries(keywordMap)) {
-    if (lower.includes(keyword)) {
-      return value
-    }
-  }
-
-  const weekdays = ['segunda', 'terça', 'terca', 'quarta', 'quinta', 'sexta', 'sábado', 'sabado', 'domingo']
-  for (const day of weekdays) {
-    if (lower.includes(day)) {
-      return day.includes('terca') ? 'terça' : day
-    }
-  }
-
-  const dateMatch = text.match(/(\d{1,2})\/(\d{1,2})(\/\d{2,4})?/)
-  if (dateMatch) {
-    const day = dateMatch[1].padStart(2, '0')
-    const month = dateMatch[2].padStart(2, '0')
-    const year = dateMatch[3]?.replace('/', '') || ''
-    return year ? `${day}/${month}/${year.length === 2 ? `20${year}` : year}` : `${day}/${month}`
-  }
-
-  return null
-}
-
-function extractTimeText(text: string): string | null {
-  if (!text) return null
-  const lower = text.toLowerCase()
-
-  if (lower.includes('meio-dia') || lower.includes('meio dia') || lower.includes('meia noite')) {
-    return lower.includes('meia noite') ? 'meia noite' : 'meio-dia'
-  }
-
-  const patterns = [
-    /às?\s*\d{1,2}:\d{2}/i,
-    /\b\d{1,2}:\d{2}\b/,
-    /às?\s*\d{1,2}\s*(?:h|horas)?/i,
-    /\b\d{1,2}\s*(?:da|de)?\s*(manhã|manha|tarde|noite)\b/i,
-  ]
-
-  for (const pattern of patterns) {
-    const match = text.match(pattern)
-    if (match) {
-      return match[0]
-    }
-  }
-
-  const plainNumber = text.match(/\b\d{1,2}\b/)
-  if (plainNumber) {
-    return plainNumber[0]
-  }
-
-  return null
-}
-
-function messageContainsExplicitTime(text: string): boolean {
-  return !!extractTimeText(text)
-}
-
-function messageIndicatesSchedulingWithoutTime(text: string): boolean {
-  if (!text) return false
-  const lower = text.toLowerCase()
-  const schedulingKeywords = ['agendar', 'agendamento', 'marcar', 'agenda', 'horário', 'horario', 'consulta', 'serviço', 'servico']
-  const mentionsScheduling = schedulingKeywords.some((keyword) => lower.includes(keyword))
-  if (!mentionsScheduling) {
-    return false
-  }
-  return !messageContainsExplicitTime(text)
-}
-
-function getNaturalDateIncrement(dateInput: string): number | null {
-  if (!dateInput) return null
-  const normalized = dateInput.toLowerCase().trim()
-  if (!normalized) return null
-  
-  const containsDigits = /\d/.test(normalized)
-  if (containsDigits) {
-    return null
-  }
-  
-  if (normalized.includes('amanhã') || normalized.includes('amanha')) {
-    return 1
-  }
-  if (normalized.includes('depois de amanhã') || normalized.includes('depois de amanha')) {
-    return 2
-  }
-  
-  const weekdayKeywords = ['segunda', 'terça', 'terca', 'quarta', 'quinta', 'sexta', 'sábado', 'sabado', 'domingo']
-  if (weekdayKeywords.some((keyword) => normalized.includes(keyword))) {
-    return 7
-  }
-  
-  if (normalized.includes('próxima') || normalized.includes('proxima') || normalized.includes('próximo') || normalized.includes('proximo')) {
-    return 7
-  }
-  
-  if (normalized.includes('hoje')) {
-    return 1
-  }
-  
-  return 7
-}
 
 // Fila de mensagens por contato para garantir ordem de envio
 // Evita que mensagens sejam enviadas fora de ordem (ex: imagem depois de texto)
@@ -1686,19 +1550,6 @@ async function executeAIOnlyWorkflow(
       return
     }
 
-    const conversationKey = `${instanceId}-${contactNumber}`
-    const actionStarted = await maybeStartAppointmentAction({
-      conversationKey,
-      userMessageLower: userMessage,
-      instanceId,
-      contactNumber,
-      userId,
-    })
-    if (actionStarted) {
-      return
-    }
-    const hasAppointmentActionState = appointmentActionStates.has(conversationKey)
-
     // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
     // Se processou algo, retorna imediatamente SEM chamar a IA
     console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
@@ -1738,7 +1589,7 @@ async function executeAIOnlyWorkflow(
       .replace(/[.,!?;:]/g, '')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
-
+    
     const looksLikeConfirmation = 
       userMessageLower === 'confirmar' || 
       normalizedMsg === 'confirmar' ||
@@ -1981,16 +1832,6 @@ async function executeAIOnlyWorkflow(
       hasBusinessDetails: !!workflow.aiBusinessDetails
     })
     
-    const schedulingHint = schedulingFollowUps.get(conversationKey)
-    let schedulingExtraContext = ''
-
-    if (schedulingHint?.waitingFor === 'time') {
-      if (messageContainsExplicitTime(userMessage)) {
-        schedulingExtraContext = `\n\n[CONTEXTO EXTRA IMPORTANTE: O cliente já havia dito "${schedulingHint.previousMessage}" (isso contém a data desejada${schedulingHint.dateHint ? `: ${schedulingHint.dateHint}` : ''}). Agora ele informou o horário na mensagem atual. Combine esses dados e siga o fluxo de agendamento normalmente.]`
-        schedulingFollowUps.delete(conversationKey)
-      }
-    }
-
     // SEMPRE usa resposta pré-definida se:
     // 1. É primeira interação E tem nome do negócio
     // 2. OU se não há resposta da IA ainda (primeira vez que o workflow responde)
@@ -2004,7 +1845,7 @@ async function executeAIOnlyWorkflow(
       businessName: businessDetails.businessName
     })
     
-    if (!hasAppointmentActionState && shouldUsePredefined) {
+    if (shouldUsePredefined) {
       const servicesList = businessDetails.services?.join(', ') || ''
       const productsList = businessDetails.products?.join(', ') || ''
       const howToBuyText = businessDetails.howToBuy || ''
@@ -2061,27 +1902,6 @@ async function executeAIOnlyWorkflow(
       console.log(`🤖 Resposta pré-definida enviada para ${contactNumber} (primeira interação)`)
       return // Não gera resposta da IA na primeira vez, usa a pré-definida
     }
-
-    // Se o cliente pediu para agendar mas não informou horário, responda imediatamente pedindo o horário
-    if (!hasAppointmentActionState && messageIndicatesSchedulingWithoutTime(userMessage)) {
-      const dateHint = extractDateHint(userMessage)
-      schedulingFollowUps.set(conversationKey, {
-        waitingFor: 'time',
-        previousMessage: userMessage,
-        dateHint: dateHint || undefined,
-      })
-
-      const askTimeMessage = dateHint
-        ? `Perfeito! Já reservei o dia (${dateHint}). Qual horário funciona melhor pra você? Pode responder algo como "às 16h" ou "3 da tarde".`
-        : `Perfeito! Para agendar certinho, me diz o dia e principalmente o horário que você prefere (ex: "amanhã às 15h"). Assim já deixo tudo reservado pra você.`
-
-      const contactKey = `${instanceId}-${contactNumber}`
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, askTimeMessage, 'service')
-      })
-      console.log(`⏱️ [executeAIOnlyWorkflow] Cliente pediu agendamento sem horário. Mensagem solicitando horário enviada.`)
-      return
-    }
     
     // Para mensagens seguintes, usa IA normalmente
     // MAS sempre força mencionar o negócio mesmo em mensagens seguintes
@@ -2104,7 +1924,7 @@ async function executeAIOnlyWorkflow(
         listFormatting += `NUNCA use vírgulas. SEMPRE use marcadores (-) e quebra de linha.`
       }
       
-      userMessageWithContext = `[CONTEXTO: Você é assistente de vendas da ${businessDetails.businessName}. Seja NATURAL e CONVERSACIONAL. Mencione o negócio quando relevante, mas não seja repetitivo. Varie suas respostas - não termine sempre com "Como posso te ajudar?". Seja direto e objetivo, como em uma conversa normal. NUNCA seja genérico como "teste de eco".${listFormatting}${schedulingExtraContext}]\n\nMensagem do cliente: ${userMessage}`
+      userMessageWithContext = `[CONTEXTO: Você é assistente de vendas da ${businessDetails.businessName}. Seja NATURAL e CONVERSACIONAL. Mencione o negócio quando relevante, mas não seja repetitivo. Varie suas respostas - não termine sempre com "Como posso te ajudar?". Seja direto e objetivo, como em uma conversa normal. NUNCA seja genérico como "teste de eco".${listFormatting}]\n\nMensagem do cliente: ${userMessage}`
     }
 
     // Gera resposta usando IA
@@ -2131,7 +1951,7 @@ async function executeAIOnlyWorkflow(
           },
           time: {
             type: 'string',
-                description: 'Hora do agendamento no formato HH:MM em horário de 24 horas (ex: "14:00", "16:00", "19:00"). Se o cliente disser "4 da tarde", converta para "16:00". Se disser "7 da manhã", converta para "07:00". Se disser "9 da noite", converta para "21:00". ⚠️ Se o cliente não disser um horário, NÃO escolha um por conta própria: peça explicitamente para ele informar.',
+            description: 'Hora do agendamento no formato HH:MM em horário de 24 horas (ex: "14:00", "16:00", "19:00"). Se o cliente disser "4 da tarde", converta para "16:00". Se disser "7 da manhã", converta para "07:00". Se disser "9 da noite", converta para "21:00". Se não especificar hora, use "14:00" como padrão.',
           },
           description: {
             type: 'string',
@@ -2387,25 +2207,6 @@ async function executeAIOnlyWorkflow(
               error: 'É necessário informar tanto a data quanto a hora do agendamento.',
             }
           }
-
-          const userMentionedExplicitTime = messageContainsExplicitTime(userMessage)
-          if (!userMentionedExplicitTime) {
-            const askTimeMessage = args.date
-              ? `Perfeito! Para agendar em "${args.date}", só falta você me dizer o horário (ex: "às 15h" ou "às 10:30"). Qual horário funciona melhor?`
-              : 'Perfeito! Só falta você me dizer o horário (ex: "às 15h" ou "às 10:30") para concluir o agendamento. Qual horário funciona melhor?'
-
-            schedulingFollowUps.set(`${instanceId}-${contactNumber}`, {
-              waitingFor: 'time',
-              previousMessage: userMessage,
-              dateHint: args.date,
-            })
-
-            return {
-              success: false,
-              forceResponse: true,
-              message: askTimeMessage,
-            }
-          }
           
           // Processa a hora primeiro - MELHORADO para aceitar mais formatos
           let hour: number
@@ -2531,9 +2332,9 @@ async function executeAIOnlyWorkflow(
           
           // Obtém componentes brasileiros para validação
           const brazilianComponents = utcToBrazilianComponents(appointmentDateUTC)
-          let day = brazilianComponents.day
-          let month = brazilianComponents.month
-          let year = brazilianComponents.year
+          const day = brazilianComponents.day
+          const month = brazilianComponents.month
+          const year = brazilianComponents.year
           
           
           // Cria a data no horário do Brasil para comparação
@@ -2552,68 +2353,23 @@ async function executeAIOnlyWorkflow(
           // Valida se a data não é no passado (comparando componentes brasileiros)
           const appointmentDateOnly = new Date(year, month, day)
           const todayOnly = new Date(currentYear, currentMonth, currentDay)
-          const msInDay = 24 * 60 * 60 * 1000
-          let diffDays = Math.floor((appointmentDateOnly.getTime() - todayOnly.getTime()) / msInDay)
-          console.log(`📅 Diferença em dias entre data do agendamento e hoje: ${diffDays} dias`)
-          
-          const naturalDateIncrement = getNaturalDateIncrement(args.date)
           
           // Se a data é hoje, verifica se a hora não passou
-          if (diffDays === 0) {
+          if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
             const appointmentTime = hour * 60 + minute
             const currentTime = currentHour * 60 + currentMinute
             if (appointmentTime <= currentTime) {
-              if (naturalDateIncrement !== null) {
-                console.warn(`⚠️ Horário já passou hoje, ajustando automaticamente em ${naturalDateIncrement} dia(s).`)
-                appointmentDateOnly.setDate(appointmentDateOnly.getDate() + naturalDateIncrement)
-                diffDays = Math.floor((appointmentDateOnly.getTime() - todayOnly.getTime()) / msInDay)
-                appointmentDateUTC = createBrazilianDateAsUTC(
-                  appointmentDateOnly.getFullYear(),
-                  appointmentDateOnly.getMonth(),
-                  appointmentDateOnly.getDate(),
-                  hour,
-                  minute
-                )
-                day = appointmentDateOnly.getDate()
-                month = appointmentDateOnly.getMonth()
-                year = appointmentDateOnly.getFullYear()
-              } else {
-                console.error(`❌ Hora no passado hoje (Brasil): ${hour}:${minute.toString().padStart(2, '0')} <= ${currentHour}:${currentMinute.toString().padStart(2, '0')}`)
-                return {
-                  success: false,
-                  error: 'Não é possível agendar para um horário que já passou hoje. Por favor, escolha um horário futuro.',
-                }
+              console.error(`❌ Hora no passado hoje (Brasil): ${hour}:${minute.toString().padStart(2, '0')} <= ${currentHour}:${currentMinute.toString().padStart(2, '0')}`)
+              return {
+                success: false,
+                error: 'Não é possível agendar para um horário que já passou hoje. Por favor, escolha um horário futuro.',
               }
             }
-          } else if (diffDays < -2) {
+          } else if (appointmentDateOnly < todayOnly) {
             console.error(`❌ Data no passado (Brasil): ${day}/${month + 1}/${year} < ${currentDay}/${currentMonth + 1}/${currentYear}`)
             return {
               success: false,
               error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
-            }
-          } else if (diffDays < 0) {
-            if (naturalDateIncrement !== null) {
-              console.warn(`⚠️ Data em linguagem natural possivelmente se referindo à próxima ocorrência. Ajustando automaticamente em múltiplos de ${naturalDateIncrement} dia(s).`)
-              do {
-                appointmentDateOnly.setDate(appointmentDateOnly.getDate() + naturalDateIncrement)
-                diffDays = Math.floor((appointmentDateOnly.getTime() - todayOnly.getTime()) / msInDay)
-              } while (diffDays < 0)
-              appointmentDateUTC = createBrazilianDateAsUTC(
-                appointmentDateOnly.getFullYear(),
-                appointmentDateOnly.getMonth(),
-                appointmentDateOnly.getDate(),
-                hour,
-                minute
-              )
-              day = appointmentDateOnly.getDate()
-              month = appointmentDateOnly.getMonth()
-              year = appointmentDateOnly.getFullYear()
-            } else {
-              console.error(`❌ Data no passado (Brasil) sem possibilidade de ajuste automático.`)
-              return {
-                success: false,
-                error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
-              }
             }
           }
           
@@ -3356,22 +3112,7 @@ async function executeAIOnlyWorkflow(
     // Intercepta chamadas de função para verificar se há agendamento pendente
     let pendingAppointmentResponse: string | null = null
     let pendingAppointmentMedia: MediaAttachment | null = null
-    let forcedServiceResponse: string | null = null
-    let forcedServiceMedia: MediaAttachment | null = null
     
-    const appointmentActionHandled = await processAppointmentActionState({
-      conversationKey,
-      userMessage,
-      userMessageLower: userMessage,
-      instanceId,
-      contactNumber,
-      userId,
-      handleFunctionCall,
-    })
-    if (appointmentActionHandled) {
-      return
-    }
-
     const interceptedFunctionCall = async (functionName: string, args: any) => {
       console.log(`🔧 [interceptedFunctionCall] Interceptando chamada de função: ${functionName}`)
       console.log(`🔧 [interceptedFunctionCall] Argumentos:`, JSON.stringify(args, null, 2))
@@ -3393,18 +3134,6 @@ async function executeAIOnlyWorkflow(
         return {
           success: false,
           error: pendingAppointmentResponse,
-        }
-      }
-
-      if (result && typeof result === 'object' && 'forceResponse' in result && (result as any).forceResponse === true) {
-        const resultAny = result as any
-        forcedServiceResponse = resultAny.message || resultAny.error || 'Preciso de mais informações antes de continuar.'
-        if (resultAny.mediaAttachment) {
-          forcedServiceMedia = resultAny.mediaAttachment as MediaAttachment
-        }
-        return {
-          success: false,
-          error: forcedServiceResponse,
         }
       }
       
@@ -3534,33 +3263,6 @@ async function executeAIOnlyWorkflow(
       onFunctionCall: interceptedFunctionCall,
     })
     
-    // Se há alguma resposta forçada (ex: pedir horário), envia diretamente
-    if (forcedServiceResponse) {
-      const contactKey = `${instanceId}-${contactNumber}`
-      
-      if (isImageAttachment(forcedServiceMedia)) {
-        const media: MediaAttachment = forcedServiceMedia
-        await queueMessage(contactKey, async () => {
-          try {
-            await sendWhatsAppImage(
-              instanceId,
-              contactNumber,
-              media.url,
-              media.caption
-            )
-          } catch (mediaError) {
-            console.error('❌ Erro ao enviar mídia adicional:', mediaError)
-          }
-        })
-      }
-      
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, forcedServiceResponse!, 'service')
-      })
-      console.log(`📩 Resposta forçada enviada diretamente (ex: solicitando horário)`)
-      return
-    }
-
     // Se há uma resposta de agendamento pendente, usa ela diretamente em vez da resposta da IA
     if (pendingAppointmentResponse) {
       const contactKey = `${instanceId}-${contactNumber}`
@@ -3615,296 +3317,6 @@ async function executeAIOnlyWorkflow(
       await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
     })
   }
-}
-
-interface AppointmentActionStartParams {
-  conversationKey: string
-  userMessageLower: string
-  instanceId: string
-  contactNumber: string
-  userId: string
-}
-
-interface AppointmentActionProcessParams {
-  conversationKey: string
-  userMessage: string
-  userMessageLower: string
-  instanceId: string
-  contactNumber: string
-  userId: string
-  handleFunctionCall: (functionName: string, args: any) => Promise<any>
-}
-
-async function maybeStartAppointmentAction(params: AppointmentActionStartParams): Promise<boolean> {
-  const { conversationKey, userMessageLower, instanceId, contactNumber, userId } = params
-  
-  if (appointmentActionStates.has(conversationKey)) {
-    return false
-  }
-  
-  const mode = detectAppointmentActionMode(userMessageLower)
-  if (!mode) {
-    return false
-  }
-  
-  try {
-    const result = await getUserAppointments(userId, instanceId, contactNumber, false)
-    if (!result.success || !result.appointments || result.appointments.length === 0) {
-      await queueMessage(conversationKey, async () => {
-        await sendWhatsAppMessage(
-          instanceId,
-          contactNumber,
-          'Você não tem agendamentos futuros para gerenciar no momento.',
-          'service'
-        )
-      })
-      return true
-    }
-    
-    const appointments: AppointmentListItem[] = result.appointments.map((apt) => ({
-      id: apt.id,
-      formattedDate: apt.formattedDate,
-      formattedTime: apt.formattedTime,
-      description: apt.description,
-    }))
-    
-    const listText = appointments
-      .map((apt, index) => {
-        const label = formatAppointmentLabel(apt)
-        return `*${index + 1}.* ${label}`
-      })
-      .join('\n')
-    
-    const instruction =
-      mode === 'cancel'
-        ? 'Digite o número do agendamento que deseja cancelar.'
-        : 'Digite o número do agendamento que deseja reagendar.'
-    
-    appointmentActionStates.set(conversationKey, {
-      mode,
-      stage: 'awaiting_selection',
-      appointments,
-    })
-    
-    await queueMessage(conversationKey, async () => {
-      await sendWhatsAppMessage(
-        instanceId,
-        contactNumber,
-        `${mode === 'cancel' ? 'Cancelar agendamento' : 'Reagendar agendamento'}:\n${listText}\n\n${instruction}`,
-        'service'
-      )
-    })
-    
-    return true
-  } catch (error) {
-    console.error('❌ [maybeStartAppointmentAction] Erro ao listar agendamentos:', error)
-    await queueMessage(conversationKey, async () => {
-      await sendWhatsAppMessage(
-        instanceId,
-        contactNumber,
-        'Não consegui listar seus agendamentos agora. Tente novamente em instantes.',
-        'service'
-      )
-    })
-    return true
-  }
-}
-
-async function processAppointmentActionState(params: AppointmentActionProcessParams): Promise<boolean> {
-  const {
-    conversationKey,
-    userMessage,
-    userMessageLower,
-    instanceId,
-    contactNumber,
-    userId,
-    handleFunctionCall,
-  } = params
-  
-  const state = appointmentActionStates.get(conversationKey)
-  if (!state) {
-    return false
-  }
-  
-  const contactKey = conversationKey
-  const selected = state.selectedAppointment
-  
-  if (state.stage === 'awaiting_selection') {
-    const selectionMatch = userMessageLower.match(/(\d+)/)
-    if (!selectionMatch) {
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(
-          instanceId,
-          contactNumber,
-          'Por favor, responda com o número do agendamento que deseja selecionar.',
-          'service'
-        )
-      })
-      return true
-    }
-    
-    const index = parseInt(selectionMatch[1], 10) - 1
-    if (isNaN(index) || index < 0 || index >= state.appointments.length) {
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(
-          instanceId,
-          contactNumber,
-          'Número inválido. Responda com um dos números da lista.',
-          'service'
-        )
-      })
-      return true
-    }
-    
-    const appointment = state.appointments[index]
-    if (state.mode === 'cancel') {
-      appointmentActionStates.set(conversationKey, {
-        ...state,
-        stage: 'confirm_cancel',
-        selectedAppointment: appointment,
-      })
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(
-          instanceId,
-          contactNumber,
-          `Confirma que deseja cancelar ${formatAppointmentLabel(appointment)}? Responda com "sim" para confirmar ou "não" para manter.`,
-          'service'
-        )
-      })
-    } else {
-      appointmentActionStates.set(conversationKey, {
-        ...state,
-        stage: 'awaiting_new_datetime',
-        selectedAppointment: appointment,
-      })
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(
-          instanceId,
-          contactNumber,
-          `Perfeito! Qual novo dia e horário você deseja para ${formatAppointmentLabel(appointment)}?`,
-          'service'
-        )
-      })
-    }
-    return true
-  }
-  
-  if (state.stage === 'confirm_cancel' && selected) {
-    if (isAffirmative(userMessageLower)) {
-      const result = await handleFunctionCall('cancel_appointment', { appointment_id: selected.id })
-      appointmentActionStates.delete(conversationKey)
-      const messageText =
-        (result && (result.message || result.error)) ||
-        'Agendamento cancelado com sucesso.'
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service')
-      })
-      return true
-    }
-    
-    if (isNegative(userMessageLower)) {
-      appointmentActionStates.delete(conversationKey)
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(
-          instanceId,
-          contactNumber,
-          'Sem problemas! O agendamento foi mantido.',
-          'service'
-        )
-      })
-      return true
-    }
-    
-    await queueMessage(contactKey, async () => {
-      await sendWhatsAppMessage(
-        instanceId,
-        contactNumber,
-        'Responda com "sim" para confirmar o cancelamento ou "não" para manter o agendamento.',
-        'service'
-      )
-    })
-    return true
-  }
-  
-  if (state.stage === 'awaiting_new_datetime' && selected) {
-    const dateHint = extractDateHint(userMessage)
-    if (!dateHint) {
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(
-          instanceId,
-          contactNumber,
-          'Preciso saber o dia desejado para reagendar. Pode me informar? (ex: "amanhã", "terça-feira", "25/11")',
-          'service'
-        )
-      })
-      return true
-    }
-    
-    const timeText = extractTimeText(userMessage)
-    if (!timeText || !messageContainsExplicitTime(userMessage)) {
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(
-          instanceId,
-          contactNumber,
-          'Agora me diga o horário desejado (ex: "às 16h", "3 da tarde").',
-          'service'
-        )
-      })
-      return true
-    }
-    
-    const result = await handleFunctionCall('update_appointment', {
-      appointment_id: selected.id,
-      new_date: dateHint,
-      new_time: timeText,
-    })
-    
-    if (result?.success) {
-      appointmentActionStates.delete(conversationKey)
-    }
-    
-    const responseMessage =
-      (result && (result.message || result.error)) ||
-      'Pronto! Horário atualizado.'
-    
-    await queueMessage(contactKey, async () => {
-      await sendWhatsAppMessage(instanceId, contactNumber, responseMessage, 'service')
-    })
-    return true
-  }
-  
-  return false
-}
-
-function detectAppointmentActionMode(messageLower: string): 'cancel' | 'reschedule' | null {
-  const cancelKeywords = ['cancelar', 'cancelamento', 'desmarcar', 'desmarque', 'anular', 'remover', 'não vou', 'nao vou']
-  const rescheduleKeywords = ['reagendar', 'reagendamento', 'remarcar', 'mudar horário', 'mudar horario', 'alterar horário', 'trocar horário', 'trocar horario', 'adiar']
-  
-  if (cancelKeywords.some((keyword) => messageLower.includes(keyword))) {
-    return 'cancel'
-  }
-  if (rescheduleKeywords.some((keyword) => messageLower.includes(keyword))) {
-    return 'reschedule'
-  }
-  return null
-}
-
-function formatAppointmentLabel(appointment: AppointmentListItem): string {
-  const base = `${appointment.formattedDate} às ${appointment.formattedTime}`
-  if (appointment.description) {
-    return `${base} - ${appointment.description}`
-  }
-  return base
-}
-
-function isAffirmative(messageLower: string): boolean {
-  const affirmative = ['sim', 'confirmar', 'confirmo', 'isso', 'ok', 'claro', 'pode', 'positivo']
-  return affirmative.some((keyword) => messageLower === keyword || messageLower.includes(keyword))
-}
-
-function isNegative(messageLower: string): boolean {
-  const negative = ['não', 'nao', 'negativo', 'cancelar', 'melhor não', 'melhor nao']
-  return negative.some((keyword) => messageLower === keyword || messageLower.includes(keyword))
 }
 
 /**
@@ -4233,7 +3645,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `  - ⚠️ CRÍTICO: Se o cliente disser apenas um número (ex: "4", "às 4"), SEMPRE assuma que é da tarde (formato 24h)\n`
   prompt += `  - ⚠️ CRÍTICO: Se o número for >= 12, já está em formato 24h (ex: "14" = 14:00, "16" = 16:00)\n`
   prompt += `  - ⚠️ CRÍTICO: Se o número for < 12 e não especificar manhã, assuma tarde (ex: "4" = 16:00, "5" = 17:00)\n`
-  prompt += `  - ⚠️ PROIBIDO: Se o cliente NÃO disser um horário, NÃO invente um horário padrão. Pergunte explicitamente qual horário ele prefere antes de chamar a função.\n`
+  prompt += `  - Se não especificar hora, use "14:00" como padrão\n`
   prompt += `- FORMATO DA FUNÇÃO (você usa internamente, não menciona ao cliente):\n`
   prompt += `  - A função create_appointment espera:\n`
   prompt += `    * date: pode ser linguagem natural (ex: "amanhã", "próxima terça-feira") OU formato DD/MM/YYYY (ex: "24/11/2025")\n`
