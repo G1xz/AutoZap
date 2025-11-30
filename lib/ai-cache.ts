@@ -18,12 +18,12 @@ if (typeof setInterval !== 'undefined') {
     const now = Date.now()
     let cleaned = 0
 
-    for (const [key, value] of cache.entries()) {
+    Array.from(cache.entries()).forEach(([key, value]) => {
       if (now - value.timestamp > value.ttl) {
         cache.delete(key)
         cleaned++
       }
-    }
+    })
 
     if (cleaned > 0) {
       log.debug(`Cache limpo: ${cleaned} entradas expiradas removidas`)
@@ -121,12 +121,12 @@ export function cleanExpiredCache(): number {
   const now = Date.now()
   let cleaned = 0
 
-  for (const [key, value] of cache.entries()) {
+  Array.from(cache.entries()).forEach(([key, value]) => {
     if (now - value.timestamp > value.ttl) {
       cache.delete(key)
       cleaned++
     }
-  }
+  })
 
   if (cleaned > 0) {
     log.debug(`Cache limpo: ${cleaned} entradas expiradas removidas`)
