@@ -2110,6 +2110,26 @@ async function executeAIOnlyWorkflow(
       return null
     }
 
+    const messageContainsExplicitTime = (text: string): boolean => {
+      if (!text) return false
+      const normalized = text
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+
+      const numericTimeRegex = /\b\d{1,2}(:\d{2})?\s*(h|horas)?\b/
+      if (numericTimeRegex.test(normalized)) {
+        return true
+      }
+
+      if (normalized.includes('meio dia') || normalized.includes('meio-dia') || normalized.includes('meia noite')) {
+        return true
+      }
+
+      const textualTimeRegex = /(as|a)\s+(uma|duas|tres|tres|quatro|cinco|seis|sete|oito|nove|dez|onze)(\s+(da|de)\s+(manha|tarde|noite))?/
+      return textualTimeRegex.test(normalized)
+    }
+
     // Handler para quando a IA chamar a função de agendamento
     // Agora recebe data e hora separadamente para processamento mais simples e confiável
     const handleFunctionCall = async (functionName: string, args: any) => {
@@ -2205,6 +2225,14 @@ async function executeAIOnlyWorkflow(
             return {
               success: false,
               error: 'É necessário informar tanto a data quanto a hora do agendamento.',
+            }
+          }
+
+          const userMentionedExplicitTime = messageContainsExplicitTime(userMessage)
+          if (!userMentionedExplicitTime) {
+            return {
+              success: false,
+              error: 'Ainda preciso que o cliente informe o horário exato (ex: "às 15h" ou "às 10:30"). Pergunte qual horário ele prefere antes de tentar criar o agendamento.',
             }
           }
           
