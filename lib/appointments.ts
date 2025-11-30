@@ -837,58 +837,39 @@ export async function updateAppointment(
   try {
     // Verifica se o agendamento existe e pertence ao usuário
     // CRÍTICO: Usa select explícito para evitar erro se endDate não existir no banco
-    const appointment = await prisma.appointment.findFirst({
-      where: {
-        id: appointmentId,
-        userId,
-      },
-      select: {
-        id: true,
-        date: true,
-        description: true,
-        status: true,
-        duration: true,
-        // endDate pode não existir no banco ainda
-      },
-    })
+    let appointment: {
+      id: string
+      date: Date
+      description: string | null
+      status: string
+      duration?: number | null
+    } | null = null
 
-    if (!appointment) {
-      return {
-        success: false,
-        error: 'Agendamento não encontrado',
-      }
-    }
+    let supportsDurationFields = true
 
-    // Atualiza o agendamento
-    // CRÍTICO: Tenta atualizar com endDate, mas se falhar, atualiza sem esse campo
-    let updated: any
     try {
-      // Calcula novo endDate baseado na duração existente
-      const newEndDate = appointment.duration 
-        ? new Date(newDate.getTime() + appointment.duration * 60000)
-        : new Date(newDate.getTime() + 60 * 60000) // Padrão 60min se não tiver duração
-      
-      updated = await prisma.appointment.update({
-        where: { id: appointmentId },
-        data: {
-          date: newDate,
-          endDate: newEndDate,
+      appointment = await prisma.appointment.findFirst({
+        where: {
+          id: appointmentId,
+          userId,
         },
         select: {
           id: true,
           date: true,
           description: true,
           status: true,
+          duration: true,
+          // endDate pode não existir no banco ainda
         },
       })
     } catch (error: any) {
-      // Se falhar porque endDate não existe, atualiza sem esse campo
-      if (error.code === 'P2022' || error.message?.includes('endDate') || error.message?.includes('does not exist')) {
-        console.warn('⚠️ [updateAppointment] Coluna endDate não existe, atualizando sem esse campo')
-        updated = await prisma.appointment.update({
-          where: { id: appointmentId },
-          data: {
-            date: newDate,
+      if (error.code === 'P2022' || error.message?.includes('duration') || error.message?.includes('does not exist')) {
+        console.warn('⚠️ [updateAppointment] Coluna duration não existe no banco, buscando sem esse campo')
+        supportsDurationFields = false
+        appointment = await prisma.appointment.findFirst({
+          where: {
+            id: appointmentId,
+            userId,
           },
           select: {
             id: true,
@@ -897,9 +878,71 @@ export async function updateAppointment(
             status: true,
           },
         })
+        if (appointment) {
+          appointment.duration = null
+        }
       } else {
         throw error
       }
+    }
+
+    if (!appointment) {
+      return {
+        success: false,
+        error: 'Agendamento não encontrado',
+      }
+    }
+
+    if (supportsDurationFields && (!appointment.duration || appointment.duration <= 0)) {
+      console.warn('⚠️ [updateAppointment] Duração do agendamento não definida. Atualizando sem ajustar endDate.')
+      supportsDurationFields = false
+    }
+
+    // Atualiza o agendamento
+    // CRÍTICO: Tenta atualizar com endDate, mas se falhar, atualiza sem esse campo
+    let updated: any
+    if (supportsDurationFields) {
+      try {
+        const durationMinutes =
+          appointment.duration && appointment.duration > 0 ? appointment.duration : 60
+        const newEndDate = new Date(newDate.getTime() + durationMinutes * 60000)
+        
+        updated = await prisma.appointment.update({
+          where: { id: appointmentId },
+          data: {
+            date: newDate,
+            endDate: newEndDate,
+          },
+          select: {
+            id: true,
+            date: true,
+            description: true,
+            status: true,
+          },
+        })
+      } catch (error: any) {
+        if (error.code === 'P2022' || error.message?.includes('endDate') || error.message?.includes('does not exist')) {
+          console.warn('⚠️ [updateAppointment] Coluna endDate não existe, atualizando sem esse campo')
+          supportsDurationFields = false
+        } else {
+          throw error
+        }
+      }
+    }
+
+    if (!supportsDurationFields) {
+      updated = await prisma.appointment.update({
+        where: { id: appointmentId },
+        data: {
+          date: newDate,
+        },
+        select: {
+          id: true,
+          date: true,
+          description: true,
+          status: true,
+        },
+      })
     }
 
     return {
@@ -926,20 +969,51 @@ export async function updateAppointment(
 export async function cancelAppointment(appointmentId: string, userId: string) {
   try {
     // CRÍTICO: Usa select explícito para evitar erro se endDate não existir no banco
-    const appointment = await prisma.appointment.findFirst({
-      where: {
-        id: appointmentId,
-        userId,
-      },
-      select: {
-        id: true,
-        date: true,
-        description: true,
-        status: true,
-        duration: true,
-        // endDate pode não existir no banco ainda
-      },
-    })
+    let appointment: {
+      id: string
+      date: Date
+      description: string | null
+      status: string
+      duration?: number | null
+    } | null = null
+
+    try {
+      appointment = await prisma.appointment.findFirst({
+        where: {
+          id: appointmentId,
+          userId,
+        },
+        select: {
+          id: true,
+          date: true,
+          description: true,
+          status: true,
+          duration: true,
+          // endDate pode não existir no banco ainda
+        },
+      })
+    } catch (error: any) {
+      if (error.code === 'P2022' || error.message?.includes('duration') || error.message?.includes('does not exist')) {
+        console.warn('⚠️ [cancelAppointment] Coluna duration não existe no banco, buscando sem esse campo')
+        appointment = await prisma.appointment.findFirst({
+          where: {
+            id: appointmentId,
+            userId,
+          },
+          select: {
+            id: true,
+            date: true,
+            description: true,
+            status: true,
+          },
+        })
+        if (appointment) {
+          appointment.duration = null
+        }
+      } else {
+        throw error
+      }
+    }
 
     if (!appointment) {
       return {
