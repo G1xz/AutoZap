@@ -7,44 +7,30 @@ import { RateLimiterMemory } from 'rate-limiter-flexible'
 import { RateLimitError } from './errors'
 import { log } from './logger'
 
+// Configurações de rate limit por tipo
+const rateLimitConfigs = {
+  // API geral: 100 requisições por minuto por IP
+  api: { points: 100, duration: 60 },
+  // Webhook: 1000 requisições por minuto por IP
+  webhook: { points: 1000, duration: 60 },
+  // Autenticação: 5 tentativas por 15 minutos por IP
+  auth: { points: 5, duration: 15 * 60, blockDuration: 15 * 60 },
+  // Upload: 10 uploads por hora por usuário
+  upload: { points: 10, duration: 60 * 60 },
+  // Envio de mensagens WhatsApp: 100 mensagens por minuto por instância
+  whatsapp: { points: 100, duration: 60 },
+  // IA: 50 requisições por minuto por usuário
+  ai: { points: 50, duration: 60 },
+}
+
 // Rate limiters por tipo de endpoint
 const rateLimiters = {
-  // API geral: 100 requisições por minuto por IP
-  api: new RateLimiterMemory({
-    points: 100,
-    duration: 60, // 60 segundos
-  }),
-
-  // Webhook: 1000 requisições por minuto por IP
-  webhook: new RateLimiterMemory({
-    points: 1000,
-    duration: 60,
-  }),
-
-  // Autenticação: 5 tentativas por 15 minutos por IP
-  auth: new RateLimiterMemory({
-    points: 5,
-    duration: 15 * 60, // 15 minutos
-    blockDuration: 15 * 60, // Bloqueia por 15 minutos
-  }),
-
-  // Upload: 10 uploads por hora por usuário
-  upload: new RateLimiterMemory({
-    points: 10,
-    duration: 60 * 60, // 1 hora
-  }),
-
-  // Envio de mensagens WhatsApp: 100 mensagens por minuto por instância
-  whatsapp: new RateLimiterMemory({
-    points: 100,
-    duration: 60,
-  }),
-
-  // IA: 50 requisições por minuto por usuário
-  ai: new RateLimiterMemory({
-    points: 50,
-    duration: 60,
-  }),
+  api: new RateLimiterMemory(rateLimitConfigs.api),
+  webhook: new RateLimiterMemory(rateLimitConfigs.webhook),
+  auth: new RateLimiterMemory(rateLimitConfigs.auth),
+  upload: new RateLimiterMemory(rateLimitConfigs.upload),
+  whatsapp: new RateLimiterMemory(rateLimitConfigs.whatsapp),
+  ai: new RateLimiterMemory(rateLimitConfigs.ai),
 }
 
 /**
@@ -131,7 +117,7 @@ export async function getRateLimitInfo(
   const rateLimiterRes = await limiter.get(identifier)
 
   if (!rateLimiterRes) {
-    const opts = limiter.getOptions()
+    const opts = rateLimitConfigs[type]
     return {
       remaining: opts.points,
       resetTime: Date.now() + opts.duration * 1000,
