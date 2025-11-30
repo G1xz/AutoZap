@@ -4,6 +4,26 @@
 
 import { prisma } from './prisma'
 
+const BRAZIL_TIMEZONE = 'America/Sao_Paulo'
+
+function formatDateInBrazil(date: Date): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: BRAZIL_TIMEZONE,
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+  }).format(date)
+}
+
+function formatTimeInBrazil(date: Date): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    timeZone: BRAZIL_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).format(date)
+}
+
 /**
  * Agrupa horários consecutivos em intervalos
  * Ex: ["08:00", "08:15", "08:30", "09:00", "09:15"] → ["das 08:00 às 08:45", "das 09:00 às 09:45"]
@@ -791,19 +811,9 @@ export async function getUserAppointments(
           date: apt.date,
           description: apt.description,
           status: apt.status,
-          formattedDate: apt.date.toLocaleDateString('pt-BR', {
-            day: '2-digit',
-            month: '2-digit',
-            year: 'numeric',
-          }),
-          formattedTime: apt.date.toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }),
-          formattedEndTime: endDate ? endDate.toLocaleTimeString('pt-BR', {
-            hour: '2-digit',
-            minute: '2-digit',
-          }) : undefined,
+          formattedDate: formatDateInBrazil(apt.date),
+          formattedTime: formatTimeInBrazil(apt.date),
+          formattedEndTime: endDate ? formatTimeInBrazil(endDate) : undefined,
         }
       }),
     }
