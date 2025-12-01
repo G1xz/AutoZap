@@ -3692,6 +3692,22 @@ async function executeAIOnlyWorkflow(
       console.log(`🔧 [interceptedFunctionCall] Interceptando chamada de função: ${functionName}`)
       console.log(`🔧 [interceptedFunctionCall] Argumentos:`, JSON.stringify(args, null, 2))
 
+      // GUARD RAIL: Impede que a IA encerre o chat se o usuário quiser finalizar o pedido
+      if (functionName === 'close_chat') {
+        const lastUserMessage = userMessage
+        const checkoutTriggers = ['finalizar', 'fechar', 'comprar', 'só isso', 'por enquanto é só', 'tá bom assim', 'pode fechar', 'concluir']
+
+        const hasCheckoutIntent = checkoutTriggers.some(trigger => lastUserMessage.includes(trigger))
+
+        if (hasCheckoutIntent) {
+          console.log(`🛡️ [interceptedFunctionCall] GUARD RAIL ATIVADO: Bloqueando close_chat pois detectou intenção de compra`)
+          return {
+            success: false,
+            error: '⚠️ AÇÃO BLOQUEADA: O usuário indicou que quer FINALIZAR O PEDIDO ou COMPRAR. NÃO encerre o chat! Use a função "checkout" para prosseguir com a venda. Se faltar informações (como tipo de entrega), chame "checkout" mesmo assim ou pergunte ao usuário.',
+          }
+        }
+      }
+
       try {
         const result = await handleFunctionCall(functionName, args)
 
@@ -3912,7 +3928,7 @@ async function executeAIOnlyWorkflow(
                 description: 'Observações gerais do pedido (opcional).',
               },
             },
-            required: ['delivery_type'],
+            required: [],
           },
         },
       ],
