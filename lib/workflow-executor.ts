@@ -3448,6 +3448,237 @@ async function executeAIOnlyWorkflow(
         }
       }
 
+      // Função para adicionar ao carrinho
+      if (functionName === 'add_to_cart' && userId) {
+        try {
+          const { addToCart, getCart } = await import('./cart')
+          
+          if (!args.product_id || !args.product_type || !args.product_name) {
+            return {
+              success: false,
+              error: 'ID, tipo e nome do produto são obrigatórios.',
+            }
+          }
+
+          // Busca preço do produto
+          let unitPrice = 0
+          if (args.product_type === 'service') {
+            const service = await prisma.service.findFirst({
+              where: {
+                id: args.product_id,
+                userId,
+              },
+              select: {
+                price: true,
+              },
+            })
+            unitPrice = service?.price || 0
+          } else {
+            // Para produtos do catálogo, precisa buscar do CatalogNode
+            const catalogNode = await prisma.catalogNode.findFirst({
+              where: {
+                id: args.product_id,
+                catalog: {
+                  userId,
+                },
+              },
+            })
+            if (catalogNode) {
+              try {
+                const nodeData = JSON.parse(catalogNode.data)
+                unitPrice = nodeData.price || 0
+              } catch {
+                unitPrice = 0
+              }
+            }
+          }
+
+          const quantity = args.quantity || 1
+          const totalPrice = unitPrice * quantity
+
+          const cart = addToCart(instanceId, contactNumber, {
+            productId: args.product_id,
+            productType: args.product_type as 'service' | 'catalog',
+            productName: args.product_name,
+            quantity,
+            unitPrice,
+            totalPrice,
+            notes: args.notes,
+          })
+
+          const itemCount = cart.items.length
+          const cartTotal = cart.items.reduce((sum, item) => sum + item.totalPrice, 0)
+
+          return {
+            success: true,
+            message: `✅ ${args.product_name} adicionado ao carrinho!\n\n🛒 Carrinho: ${itemCount} item${itemCount !== 1 ? 's' : ''}\n💰 Total: R$ ${cartTotal.toFixed(2).replace('.', ',')}\n\nDeseja adicionar mais algo ou finalizar o pedido?`,
+            cartItems: itemCount,
+            cartTotal,
+          }
+        } catch (error) {
+          log.error('Erro ao adicionar ao carrinho', error)
+          return {
+            success: false,
+            error: 'Erro ao adicionar produto ao carrinho.',
+          }
+        }
+      }
+
+      // Função para visualizar carrinho
+      if (functionName === 'view_cart' && userId) {
+        try {
+          const { getCart, getCartTotal } = await import('./cart')
+          
+          const cart = getCart(instanceId, contactNumber)
+          
+          if (cart.items.length === 0) {
+            return {
+              success: true,
+              message: '🛒 Seu carrinho está vazio.\n\nAdicione produtos ou serviços para começar seu pedido!',
+              cartItems: 0,
+              cartTotal: 0,
+            }
+          }
+
+          const total = getCartTotal(cart)
+          let message = '🛒 **Seu Carrinho:**\n\n'
+          
+          cart.items.forEach((item, index) => {
+            message += `${index + 1}. ${item.productName}`
+            if (item.quantity > 1) {
+              message += ` (${item.quantity}x)`
+            }
+            message += ` - R$ ${item.totalPrice.toFixed(2).replace('.', ',')}\n`
+            if (item.notes) {
+              message += `   📝 ${item.notes}\n`
+            }
+          })
+          
+          message += `\n💰 **Total: R$ ${total.toFixed(2).replace('.', ',')}**\n\n`
+          message += 'Deseja adicionar mais algo ou finalizar o pedido?'
+
+          return {
+            success: true,
+            message,
+            cartItems: cart.items.length,
+            cartTotal: total,
+          }
+        } catch (error) {
+          log.error('Erro ao visualizar carrinho', error)
+          return {
+            success: false,
+            error: 'Erro ao visualizar carrinho.',
+          }
+        }
+      }
+
+      // Função para finalizar pedido (checkout)
+      if (functionName === 'checkout' && userId) {
+        try {
+          const { getCart, createOrderFromCart } = await import('./cart')
+          
+          const cart = getCart(instanceId, contactNumber)
+          
+          if (cart.items.length === 0) {
+            return {
+              success: false,
+              error: 'Seu carrinho está vazio. Adicione produtos antes de finalizar o pedido.',
+            }
+          }
+
+          // Valida tipo de entrega
+          if (args.delivery_type === 'delivery' && !args.delivery_address) {
+            return {
+              success: false,
+              error: 'Por favor, informe o endereço de entrega.',
+            }
+          }
+
+          // Verifica se os produtos permitem o tipo de entrega escolhido
+          for (const item of cart.items) {
+            if (item.productType === 'service') {
+              const service = await prisma.service.findFirst({
+                where: {
+                  id: item.productId,
+                  userId,
+                },
+                select: {
+                  deliveryAvailable: true,
+                  pickupAvailable: true,
+                },
+              })
+
+              if (args.delivery_type === 'delivery' && !service?.deliveryAvailable) {
+                return {
+                  success: false,
+                  error: `O produto "${item.productName}" não permite entrega. Por favor, escolha retirada no estabelecimento ou remova este item do carrinho.`,
+                }
+              }
+
+              if (args.delivery_type === 'pickup' && !service?.pickupAvailable) {
+                return {
+                  success: false,
+                  error: `O produto "${item.productName}" não permite retirada. Por favor, escolha entrega ou remova este item do carrinho.`,
+                }
+              }
+            }
+          }
+
+          // Cria o pedido
+          const result = await createOrderFromCart(
+            userId,
+            instanceId,
+            contactNumber,
+            contactNameFinal,
+            args.delivery_type as 'pickup' | 'delivery',
+            args.delivery_address,
+            args.notes
+          )
+
+          let message = `✅ **Pedido confirmado!**\n\n`
+          message += `📦 Tipo: ${args.delivery_type === 'delivery' ? 'Entrega' : 'Retirada no estabelecimento'}\n`
+          if (args.delivery_type === 'delivery' && args.delivery_address) {
+            message += `📍 Endereço: ${args.delivery_address}\n`
+          }
+          message += `💰 Total: R$ ${cart.items.reduce((sum, item) => sum + item.totalPrice, 0).toFixed(2).replace('.', ',')}\n\n`
+
+          // Adiciona informações de pagamento se houver
+          if (result.paymentLink) {
+            message += `💳 **Pagamento:**\n`
+            message += `Clique no link para pagar: ${result.paymentLink}\n\n`
+          } else if (result.paymentPixKey) {
+            message += `💳 **Pagamento via Pix:**\n`
+            message += `Chave Pix: ${result.paymentPixKey}\n`
+            message += `Valor: R$ ${cart.items.reduce((sum, item) => sum + item.totalPrice, 0).toFixed(2).replace('.', ',')}\n\n`
+          } else {
+            message += `💳 **Pagamento:**\n`
+            message += `Você pode pagar na retirada ou no momento da entrega.\n\n`
+          }
+
+          message += `Obrigado pela preferência! 🎉`
+
+          // Envia mensagem de confirmação
+          const contactKey = `${instanceId}-${contactNumber}`
+          await queueMessage(contactKey, async () => {
+            await sendWhatsAppMessage(instanceId, contactNumber, message, 'service')
+          })
+
+          return {
+            success: true,
+            message,
+            orderId: result.orderId,
+            paymentLink: result.paymentLink,
+            paymentPixKey: result.paymentPixKey,
+          }
+        } catch (error) {
+          log.error('Erro ao finalizar pedido', error)
+          return {
+            success: false,
+            error: error instanceof Error ? error.message : 'Erro ao finalizar pedido.',
+          }
+        }
+      }
+
       return {
         success: false,
         error: 'Função não reconhecida.',
@@ -3620,6 +3851,69 @@ async function executeAIOnlyWorkflow(
                },
              },
              required: ['product_id', 'attempt'],
+           },
+         },
+         {
+           name: 'add_to_cart',
+           description: 'Adiciona um produto ou serviço ao carrinho de compras. Use quando o cliente quiser adicionar algo ao carrinho antes de finalizar o pedido. Permite que o cliente adicione múltiplos itens antes de fazer o checkout.',
+           parameters: {
+             type: 'object',
+             properties: {
+               product_id: {
+                 type: 'string',
+                 description: 'ID do produto/serviço a ser adicionado ao carrinho.',
+               },
+               product_type: {
+                 type: 'string',
+                 enum: ['service', 'catalog'],
+                 description: 'Tipo do produto: "service" para serviços ou "catalog" para produtos do catálogo.',
+               },
+               product_name: {
+                 type: 'string',
+                 description: 'Nome do produto/serviço para exibição.',
+               },
+               quantity: {
+                 type: 'number',
+                 description: 'Quantidade do produto (padrão: 1).',
+               },
+               notes: {
+                 type: 'string',
+                 description: 'Observações específicas do cliente sobre este item (opcional).',
+               },
+             },
+             required: ['product_id', 'product_type', 'product_name'],
+           },
+         },
+         {
+           name: 'view_cart',
+           description: 'Visualiza o conteúdo atual do carrinho de compras. Use quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido" ou quando quiser ver o resumo antes de finalizar.',
+           parameters: {
+             type: 'object',
+             properties: {},
+             required: [],
+           },
+         },
+         {
+           name: 'checkout',
+           description: 'Finaliza o pedido e cria a ordem de compra. Use quando o cliente quiser finalizar o pedido, confirmar a compra, ou quando disser "quero fechar o pedido". Coleta informações de entrega/retirada e processa o pagamento.',
+           parameters: {
+             type: 'object',
+             properties: {
+               delivery_type: {
+                 type: 'string',
+                 enum: ['pickup', 'delivery'],
+                 description: 'Tipo de entrega: "pickup" para retirada no estabelecimento ou "delivery" para entrega no endereço.',
+               },
+               delivery_address: {
+                 type: 'string',
+                 description: 'Endereço completo de entrega (obrigatório se delivery_type for "delivery"). Inclua rua, número, bairro, cidade e CEP se possível.',
+               },
+               notes: {
+                 type: 'string',
+                 description: 'Observações gerais do pedido (opcional).',
+               },
+             },
+             required: ['delivery_type'],
            },
          },
        ],

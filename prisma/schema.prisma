@@ -28,6 +28,7 @@ model User {
   catalogs            Catalog[]
   pixKeys             BusinessPixKey[]
   productInterests    ProductInterest[]
+  orders              Order[]
 }
 
 model WhatsAppInstance {
@@ -58,6 +59,7 @@ model WhatsAppInstance {
   pendingAppointments  PendingAppointment[]
   contacts             Contact[]
   productInterests     ProductInterest[]
+  orders               Order[]
 }
 
 model Message {
@@ -196,11 +198,17 @@ model Service {
   hasPromotions     Boolean  @default(false) // Se tem promoções ativadas
   promotions        String? // JSON array de promoções: [{value: number, type: "percent"|"value", gatewayLink?: string}]
   pixKeyId           String? // ID da chave Pix selecionada
+  // Opções de entrega e pagamento
+  deliveryAvailable Boolean  @default(false) // Se permite entrega
+  pickupAvailable   Boolean  @default(true) // Se permite retirada (padrão true)
+  paymentLink       String? // Link do gateway de pagamento (opcional)
+  paymentPixKeyId   String? // ID da chave Pix para pagamento (opcional, diferente da promoção)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   user         User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   pixKey       BusinessPixKey?   @relation(fields: [pixKeyId], references: [id], onDelete: SetNull)
+  paymentPixKey BusinessPixKey? @relation("ServicePaymentPix", fields: [paymentPixKeyId], references: [id], onDelete: SetNull)
   interests    ProductInterest[]
 
   @@index([userId])
@@ -318,6 +326,7 @@ model BusinessPixKey {
 
   user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   services Service[]
+  servicePayments Service[] @relation("ServicePaymentPix")
 
   @@index([userId])
   @@index([userId, isActive])
@@ -348,5 +357,54 @@ model ProductInterest {
   @@index([instanceId, contactNumber])
   @@index([status])
   @@index([lastInteraction])
+}
+
+// Pedidos/Ordens de compra
+model Order {
+  id            String   @id @default(cuid())
+  userId        String
+  instanceId    String
+  contactNumber String
+  contactName   String?
+  deliveryType  String   @default("pickup") // "pickup" ou "delivery"
+  deliveryAddress String? // Endereço completo de entrega (se deliveryType = "delivery")
+  status        String   @default("pending") // "pending", "confirmed", "preparing", "ready", "delivered", "picked_up", "cancelled"
+  totalAmount   Float    @default(0)
+  paymentMethod String? // "pix", "gateway", "cash" (se não tiver link)
+  paymentLink   String? // Link de pagamento se houver
+  paymentPixKey String? // Chave Pix se houver
+  notes         String? // Observações do cliente
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  completedAt   DateTime? // Quando foi concluído (entregue ou retirado)
+
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance   WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  items      OrderItem[]
+
+  @@index([userId])
+  @@index([instanceId])
+  @@index([instanceId, contactNumber])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Itens do pedido
+model OrderItem {
+  id            String   @id @default(cuid())
+  orderId       String
+  productId     String // ID do produto/serviço (Service.id ou CatalogNode.id)
+  productType   String   @default("service") // "service" ou "catalog"
+  productName   String
+  quantity      Int      @default(1)
+  unitPrice     Float
+  totalPrice    Float
+  notes         String? // Observações específicas do item
+  createdAt     DateTime @default(now())
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([productId, productType])
 }
 

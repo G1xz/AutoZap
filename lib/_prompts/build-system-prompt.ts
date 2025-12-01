@@ -223,6 +223,21 @@ export function buildSystemPrompt(
   prompt += `- Se o cliente aceitar, forneça as informações de pagamento (Pix ou gateway)\n`
   prompt += `- Palavras-chave que indicam pedido de desconto: "desconto", "promoção", "mais barato", "está caro", "muito caro", "tem desconto", "negociar"\n`
 
+  // Instruções sobre carrinho de compras
+  prompt += `\n\n🛒 SISTEMA DE CARRINHO DE COMPRAS:\n`
+  prompt += `- Você pode permitir que o cliente adicione múltiplos produtos ao carrinho antes de finalizar o pedido\n`
+  prompt += `- Use a função "add_to_cart" quando o cliente quiser adicionar um produto ao carrinho\n`
+  prompt += `- Use a função "view_cart" quando o cliente perguntar sobre o carrinho, quiser ver os itens, ou quando perguntar "o que tem no carrinho"\n`
+  prompt += `- Use a função "checkout" quando o cliente quiser finalizar o pedido, confirmar a compra, ou quando disser "quero fechar o pedido"\n`
+  prompt += `- ⚠️ IMPORTANTE: Antes de finalizar o pedido (checkout), pergunte se o cliente quer entrega ou retirada no estabelecimento\n`
+  prompt += `- ⚠️ IMPORTANTE: Se o cliente escolher entrega, você DEVE coletar o endereço completo antes de finalizar\n`
+  prompt += `- ⚠️ IMPORTANTE: Alguns produtos podem não permitir entrega ou retirada - verifique antes de oferecer\n`
+  prompt += `- ⚠️ IMPORTANTE: Se o produto tiver link de pagamento ou chave Pix configurados, eles serão enviados automaticamente após o checkout\n`
+  prompt += `- Se o cliente quiser adicionar mais de um produto, sugira usar o carrinho para facilitar\n`
+  prompt += `- Palavras-chave que indicam interesse em adicionar ao carrinho: "adicionar", "colocar no carrinho", "quero esse", "vou levar"\n`
+  prompt += `- Palavras-chave que indicam interesse em ver o carrinho: "meu carrinho", "o que tem no carrinho", "itens do pedido", "resumo"\n`
+  prompt += `- Palavras-chave que indicam interesse em finalizar: "finalizar", "fechar pedido", "confirmar compra", "quero comprar", "fazer pedido"\n`
+
   // Mensagem de boas-vindas personalizada
   if (howToBuy && howToBuy.trim().length > 10) {
     prompt += `\n- Na primeira interação, SEMPRE use esta mensagem de boas-vindas EXATA: "${howToBuy}"\n`

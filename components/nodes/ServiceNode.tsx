@@ -23,6 +23,11 @@ interface ServiceNodeData {
   hasPromotions?: boolean
   promotions?: Promotion[] // Array dinâmico de promoções
   pixKeyId?: string
+  // Entrega e pagamento
+  deliveryAvailable?: boolean
+  pickupAvailable?: boolean
+  paymentLink?: string
+  paymentPixKeyId?: string
 }
 
 export default function ServiceNode(props: NodeProps) {
@@ -48,6 +53,13 @@ export default function ServiceNode(props: NodeProps) {
   const [pixKeyId, setPixKeyId] = useState(nodeData.pixKeyId || '')
   const [pixKeys, setPixKeys] = useState<Array<{ id: string; name: string }>>([])
   const [showPromotions, setShowPromotions] = useState(false)
+  
+  // Entrega e pagamento
+  const [deliveryAvailable, setDeliveryAvailable] = useState(nodeData.deliveryAvailable || false)
+  const [pickupAvailable, setPickupAvailable] = useState(nodeData.pickupAvailable !== undefined ? nodeData.pickupAvailable : true)
+  const [paymentLink, setPaymentLink] = useState(nodeData.paymentLink || '')
+  const [paymentPixKeyId, setPaymentPixKeyId] = useState(nodeData.paymentPixKeyId || '')
+  const [showDeliveryPayment, setShowDeliveryPayment] = useState(false)
 
   // Carrega chaves Pix disponíveis
   useEffect(() => {
@@ -90,6 +102,11 @@ export default function ServiceNode(props: NodeProps) {
       setPromotions([])
     }
     setPixKeyId(nodeData.pixKeyId || '')
+    // Entrega e pagamento
+    setDeliveryAvailable(nodeData.deliveryAvailable || false)
+    setPickupAvailable(nodeData.pickupAvailable !== undefined ? nodeData.pickupAvailable : true)
+    setPaymentLink(nodeData.paymentLink || '')
+    setPaymentPixKeyId(nodeData.paymentPixKeyId || '')
   }, [nodeData])
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -151,6 +168,11 @@ export default function ServiceNode(props: NodeProps) {
     nodeData.hasPromotions = hasPromotions
     nodeData.promotions = hasPromotions && promotions.length > 0 ? promotions : undefined
     nodeData.pixKeyId = pixKeyId || undefined
+    // Entrega e pagamento
+    nodeData.deliveryAvailable = deliveryAvailable
+    nodeData.pickupAvailable = pickupAvailable
+    nodeData.paymentLink = paymentLink || undefined
+    nodeData.paymentPixKeyId = paymentPixKeyId || undefined
     setIsEditing(false)
   }
 
@@ -264,6 +286,71 @@ export default function ServiceNode(props: NodeProps) {
             )}
           </div>
           
+          {/* Seção de Entrega e Pagamento */}
+          <div className="space-y-2 pt-2 border-t border-white/20">
+            <button
+              type="button"
+              onClick={() => setShowDeliveryPayment(!showDeliveryPayment)}
+              className="nodrag w-full flex items-center justify-between px-2 py-1 bg-green-600/80 text-white rounded text-xs hover:bg-green-600 transition-colors"
+            >
+              <span className="font-semibold">🚚 Entrega e Pagamento</span>
+              <span>{showDeliveryPayment ? '−' : '+'}</span>
+            </button>
+            {showDeliveryPayment && (
+              <div className="space-y-2 bg-white/10 p-2 rounded">
+                {/* Opções de entrega/retirada */}
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={pickupAvailable}
+                      onChange={(e) => setPickupAvailable(e.target.checked)}
+                      className="nodrag w-4 h-4 rounded border-gray-300 text-autozap-primary focus:ring-autozap-primary"
+                    />
+                    <span className="text-xs font-semibold text-white">Permitir retirada no estabelecimento</span>
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={deliveryAvailable}
+                      onChange={(e) => setDeliveryAvailable(e.target.checked)}
+                      className="nodrag w-4 h-4 rounded border-gray-300 text-autozap-primary focus:ring-autozap-primary"
+                    />
+                    <span className="text-xs font-semibold text-white">Permitir entrega</span>
+                  </label>
+                </div>
+                
+                {/* Pagamento */}
+                <div className="space-y-2 pt-2 border-t border-white/20">
+                  <label className="text-xs font-semibold text-white block">Link de Pagamento (Gateway):</label>
+                  <input
+                    type="url"
+                    value={paymentLink}
+                    onChange={(e) => setPaymentLink(e.target.value)}
+                    placeholder="https://..."
+                    className="w-full px-2 py-1 text-xs bg-white/90 rounded border border-gray-300 text-gray-800"
+                  />
+                  <label className="text-xs font-semibold text-white block">Ou Chave Pix para Pagamento:</label>
+                  <select
+                    value={paymentPixKeyId}
+                    onChange={(e) => setPaymentPixKeyId(e.target.value)}
+                    className="nodrag w-full px-2 py-1 text-xs bg-white/90 rounded border border-gray-300 text-gray-800"
+                  >
+                    <option value="">Nenhuma</option>
+                    {pixKeys.map((key) => (
+                      <option key={key.id} value={key.id}>
+                        {key.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-white/70">
+                    Se não preencher nenhum, o cliente não receberá link de pagamento.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Seção de Promoções */}
           <div className="space-y-2 pt-2 border-t border-white/20">
             <button

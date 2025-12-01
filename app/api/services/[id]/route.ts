@@ -21,6 +21,11 @@ const updateServiceSchema = z.object({
     gatewayLink: z.string().url().optional(),
   })).nullable().optional(),
   pixKeyId: z.string().nullable().optional(),
+  // Entrega e pagamento
+  deliveryAvailable: z.boolean().optional(),
+  pickupAvailable: z.boolean().optional(),
+  paymentLink: z.string().url().nullable().optional(),
+  paymentPixKeyId: z.string().nullable().optional(),
 })
 
 export async function PATCH(
@@ -67,6 +72,23 @@ export async function PATCH(
       }
     }
 
+    // Verifica se a chave Pix de pagamento pertence ao usuário (se fornecida)
+    if (data.paymentPixKeyId) {
+      const pixKey = await prisma.businessPixKey.findFirst({
+        where: {
+          id: data.paymentPixKeyId,
+          userId: session.user.id,
+        },
+      })
+
+      if (!pixKey) {
+        return NextResponse.json(
+          { error: 'Chave Pix de pagamento não encontrada ou não pertence ao usuário' },
+          { status: 400 }
+        )
+      }
+    }
+
     const updated = await prisma.service.update({
       where: { id: params.id },
       data: {
@@ -79,6 +101,11 @@ export async function PATCH(
         ...(data.hasPromotions !== undefined && { hasPromotions: data.hasPromotions }),
         ...(data.promotions !== undefined && { promotions: data.promotions ? JSON.stringify(data.promotions) : null }),
         ...(data.pixKeyId !== undefined && { pixKeyId: data.pixKeyId }),
+        // Entrega e pagamento
+        ...(data.deliveryAvailable !== undefined && { deliveryAvailable: data.deliveryAvailable }),
+        ...(data.pickupAvailable !== undefined && { pickupAvailable: data.pickupAvailable }),
+        ...(data.paymentLink !== undefined && { paymentLink: data.paymentLink }),
+        ...(data.paymentPixKeyId !== undefined && { paymentPixKeyId: data.paymentPixKeyId }),
       },
       include: {
         pixKey: {
