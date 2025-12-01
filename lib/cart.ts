@@ -147,7 +147,7 @@ export function clearCart(instanceId: string, contactNumber: string): void {
  * Calcula total do carrinho
  */
 export function getCartTotal(cart: Cart): number {
-  return cart.items.reduce((total, item) => total + item.totalPrice, 0)
+  return cart.items.reduce((total, item) => total + (item.quantity * item.unitPrice), 0)
 }
 
 /**
@@ -227,7 +227,7 @@ export async function createOrderFromCart(
           productName: item.productName,
           quantity: item.quantity,
           unitPrice: item.unitPrice,
-          totalPrice: item.totalPrice,
+          totalPrice: item.quantity * item.unitPrice,
           notes: item.notes,
         })),
       },

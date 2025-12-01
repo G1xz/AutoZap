@@ -75,7 +75,7 @@ async function queueMessage(
 ): Promise<void> {
   // Pega a última promise da fila (ou cria uma nova se não existir)
   const previousPromise = messageQueues.get(contactKey) || Promise.resolve()
-  
+
   // Cria uma nova promise que aguarda a anterior e então executa a função
   const newPromise = previousPromise
     .then(() => sendFunction())
@@ -90,10 +90,10 @@ async function queueMessage(
         messageQueues.delete(contactKey)
       }
     })
-  
+
   // Atualiza a fila com a nova promise
   messageQueues.set(contactKey, newPromise)
-  
+
   // Aguarda a execução completa
   await newPromise
 }
@@ -116,7 +116,7 @@ function replaceVariables(text: string, variables: Record<string, any>): string 
   const now = new Date()
   const dateStr = now.toLocaleDateString('pt-BR')
   const timeStr = now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
-  
+
   result = result.replace(/\{\{data\}\}/g, dateStr)
   result = result.replace(/\{\{hora\}\}/g, timeStr)
   result = result.replace(/\{\{datahora\}\}/g, `${dateStr} às ${timeStr}`)
@@ -138,17 +138,17 @@ export async function executeWorkflows(
     // ⚠️ CRÍTICO: Processa confirmação/cancelamento de agendamento ANTES de qualquer lógica de workflow
     // Isso garante que confirmações sejam processadas imediatamente e não entrem em loop
     log.debug('Verificando confirmação de agendamento antes de processar workflows')
-    
+
     try {
       // Busca userId da instância para processar agendamento
       const instance = await prisma.whatsAppInstance.findUnique({
         where: { id: instanceId },
         select: { userId: true },
       })
-      
+
       if (instance?.userId) {
         log.debug('userId encontrado para verificação de agendamento', { userId: instance.userId })
-        
+
         // Processa confirmação/cancelamento de agendamento pendente
         // Usa a mensagem ORIGINAL (não lowercase) para melhor detecção
         const processedAppointment = await processAppointmentConfirmation(
@@ -158,7 +158,7 @@ export async function executeWorkflows(
           instance.userId,
           message.contactName
         )
-        
+
         if (processedAppointment) {
           log.debug('Agendamento processado, retornando sem processar workflows')
           return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO PROCESSA WORKFLOWS
@@ -207,7 +207,7 @@ export async function executeWorkflows(
       // Se o workflow não existe mais ou não está ativo, limpa a execução
       if (currentExecution.workflowId) {
         const workflow = workflows.find(w => w.id === currentExecution.workflowId)
-        
+
         // Se o workflow não existe mais ou não está ativo, limpa a execução
         if (!workflow || !workflow.isActive) {
           log.debug('Limpando execução inválida: workflow não existe ou não está ativo')
@@ -219,8 +219,8 @@ export async function executeWorkflows(
           return
         } else {
           // Workflow manual ainda válido, continua execução existente
-      await processQuestionnaireResponse(instanceId, contactNumber, messageBody)
-      return
+          await processQuestionnaireResponse(instanceId, contactNumber, messageBody)
+          return
         }
       } else {
         // Execução sem workflowId válido, limpa
@@ -234,7 +234,7 @@ export async function executeWorkflows(
     const aiOnlyWorkflows = workflows.filter(w => w.isAIOnly && w.isActive)
     if (aiOnlyWorkflows.length > 0) {
       const workflow = aiOnlyWorkflows[0] // Usa o primeiro workflow IA-only encontrado
-      
+
       // Verifica se já houve interação anterior com este workflow
       const recentMessages = await prisma.message.findMany({
         where: {
@@ -247,11 +247,11 @@ export async function executeWorkflows(
         orderBy: { timestamp: 'desc' },
         take: 10,
       })
-      
+
       // Se há mensagens recentes OU se a mensagem atual contém o trigger, responde sempre
       const hasRecentInteraction = recentMessages.length > 0
       const matchesTrigger = messageBody.includes(workflow.trigger.toLowerCase().trim())
-      
+
       if (hasRecentInteraction || matchesTrigger) {
         log.debug('Workflow IA-only respondendo', {
           workflowName: workflow.name,
@@ -259,7 +259,7 @@ export async function executeWorkflows(
           hasRecentInteraction,
           matchesTrigger,
         })
-        
+
         // Cria execução contínua para manter a IA ativa
         const execution: WorkflowExecutionContext = {
           instanceId,
@@ -269,7 +269,7 @@ export async function executeWorkflows(
           variables: {},
         }
         workflowExecutions.set(executionKey, execution)
-        
+
         await executeAIOnlyWorkflow(workflow, instanceId, contactNumber, messageBody, message.contactName)
         return
       }
@@ -278,14 +278,14 @@ export async function executeWorkflows(
     // Procura workflow que corresponde ao trigger
     for (const workflow of workflows) {
       const trigger = workflow.trigger.toLowerCase().trim()
-      
+
       if (messageBody.includes(trigger)) {
         log.event('workflow_triggered', {
           workflowId: workflow.id,
           workflowName: workflow.name,
           contactNumber,
         })
-        
+
         // Se for fluxo IA-only, executar de forma autônoma e criar execução contínua
         if (workflow.isAIOnly) {
           // Cria execução contínua para manter a IA ativa
@@ -297,11 +297,11 @@ export async function executeWorkflows(
             variables: {},
           }
           workflowExecutions.set(executionKey, execution)
-          
+
           await executeAIOnlyWorkflow(workflow, instanceId, contactNumber, messageBody, message.contactName)
           return
         }
-        
+
         // Para fluxos manuais, executar normalmente
         // Cria novo contexto de execução
         const triggerNode = workflow.nodes.find((n) => n.type === 'trigger')
@@ -317,7 +317,7 @@ export async function executeWorkflows(
           const profileName = await getUserProfileName(instanceId, contactNumber)
           contactName = profileName || undefined
         }
-        
+
         const formattedPhone = contactNumber.replace(/\D/g, '')
         const formattedPhoneFormatted = formattedPhone.startsWith('55')
           ? formattedPhone.replace(/^55(\d{2})(\d{4,5})(\d{4})$/, '+55 ($1) $2-$3')
@@ -462,58 +462,58 @@ async function executeNode(
       // Nó trigger apenas inicia o fluxo, vai para o próximo
       return getNextNode(node.id, connections, null)
 
-      case 'message':
-        // Substitui variáveis na mensagem
-        const messageText = replaceVariables(data.message || '', execution.variables)
-        
-        // Cria uma chave única para a fila deste contato
-        const messageContactKey = `${instanceId}-${contactNumber}`
-        
-        // Adiciona à fila sequencial para garantir ordem de envio
-        await queueMessage(messageContactKey, async () => {
-          // Envia arquivo primeiro se houver (imagem, vídeo ou documento)
-          if (data.fileUrl) {
-            try {
-              if (data.fileType === 'image') {
-                await sendWhatsAppImage(
-                  instanceId,
-                  contactNumber,
-                  data.fileUrl,
-                  messageText // Caption com a mensagem (com variáveis substituídas)
-                )
-              } else if (data.fileType === 'video') {
-                await sendWhatsAppVideo(
-                  instanceId,
-                  contactNumber,
-                  data.fileUrl,
-                  messageText
-                )
-              } else if (data.fileType === 'document') {
-                await sendWhatsAppDocument(
-                  instanceId,
-                  contactNumber,
-                  data.fileUrl,
-                  data.fileName || 'documento',
-                  messageText
-                )
-              }
-            } catch (error) {
-              log.error('Erro ao enviar arquivo', error)
-              // Se falhar, tenta enviar pelo menos a mensagem de texto
-              if (messageText) {
-                await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service')
-              }
-              throw error // Propaga o erro para a fila
+    case 'message':
+      // Substitui variáveis na mensagem
+      const messageText = replaceVariables(data.message || '', execution.variables)
+
+      // Cria uma chave única para a fila deste contato
+      const messageContactKey = `${instanceId}-${contactNumber}`
+
+      // Adiciona à fila sequencial para garantir ordem de envio
+      await queueMessage(messageContactKey, async () => {
+        // Envia arquivo primeiro se houver (imagem, vídeo ou documento)
+        if (data.fileUrl) {
+          try {
+            if (data.fileType === 'image') {
+              await sendWhatsAppImage(
+                instanceId,
+                contactNumber,
+                data.fileUrl,
+                messageText // Caption com a mensagem (com variáveis substituídas)
+              )
+            } else if (data.fileType === 'video') {
+              await sendWhatsAppVideo(
+                instanceId,
+                contactNumber,
+                data.fileUrl,
+                messageText
+              )
+            } else if (data.fileType === 'document') {
+              await sendWhatsAppDocument(
+                instanceId,
+                contactNumber,
+                data.fileUrl,
+                data.fileName || 'documento',
+                messageText
+              )
             }
-          } else {
-            // Se não houver arquivo, envia apenas a mensagem de texto
+          } catch (error) {
+            log.error('Erro ao enviar arquivo', error)
+            // Se falhar, tenta enviar pelo menos a mensagem de texto
             if (messageText) {
               await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service')
             }
+            throw error // Propaga o erro para a fila
           }
-        })
+        } else {
+          // Se não houver arquivo, envia apenas a mensagem de texto
+          if (messageText) {
+            await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service')
+          }
+        }
+      })
 
-        return getNextNode(node.id, connections, null)
+      return getNextNode(node.id, connections, null)
 
     case 'wait':
       // Aguarda o tempo especificado
@@ -528,55 +528,55 @@ async function executeNode(
 
       return getNextNode(node.id, connections, null)
 
-      case 'questionnaire':
-        // Substitui variáveis na pergunta
-        const questionText = replaceVariables(data.question || '', execution.variables)
-        const questionnaireContactKey = `${instanceId}-${contactNumber}`
-        
-        // Adiciona à fila sequencial para garantir ordem
-        await queueMessage(questionnaireContactKey, async () => {
-          // Envia a pergunta com botões interativos se houver opções
-          if (data.options && data.options.length > 0 && data.options.length <= 3) {
-            // Usa botões interativos (máximo 3 botões)
-            const buttons = data.options.map((opt: any) => ({
-              id: `option-${opt.id}`, // Prefixo para identificar como resposta de botão
-              title: replaceVariables(opt.label, execution.variables).slice(0, 20), // Máximo 20 caracteres
-            }))
-            
-            await sendWhatsAppInteractiveMessage(
-              instanceId,
-              contactNumber,
-              questionText,
-              buttons
-            )
-          } else {
-            // Fallback para texto simples se tiver mais de 3 opções ou nenhuma
-            await sendWhatsAppMessage(instanceId, contactNumber, questionText, 'service')
-            
-            if (data.options && data.options.length > 0) {
-              const optionsText = data.options
-                .map((opt: any, index: number) => `${index + 1}. ${replaceVariables(opt.label, execution.variables)}`)
-                .join('\n')
-              await sendWhatsAppMessage(instanceId, contactNumber, optionsText, 'service')
-            }
-          }
-        })
+    case 'questionnaire':
+      // Substitui variáveis na pergunta
+      const questionText = replaceVariables(data.question || '', execution.variables)
+      const questionnaireContactKey = `${instanceId}-${contactNumber}`
 
-        // Aguarda resposta do usuário
-        return null // Retorna null para pausar execução
+      // Adiciona à fila sequencial para garantir ordem
+      await queueMessage(questionnaireContactKey, async () => {
+        // Envia a pergunta com botões interativos se houver opções
+        if (data.options && data.options.length > 0 && data.options.length <= 3) {
+          // Usa botões interativos (máximo 3 botões)
+          const buttons = data.options.map((opt: any) => ({
+            id: `option-${opt.id}`, // Prefixo para identificar como resposta de botão
+            title: replaceVariables(opt.label, execution.variables).slice(0, 20), // Máximo 20 caracteres
+          }))
+
+          await sendWhatsAppInteractiveMessage(
+            instanceId,
+            contactNumber,
+            questionText,
+            buttons
+          )
+        } else {
+          // Fallback para texto simples se tiver mais de 3 opções ou nenhuma
+          await sendWhatsAppMessage(instanceId, contactNumber, questionText, 'service')
+
+          if (data.options && data.options.length > 0) {
+            const optionsText = data.options
+              .map((opt: any, index: number) => `${index + 1}. ${replaceVariables(opt.label, execution.variables)}`)
+              .join('\n')
+            await sendWhatsAppMessage(instanceId, contactNumber, optionsText, 'service')
+          }
+        }
+      })
+
+      // Aguarda resposta do usuário
+      return null // Retorna null para pausar execução
 
     case 'transfer_to_human':
       // Transfere conversa para atendente humano
       const { updateConversationStatus } = await import('./conversation-status')
       await updateConversationStatus(instanceId, contactNumber, 'waiting_human')
-      
+
       // Envia mensagem informando que será atendido por humano
       const transferMessage = data.message || 'Nossa equipe entrará em contato em breve. Aguarde um momento, por favor.'
       const contactKeyTransfer = `${instanceId}-${contactNumber}`
       await queueMessage(contactKeyTransfer, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, transferMessage, 'service')
       })
-      
+
       // Encerra o workflow atual
       workflowExecutions.delete(`${instanceId}-${contactNumber}`)
       return null
@@ -585,14 +585,14 @@ async function executeNode(
       // Encerra a conversa
       const { updateConversationStatus: updateStatus } = await import('./conversation-status')
       await updateStatus(instanceId, contactNumber, 'closed')
-      
+
       // Envia mensagem de encerramento
       const closeMessage = data.message || 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
       const contactKeyClose = `${instanceId}-${contactNumber}`
       await queueMessage(contactKeyClose, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
       })
-      
+
       // Encerra o workflow atual
       workflowExecutions.delete(`${instanceId}-${contactNumber}`)
       return null
@@ -601,12 +601,12 @@ async function executeNode(
       // Implementação de integração com IA usando ChatGPT
       try {
         const { generateAIResponse } = await import('./openai')
-        
+
         const prompt = data.prompt || 'Responda à mensagem do usuário de forma amigável e útil.'
         const systemPrompt = data.systemPrompt
         const temperature = data.temperature ?? 0.7
         const maxTokens = data.maxTokens ?? 500
-        
+
         // Busca histórico recente da conversa para contexto
         const recentMessages = await prisma.message.findMany({
           where: {
@@ -619,7 +619,7 @@ async function executeNode(
           orderBy: { timestamp: 'desc' },
           take: 10, // Últimas 10 mensagens
         })
-        
+
         // Converte mensagens para formato de histórico
         const conversationHistory = recentMessages
           .reverse() // Inverte para ordem cronológica
@@ -627,7 +627,7 @@ async function executeNode(
             role: msg.isFromMe ? 'assistant' : 'user' as 'user' | 'assistant',
             content: msg.body,
           }))
-        
+
         // Gera resposta usando IA
         const aiResponse = await generateAIResponse(prompt, {
           systemPrompt,
@@ -636,20 +636,20 @@ async function executeNode(
           temperature,
           maxTokens,
         })
-        
+
         // Substitui variáveis na resposta gerada
         const finalResponse = replaceVariables(aiResponse, execution.variables)
-        
+
         // Envia a resposta gerada pela IA
         const aiContactKey = `${instanceId}-${contactNumber}`
         await queueMessage(aiContactKey, async () => {
           await sendWhatsAppMessage(instanceId, contactNumber, finalResponse, 'service')
         })
-        
+
         log.debug('Resposta de IA gerada', { contactNumber })
       } catch (error) {
         log.error('Erro ao gerar resposta de IA', error)
-        
+
         // Envia mensagem de erro amigável
         const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Nossa equipe foi notificada.'
         const errorContactKey = `${instanceId}-${contactNumber}`
@@ -657,14 +657,14 @@ async function executeNode(
           await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
         })
       }
-      
+
       return getNextNode(node.id, connections, null)
 
     case 'condition':
       // Avalia condição e escolhe o caminho
       const condition = data.condition || ''
       const userResponse = execution.userResponse || ''
-      
+
       // Avaliação simples - pode ser melhorada
       let conditionResult = false
       try {
@@ -792,9 +792,9 @@ export async function processQuestionnaireResponse(
     // Tenta identificar qual opção foi escolhida
     const options = currentNode.data.options || []
     const messageLower = messageBody.toLowerCase().trim()
-    
+
     let optionId: string | null = null
-    
+
     // PRIORIDADE 1: Se temos o buttonId do interactiveData, usa diretamente
     if (buttonIdFromData && buttonIdFromData.startsWith('option-')) {
       const extractedId = buttonIdFromData.replace('option-', '')
@@ -804,7 +804,7 @@ export async function processQuestionnaireResponse(
         log.debug('Opção identificada pelo buttonId do interactiveData', { optionId })
       }
     }
-    
+
     // PRIORIDADE 2: Se a mensagem é um ID de botão (começa com "option-"), usa diretamente
     if (!optionId && messageBody.startsWith('option-')) {
       const extractedId = messageBody.replace('option-', '')
@@ -814,7 +814,7 @@ export async function processQuestionnaireResponse(
         log.debug('Opção identificada pelo ID do botão', { optionId })
       }
     }
-    
+
     // PRIORIDADE 3: Se ainda não encontrou, procura pelo título do botão (messageBody agora tem o título)
     if (!optionId) {
       const foundOptionByLabel = options.find((opt: any) => {
@@ -826,7 +826,7 @@ export async function processQuestionnaireResponse(
         log.debug('Opção identificada pelo título', { optionId })
       }
     }
-    
+
     // PRIORIDADE 4: Verifica se respondeu com número (ex: "1", "2", etc)
     if (!optionId) {
       const numberMatch = messageLower.match(/^(\d+)/)
@@ -857,8 +857,8 @@ export async function processQuestionnaireResponse(
       const contactKeyError = `${instanceId}-${contactNumber}`
       await queueMessage(contactKeyError, async () => {
         await sendWhatsAppMessage(
-          instanceId, 
-          contactNumber, 
+          instanceId,
+          contactNumber,
           'Desculpe, não entendi sua resposta. Por favor, responda com o número ou texto da opção.',
           'service'
         )
@@ -880,14 +880,14 @@ export async function processAppointmentConfirmation(
 ): Promise<boolean> {
   // CRÍTICO: Normaliza o número ANTES de qualquer processamento
   const normalizedContactNumber = contactNumber.replace(/\D/g, '')
-  
+
   console.log(`🔍🔍🔍 [processAppointmentConfirmation] ========== INICIANDO PROCESSAMENTO ==========`)
   console.log(`   instanceId: ${instanceId}`)
   console.log(`   contactNumber original: ${contactNumber}`)
   console.log(`   contactNumber normalizado: ${normalizedContactNumber}`)
   console.log(`   userMessage: "${userMessage}"`)
   console.log(`   userId: ${userId}`)
-  
+
   // Normaliza a mensagem para comparação (remove espaços extras e caracteres especiais)
   // Remove todos os espaços, acentos e caracteres especiais para comparação mais robusta
   const userMessageLower = userMessage.toLowerCase().trim()
@@ -896,9 +896,9 @@ export async function processAppointmentConfirmation(
     .replace(/[.,!?;:]/g, '') // Remove pontuação
     .normalize('NFD') // Normaliza caracteres Unicode
     .replace(/[\u0300-\u036f]/g, '') // Remove acentos
-  
+
   // CRÍTICO: Verifica se o usuário quer encerrar o chat ANTES de verificar agendamento pendente
-  const wantsToCloseChat = 
+  const wantsToCloseChat =
     userMessageLower.includes('encerrar') ||
     userMessageLower.includes('fechar') ||
     userMessageLower.includes('finalizar') ||
@@ -909,7 +909,7 @@ export async function processAppointmentConfirmation(
     normalizedMessage.includes('terminar') ||
     (userMessageLower.includes('chat') && (userMessageLower.includes('encerrar') || userMessageLower.includes('fechar'))) ||
     (userMessageLower.includes('conversa') && (userMessageLower.includes('encerrar') || userMessageLower.includes('fechar')))
-  
+
   // Verifica se está aguardando confirmação de encerramento
   const conversationStatus = await prisma.conversationStatus.findUnique({
     where: {
@@ -919,81 +919,81 @@ export async function processAppointmentConfirmation(
       },
     },
   })
-  
+
   if (conversationStatus?.status === 'pending_close_confirmation') {
     // Usuário está respondendo à confirmação de encerramento
-    const isConfirmation = 
+    const isConfirmation =
       userMessageLower === 'sim' ||
       userMessageLower === 'confirmar' ||
       userMessageLower === 'confirmo' ||
       userMessageLower === 'ok' ||
       normalizedMessage === 'sim' ||
       normalizedMessage === 'confirmar'
-    
-    const isCancellation = 
+
+    const isCancellation =
       userMessageLower === 'não' ||
       userMessageLower === 'nao' ||
       userMessageLower === 'cancelar' ||
       normalizedMessage === 'nao' ||
       normalizedMessage === 'cancelar'
-    
+
     if (isConfirmation) {
       // Confirma encerramento - cancela agendamento pendente se houver e encerra
       const { getPendingAppointment, clearPendingAppointment } = await import('./pending-appointments')
       const pendingToCancel = await getPendingAppointment(instanceId, normalizedContactNumber)
-      
+
       if (pendingToCancel) {
         await clearPendingAppointment(instanceId, normalizedContactNumber)
         console.log(`🚪 [processAppointmentConfirmation] Agendamento pendente cancelado ao encerrar chat`)
       }
-      
+
       const { updateConversationStatus } = await import('./conversation-status')
       await updateConversationStatus(instanceId, contactNumber, 'closed')
-      
+
       const closeMessage = 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
       })
-      
+
       // Limpa execução do workflow
       const executionKey = `${instanceId}-${contactNumber}`
       if (workflowExecutions.has(executionKey)) {
         workflowExecutions.delete(executionKey)
       }
-      
+
       return true
     } else if (isCancellation) {
       // Cancela encerramento - volta para ativo
       const { updateConversationStatus } = await import('./conversation-status')
       await updateConversationStatus(instanceId, contactNumber, 'active')
-      
+
       const cancelCloseMessage = 'Entendido! A conversa continuará ativa. Como posso ajudar?'
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, cancelCloseMessage, 'service')
       })
-      
+
       return true
     }
   }
-  
+
   if (wantsToCloseChat) {
     console.log(`🚪 [processAppointmentConfirmation] Usuário quer encerrar o chat`)
-    
+
     // Verifica se há agendamento pendente antes de encerrar
     const { getPendingAppointment } = await import('./pending-appointments')
     const pendingBeforeClose = await getPendingAppointment(instanceId, normalizedContactNumber)
-    
+
     if (pendingBeforeClose) {
       // Se há agendamento pendente, pergunta se quer encerrar mesmo assim
       const confirmCloseMessage = `Você tem um agendamento pendente de confirmação:\n\n📅 Data: ${pendingBeforeClose.date}\n🕐 Hora: ${pendingBeforeClose.time}\n🛠️ Serviço: ${pendingBeforeClose.service}\n\nDeseja realmente encerrar o chat? Se encerrar, o agendamento pendente será cancelado.\n\nDigite "sim" para confirmar o encerramento ou "não" para continuar.`
-      
+
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, confirmCloseMessage, 'service')
       })
-      
+
       // Armazena temporariamente que está aguardando confirmação de encerramento
       await prisma.conversationStatus.upsert({
         where: {
@@ -1011,44 +1011,44 @@ export async function processAppointmentConfirmation(
           status: 'pending_close_confirmation',
         },
       })
-      
+
       return true // Processou, não deve chamar IA
     } else {
       // Não há agendamento pendente, pode encerrar diretamente
       const { updateConversationStatus } = await import('./conversation-status')
       await updateConversationStatus(instanceId, contactNumber, 'closed')
-      
+
       const closeMessage = 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
       })
-      
+
       // Limpa execução do workflow
       const executionKey = `${instanceId}-${contactNumber}`
       if (workflowExecutions.has(executionKey)) {
         workflowExecutions.delete(executionKey)
       }
-      
+
       return true // Processou, não deve chamar IA
     }
   }
-  
+
   let pendingAppointment: any = null
   let clearPendingAppointment: any = null
-  
+
   try {
     const pendingAppointmentsModule = await import('./pending-appointments')
     const { getPendingAppointment } = pendingAppointmentsModule
     clearPendingAppointment = pendingAppointmentsModule.clearPendingAppointment
-    
+
     // Busca agendamento pendente na tabela dedicada PendingAppointment
     // Tenta múltiplas vezes com delays para lidar com problemas de sincronização
     console.log(`🔍 [processAppointmentConfirmation] Buscando agendamento pendente...`)
     console.log(`   Parâmetros de busca:`)
     console.log(`   - instanceId: "${instanceId}"`)
     console.log(`   - contactNumber: "${contactNumber}"`)
-    
+
     // CRÍTICO: Aumenta tentativas e delays para lidar com race conditions
     // Quando o usuário confirma muito rápido após criar o agendamento pendente,
     // pode haver um delay de sincronização do banco de dados
@@ -1056,8 +1056,8 @@ export async function processAppointmentConfirmation(
     for (let attempt = 1; attempt <= maxSearchRetries; attempt++) {
       // Usa número normalizado para busca
       pendingAppointment = await getPendingAppointment(instanceId, normalizedContactNumber)
-    
-    if (pendingAppointment) {
+
+      if (pendingAppointment) {
         console.log(`✅ [processAppointmentConfirmation] Agendamento pendente encontrado na tentativa ${attempt}/${maxSearchRetries}`)
         break
       } else if (attempt < maxSearchRetries) {
@@ -1066,7 +1066,7 @@ export async function processAppointmentConfirmation(
         await new Promise(resolve => setTimeout(resolve, 200 * attempt))
       }
     }
-    
+
     console.log(`🔍 [processAppointmentConfirmation] Resultado da busca:`)
     console.log(`   Agendamento pendente:`, pendingAppointment ? '✅ ENCONTRADO' : '❌ NÃO ENCONTRADO')
     if (pendingAppointment) {
@@ -1079,7 +1079,7 @@ export async function processAppointmentConfirmation(
       console.log(`   ❌ NENHUM agendamento pendente encontrado para:`)
       console.log(`      instanceId: ${instanceId}`)
       console.log(`      contactNumber: ${contactNumber}`)
-      
+
       // Busca diretamente no banco para debug
       try {
         const directCheck = await (prisma as any).pendingAppointment.findMany({
@@ -1096,27 +1096,27 @@ export async function processAppointmentConfirmation(
         console.error(`   ❌ Erro ao buscar diretamente no banco:`, dbError)
       }
     }
-    
+
     // Verifica se a mensagem parece confirmação ANTES de verificar se há agendamento pendente
-    const looksLikeConfirmation = 
-        userMessageLower === 'confirmar' || 
-        normalizedMessage === 'confirmar' ||
-        userMessageLower === 'sim' || 
-        userMessageLower === 'confirmo' ||
-        userMessageLower === 'ok' ||
-        userMessageLower === 'tá certo' ||
-        userMessageLower === 'ta certo' ||
-        userMessageLower === 'esta certo' ||
-        userMessageLower === 'está certo' ||
-        userMessageLower.startsWith('confirmar') ||
-        normalizedMessage.startsWith('confirmar') ||
+    const looksLikeConfirmation =
+      userMessageLower === 'confirmar' ||
+      normalizedMessage === 'confirmar' ||
+      userMessageLower === 'sim' ||
+      userMessageLower === 'confirmo' ||
+      userMessageLower === 'ok' ||
+      userMessageLower === 'tá certo' ||
+      userMessageLower === 'ta certo' ||
+      userMessageLower === 'esta certo' ||
+      userMessageLower === 'está certo' ||
+      userMessageLower.startsWith('confirmar') ||
+      normalizedMessage.startsWith('confirmar') ||
       (userMessageLower.length <= 20 && (userMessageLower.includes('confirm') || normalizedMessage.includes('confirm')))
-    
+
     if (!pendingAppointment) {
       if (looksLikeConfirmation) {
         console.log(`⚠️⚠️⚠️ [processAppointmentConfirmation] Mensagem parece confirmação mas NÃO há agendamento pendente!`)
         console.log(`   Verificando se há agendamento criado recentemente...`)
-        
+
         // Verifica se há um agendamento criado recentemente (últimos 5 minutos)
         // Isso pode indicar que o agendamento já foi confirmado
         try {
@@ -1141,7 +1141,7 @@ export async function processAppointmentConfirmation(
               createdAt: 'desc',
             },
           })
-          
+
           if (recentAppointment) {
             console.log(`✅ Agendamento criado recentemente encontrado (há ${Math.round((Date.now() - recentAppointment.createdAt.getTime()) / 1000)}s)`)
             const infoMessage = `✅ Seu agendamento já foi confirmado com sucesso! Se precisar de mais alguma coisa, estou à disposição.`
@@ -1154,10 +1154,10 @@ export async function processAppointmentConfirmation(
         } catch (error) {
           console.error(`❌ Erro ao verificar agendamento recente:`, error)
         }
-        
+
         console.log(`   Isso pode indicar que o agendamento foi confirmado ou cancelado anteriormente.`)
         console.log(`   Enviando mensagem informativa e RETORNANDO TRUE para evitar loop.`)
-        
+
         const infoMessage = `Não há agendamento pendente para confirmar. Se você acabou de confirmar um agendamento, ele já foi processado com sucesso! Se precisar de mais alguma coisa, estou à disposição.`
         const contactKey = `${instanceId}-${contactNumber}`
         await queueMessage(contactKey, async () => {
@@ -1165,7 +1165,7 @@ export async function processAppointmentConfirmation(
         })
         return true // Retorna true para evitar que a IA seja chamada e cause loop
       }
-      
+
       console.log(`❌ [processAppointmentConfirmation] Nenhum agendamento pendente encontrado - RETORNANDO FALSE`)
       return false // Não há agendamento pendente e não parece confirmação, não processou nada
     }
@@ -1176,48 +1176,48 @@ export async function processAppointmentConfirmation(
 
   // Se chegou aqui, há agendamento pendente - continua processamento
   console.log(`🔍 [processAppointmentConfirmation] Analisando mensagem (há agendamento pendente):`)
-      console.log(`   Mensagem original: "${userMessage}"`)
-      console.log(`   Mensagem lowercase: "${userMessageLower}"`)
-      console.log(`   Mensagem normalizada: "${normalizedMessage}"`)
-      
+  console.log(`   Mensagem original: "${userMessage}"`)
+  console.log(`   Mensagem lowercase: "${userMessageLower}"`)
+  console.log(`   Mensagem normalizada: "${normalizedMessage}"`)
+
   // Detecção MUITO robusta de confirmação - verifica múltiplas variações
   // Primeiro verifica correspondências exatas
-  const exactMatch = 
-        userMessageLower === 'confirmar' || 
-        normalizedMessage === 'confirmar' ||
-        userMessageLower === 'sim' || 
-        userMessageLower === 'confirmo' ||
-        userMessageLower === 'ok' ||
-        userMessageLower === 'tá certo' ||
-        userMessageLower === 'ta certo' ||
-        userMessageLower === 'esta certo' ||
-        userMessageLower === 'está certo' ||
+  const exactMatch =
+    userMessageLower === 'confirmar' ||
+    normalizedMessage === 'confirmar' ||
+    userMessageLower === 'sim' ||
+    userMessageLower === 'confirmo' ||
+    userMessageLower === 'ok' ||
+    userMessageLower === 'tá certo' ||
+    userMessageLower === 'ta certo' ||
+    userMessageLower === 'esta certo' ||
+    userMessageLower === 'está certo' ||
     normalizedMessage === 'sim' ||
     normalizedMessage === 'confirmo' ||
     normalizedMessage === 'ok' ||
     normalizedMessage === 'tacerto' ||
     normalizedMessage === 'estacerto'
-  
+
   // Depois verifica se começa com "confirmar"
-  const startsWithConfirm = 
-        userMessageLower.startsWith('confirmar') ||
+  const startsWithConfirm =
+    userMessageLower.startsWith('confirmar') ||
     normalizedMessage.startsWith('confirmar')
-  
+
   // Por último verifica se contém "confirm" (para pegar variações)
-  const containsConfirm = 
-    userMessageLower.length <= 20 && 
+  const containsConfirm =
+    userMessageLower.length <= 20 &&
     (userMessageLower.includes('confirm') || normalizedMessage.includes('confirm'))
-  
+
   const isConfirmation = exactMatch || startsWithConfirm || containsConfirm
-      
+
   console.log(`🔍 [processAppointmentConfirmation] Detecção detalhada:`)
   console.log(`   Exact match: ${exactMatch}`)
   console.log(`   Starts with confirm: ${startsWithConfirm}`)
   console.log(`   Contains confirm: ${containsConfirm}`)
   console.log(`   RESULTADO FINAL - É confirmação? ${isConfirmation}`)
-  
+
   // Detecção de cancelamento
-  const isCancellation = 
+  const isCancellation =
     userMessageLower === 'cancelar' ||
     normalizedMessage === 'cancelar' ||
     (userMessageLower.includes('cancelar') && userMessageLower.length <= 20) ||
@@ -1225,29 +1225,29 @@ export async function processAppointmentConfirmation(
     (userMessageLower === 'nao' && userMessageLower.length <= 5)
 
   console.log(`🔍 [processAppointmentConfirmation] Resultado da análise:`)
-      console.log(`   É confirmação? ${isConfirmation}`)
+  console.log(`   É confirmação? ${isConfirmation}`)
   console.log(`   É cancelamento? ${isCancellation}`)
-      
+
   // Processa confirmação
-      if (isConfirmation) {
+  if (isConfirmation) {
     console.log(`✅ [processAppointmentConfirmation] PROCESSANDO CONFIRMAÇÃO DE AGENDAMENTO`)
     console.log(`   Dados do agendamento pendente:`, JSON.stringify(pendingAppointment, null, 2))
-        
-        // Converte a data formatada de volta para Date
-        const [day, month, year] = pendingAppointment.date.split('/').map(Number)
-        const [hour, minute] = pendingAppointment.time.split(':').map(Number)
-        
+
+    // Converte a data formatada de volta para Date
+    const [day, month, year] = pendingAppointment.date.split('/').map(Number)
+    const [hour, minute] = pendingAppointment.time.split(':').map(Number)
+
     console.log(`📅 Convertendo dados: ${day}/${month}/${year} às ${hour}:${minute}`)
-        
+
     // Função auxiliar para criar data UTC no fuso do Brasil
-        const createBrazilianDateAsUTC = (year: number, month: number, day: number, hour: number, minute: number): Date => {
-          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00-03:00`
-          return new Date(dateStr)
-        }
-        
-        const appointmentDateUTC = createBrazilianDateAsUTC(year, month - 1, day, hour, minute)
-        console.log(`📅 Data UTC criada: ${appointmentDateUTC.toISOString()}`)
-        
+    const createBrazilianDateAsUTC = (year: number, month: number, day: number, hour: number, minute: number): Date => {
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00-03:00`
+      return new Date(dateStr)
+    }
+
+    const appointmentDateUTC = createBrazilianDateAsUTC(year, month - 1, day, hour, minute)
+    console.log(`📅 Data UTC criada: ${appointmentDateUTC.toISOString()}`)
+
     // CRÍTICO: Verifica novamente se o agendamento pendente ainda existe antes de processar
     // Isso evita race conditions quando múltiplas confirmações chegam simultaneamente
     const { getPendingAppointment: getPendingAppointmentFn } = await import('./pending-appointments')
@@ -1255,7 +1255,7 @@ export async function processAppointmentConfirmation(
     if (!doubleCheckPending) {
       console.log(`⚠️⚠️⚠️ [processAppointmentConfirmation] Agendamento pendente não encontrado na verificação dupla!`)
       console.log(`   Isso pode indicar que já foi confirmado por outra requisição simultânea.`)
-      
+
       // Verifica se há um agendamento criado recentemente
       try {
         // Usa select explícito para evitar erro se endDate não existir no banco
@@ -1279,7 +1279,7 @@ export async function processAppointmentConfirmation(
             createdAt: 'desc',
           },
         })
-        
+
         if (recentAppointment) {
           console.log(`✅ Agendamento já foi confirmado recentemente!`)
           const infoMessage = `✅ Seu agendamento já foi confirmado com sucesso! Se precisar de mais alguma coisa, estou à disposição.`
@@ -1292,7 +1292,7 @@ export async function processAppointmentConfirmation(
       } catch (error) {
         console.error(`❌ Erro ao verificar agendamento recente:`, error)
       }
-      
+
       const infoMessage = `Não há agendamento pendente para confirmar no momento. Se você acabou de confirmar um agendamento, ele já foi processado. Se precisar de mais alguma coisa, estou à disposição.`
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
@@ -1300,11 +1300,11 @@ export async function processAppointmentConfirmation(
       })
       return true
     }
-    
+
     // CRÍTICO: Busca a duração do serviço antes de criar o agendamento
     // A duração DEVE vir do serviço, não pode ser um padrão fixo
     let serviceDuration: number | undefined = pendingAppointment.duration
-    
+
     // Se não tem duração no pendente, busca do workflow
     if (!serviceDuration || serviceDuration <= 0) {
       const workflow = await prisma.workflow.findFirst({
@@ -1314,13 +1314,13 @@ export async function processAppointmentConfirmation(
           isAIOnly: true,
         },
       })
-      
+
       if (workflow?.aiBusinessDetails) {
         try {
           const businessDetails = JSON.parse(workflow.aiBusinessDetails)
           const servicesWithAppointment = businessDetails.servicesWithAppointment || []
           const serviceName = pendingAppointment.service?.toLowerCase() || ''
-          
+
           for (const service of servicesWithAppointment) {
             if (serviceName.includes(service.name.toLowerCase())) {
               serviceDuration = service.duration
@@ -1333,7 +1333,7 @@ export async function processAppointmentConfirmation(
         }
       }
     }
-    
+
     // CRÍTICO: Se ainda não tem duração, retorna erro
     if (!serviceDuration || serviceDuration <= 0) {
       console.error('❌ [processAppointmentConfirmation] Duração do serviço não encontrada!')
@@ -1344,27 +1344,27 @@ export async function processAppointmentConfirmation(
       })
       return true // Processou (com erro), não deve chamar IA
     }
-    
+
     // CRÍTICO: Cria o agendamento PRIMEIRO, só remove o pendente depois de sucesso
     // Isso evita perder o agendamento pendente se houver erro na criação
-        // CRÍTICO: Passa a duração do serviço, não padrão fixo
-        const { createAppointment } = await import('./appointments')
-        
-        // Horários agora são globais do usuário, não precisam ser passados
-        // A função createAppointment busca automaticamente do usuário
-        const result = await createAppointment({
-          userId,
-          instanceId,
-          contactNumber,
-          contactName: contactName,
-          date: appointmentDateUTC,
-          duration: serviceDuration, // CRÍTICO: Duração do serviço, não padrão fixo
-          description: pendingAppointment.description || `Agendamento para ${pendingAppointment.service}`,
-        })
-        
-        console.log(`📅 Resultado do createAppointment:`, result)
-        
-        if (result.success) {
+    // CRÍTICO: Passa a duração do serviço, não padrão fixo
+    const { createAppointment } = await import('./appointments')
+
+    // Horários agora são globais do usuário, não precisam ser passados
+    // A função createAppointment busca automaticamente do usuário
+    const result = await createAppointment({
+      userId,
+      instanceId,
+      contactNumber,
+      contactName: contactName,
+      date: appointmentDateUTC,
+      duration: serviceDuration, // CRÍTICO: Duração do serviço, não padrão fixo
+      description: pendingAppointment.description || `Agendamento para ${pendingAppointment.service}`,
+    })
+
+    console.log(`📅 Resultado do createAppointment:`, result)
+
+    if (result.success) {
       // Só remove o agendamento pendente APÓS criar o agendamento com sucesso
       // Verifica novamente antes de remover para evitar remover um que já foi removido
       const { getPendingAppointment: getPendingAppointmentFinal } = await import('./pending-appointments')
@@ -1380,7 +1380,7 @@ export async function processAppointmentConfirmation(
       } else {
         console.log(`⚠️ Agendamento pendente já foi removido (possível race condition)`)
       }
-      
+
       // CRÍTICO: Limpa a execução do workflow após confirmar agendamento
       // Isso permite que novas mensagens iniciem um novo fluxo limpo
       const executionKey = `${instanceId}-${contactNumber}`
@@ -1388,50 +1388,50 @@ export async function processAppointmentConfirmation(
         console.log(`🧹 [processAppointmentConfirmation] Limpando execução do workflow após confirmação de agendamento`)
         workflowExecutions.delete(executionKey)
       }
-      
-          let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
-          if (pendingAppointment.duration) {
-            confirmationMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
-          }
-          confirmationMessage += `\n🛠️ Serviço: ${pendingAppointment.service}`
-          
-          const contactKey = `${instanceId}-${contactNumber}`
-          await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service')
-          })
+
+      let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
+      if (pendingAppointment.duration) {
+        confirmationMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
+      }
+      confirmationMessage += `\n🛠️ Serviço: ${pendingAppointment.service}`
+
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service')
+      })
       console.log(`✅ Confirmação processada e mensagem enviada - RETORNANDO TRUE`)
       return true // Processou confirmação, não deve chamar IA
-        } else {
+    } else {
       // Se houve erro, mantém o agendamento pendente para que o usuário possa tentar novamente
-          console.error(`❌ Erro ao confirmar agendamento:`, result)
+      console.error(`❌ Erro ao confirmar agendamento:`, result)
       console.error(`⚠️ Agendamento pendente MANTIDO para nova tentativa`)
-          const errorMessage = `❌ Erro ao confirmar agendamento: ${result.error}. Por favor, tente novamente.`
-          const contactKey = `${instanceId}-${contactNumber}`
-          await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
-          })
+      const errorMessage = `❌ Erro ao confirmar agendamento: ${result.error}. Por favor, tente novamente.`
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+      })
       console.log(`❌ Erro ao confirmar - RETORNANDO TRUE`)
       return true // Processou (mesmo com erro), não deve chamar IA
     }
   }
-  
+
   // Processa cancelamento
-      if (isCancellation) {
+  if (isCancellation) {
     console.log(`❌ PROCESSANDO CANCELAMENTO DE AGENDAMENTO`)
-    
+
     // Primeiro tenta cancelar agendamento pendente
     let cancelledPending = false
     if (pendingAppointment) {
-        if (clearPendingAppointment) {
+      if (clearPendingAppointment) {
         await clearPendingAppointment(instanceId, normalizedContactNumber)
-        } else {
-          const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
+      } else {
+        const { clearPendingAppointment: clearFn } = await import('./pending-appointments')
         await clearFn(instanceId, normalizedContactNumber)
       }
       cancelledPending = true
       console.log(`✅ Agendamento pendente cancelado`)
     }
-    
+
     // Também verifica se há agendamentos confirmados recentes para cancelar
     // Usa select explícito para evitar erro se endDate não existir no banco
     const recentAppointments = await prisma.appointment.findMany({
@@ -1457,7 +1457,7 @@ export async function processAppointmentConfirmation(
       },
       take: 5, // Limita a 5 agendamentos mais próximos
     })
-    
+
     if (recentAppointments.length > 0) {
       // Cancela o agendamento mais próximo
       const appointmentToCancel = recentAppointments[0]
@@ -1465,7 +1465,7 @@ export async function processAppointmentConfirmation(
         where: { id: appointmentToCancel.id },
         data: { status: 'cancelled' },
       })
-      
+
       const appointmentDate = new Date(appointmentToCancel.date)
       const formattedDate = appointmentDate.toLocaleDateString('pt-BR', {
         day: '2-digit',
@@ -1476,15 +1476,15 @@ export async function processAppointmentConfirmation(
         hour: '2-digit',
         minute: '2-digit',
       })
-      
+
       const cancelMessage = cancelledPending
         ? `✅ Agendamento pendente cancelado e agendamento confirmado para ${formattedDate} às ${formattedTime} também foi cancelado. Se precisar de mais alguma coisa, estou à disposição!`
         : `✅ Agendamento confirmado para ${formattedDate} às ${formattedTime} foi cancelado. Se precisar de mais alguma coisa, estou à disposição!`
-      
-        const contactKey = `${instanceId}-${contactNumber}`
-        await queueMessage(contactKey, async () => {
-          await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
-        })
+
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
+      })
       console.log(`✅ Cancelamento de agendamento confirmado processado`)
     } else if (cancelledPending) {
       const cancelMessage = `✅ Agendamento pendente cancelado. Se precisar de mais alguma coisa, estou à disposição!`
@@ -1499,31 +1499,31 @@ export async function processAppointmentConfirmation(
         await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
       })
     }
-    
-      // CRÍTICO: Limpa a execução do workflow após cancelar agendamento
-      // Isso permite que novas mensagens iniciem um novo fluxo limpo
-      const executionKeyCancel = `${instanceId}-${contactNumber}`
-      if (workflowExecutions.has(executionKeyCancel)) {
-        console.log(`🧹 [processAppointmentConfirmation] Limpando execução do workflow após cancelamento de agendamento`)
-        workflowExecutions.delete(executionKeyCancel)
-      }
-      
-      console.log(`❌ Cancelamento processado - RETORNANDO TRUE`)
+
+    // CRÍTICO: Limpa a execução do workflow após cancelar agendamento
+    // Isso permite que novas mensagens iniciem um novo fluxo limpo
+    const executionKeyCancel = `${instanceId}-${contactNumber}`
+    if (workflowExecutions.has(executionKeyCancel)) {
+      console.log(`🧹 [processAppointmentConfirmation] Limpando execução do workflow após cancelamento de agendamento`)
+      workflowExecutions.delete(executionKeyCancel)
+    }
+
+    console.log(`❌ Cancelamento processado - RETORNANDO TRUE`)
     return true // Processou cancelamento, não deve chamar IA
-      }
-      
-      // Se há agendamento pendente mas não confirmou nem cancelou, relembra
-      console.log(`⚠️ Há agendamento pendente mas mensagem não é confirmação nem cancelamento`)
-      let reminderMessage = `Você tem um agendamento pendente de confirmação:\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
-      if (pendingAppointment.duration) {
-        reminderMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
-      }
-      reminderMessage += `\n🛠️ Serviço: ${pendingAppointment.service}\n\nDigite "confirmar" para confirmar ou "cancelar" para cancelar.`
-      
-      const contactKey = `${instanceId}-${contactNumber}`
-      await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, reminderMessage, 'service')
-      })
+  }
+
+  // Se há agendamento pendente mas não confirmou nem cancelou, relembra
+  console.log(`⚠️ Há agendamento pendente mas mensagem não é confirmação nem cancelamento`)
+  let reminderMessage = `Você tem um agendamento pendente de confirmação:\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
+  if (pendingAppointment.duration) {
+    reminderMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
+  }
+  reminderMessage += `\n🛠️ Serviço: ${pendingAppointment.service}\n\nDigite "confirmar" para confirmar ou "cancelar" para cancelar.`
+
+  const contactKey = `${instanceId}-${contactNumber}`
+  await queueMessage(contactKey, async () => {
+    await sendWhatsAppMessage(instanceId, contactNumber, reminderMessage, 'service')
+  })
   console.log(`📅 Relembrando agendamento pendente - RETORNANDO TRUE`)
   return true // Relembrou, não deve chamar IA
 }
@@ -1546,7 +1546,7 @@ async function executeAIOnlyWorkflow(
       const profileName = await getUserProfileName(instanceId, contactNumber)
       contactNameFinal = profileName || undefined
     }
-    
+
     const formattedPhone = contactNumber.replace(/\D/g, '')
     const formattedPhoneFormatted = formattedPhone.startsWith('55')
       ? formattedPhone.replace(/^55(\d{2})(\d{4,5})(\d{4})$/, '+55 ($1) $2-$3')
@@ -1568,7 +1568,7 @@ async function executeAIOnlyWorkflow(
     // Se processou algo, retorna imediatamente SEM chamar a IA
     console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
     console.log(`   Mensagem do usuário: "${userMessage}"`)
-    
+
     const processedAppointment = await processAppointmentConfirmation(
       instanceId,
       contactNumber,
@@ -1576,13 +1576,13 @@ async function executeAIOnlyWorkflow(
       userId,
       contactNameFinal
     )
-    
+
     console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
-    
+
     if (processedAppointment) {
       console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
       console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
-      
+
       // CRÍTICO: Limpa a execução do workflow após processar agendamento
       // Isso permite que novas mensagens iniciem um novo fluxo limpo
       const executionKeyAI = `${instanceId}-${contactNumber}`
@@ -1590,10 +1590,10 @@ async function executeAIOnlyWorkflow(
         console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após processar agendamento`)
         workflowExecutions.delete(executionKeyAI)
       }
-      
+
       return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO CHAMA IA
     }
-    
+
     // PROTEÇÃO CRÍTICA: Verifica se acabou de confirmar um agendamento
     // Mesmo que processAppointmentConfirmation retornou false, pode ser que o agendamento
     // já foi confirmado em uma execução anterior. Verifica agendamentos muito recentes.
@@ -1603,20 +1603,20 @@ async function executeAIOnlyWorkflow(
       .replace(/[.,!?;:]/g, '')
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
-    
-    const looksLikeConfirmation = 
-      userMessageLower === 'confirmar' || 
+
+    const looksLikeConfirmation =
+      userMessageLower === 'confirmar' ||
       normalizedMsg === 'confirmar' ||
       userMessageLower === 'sim' ||
       normalizedMsg === 'sim' ||
       userMessageLower.startsWith('confirmar') ||
       normalizedMsg.startsWith('confirmar') ||
       (userMessageLower.length <= 20 && (userMessageLower.includes('confirm') || normalizedMsg.includes('confirm')))
-    
+
     if (looksLikeConfirmation) {
       console.log(`⚠️⚠️⚠️ [executeAIOnlyWorkflow] ATENÇÃO: Mensagem parece confirmação!`)
       console.log(`   Verificando se há agendamento criado recentemente...`)
-      
+
       // Verifica se há um agendamento criado recentemente (últimos 120 segundos)
       // Usa select explícito para evitar erro se endDate não existir no banco
       const recentAppointment = await prisma.appointment.findFirst({
@@ -1639,12 +1639,12 @@ async function executeAIOnlyWorkflow(
           createdAt: 'desc',
         },
       })
-      
+
       if (recentAppointment) {
         console.log(`✅✅✅ [executeAIOnlyWorkflow] BLOQUEADO: Agendamento criado há ${Math.round((Date.now() - recentAppointment.createdAt.getTime()) / 1000)}s`)
         console.log(`✅✅✅ [executeAIOnlyWorkflow] NÃO CHAMARÁ IA para evitar duplicação`)
         console.log(`✅✅✅ [executeAIOnlyWorkflow] RETORNANDO SEM CHAMAR IA`)
-        
+
         // CRÍTICO: Limpa a execução do workflow após detectar agendamento recente
         // Isso permite que novas mensagens iniciem um novo fluxo limpo
         const executionKeyRecent = `${instanceId}-${contactNumber}`
@@ -1652,13 +1652,13 @@ async function executeAIOnlyWorkflow(
           console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após detectar agendamento recente`)
           workflowExecutions.delete(executionKeyRecent)
         }
-        
+
         return // Não chama IA se acabou de confirmar um agendamento
       } else {
         console.log(`   Nenhum agendamento recente encontrado, continuando...`)
       }
     }
-    
+
     console.log(`📝 [executeAIOnlyWorkflow] Continuando com processamento normal da IA`)
 
     // Busca histórico recente da conversa
@@ -1713,7 +1713,7 @@ async function executeAIOnlyWorkflow(
 
         if (catalog) {
           console.log(`📚 Catálogo encontrado: "${catalog.name}" com ${catalog.nodes.length} nós`)
-          
+
           // Extrair produtos e serviços do catálogo
           const catalogProducts: string[] = []
           const catalogServices: string[] = []
@@ -1731,7 +1731,7 @@ async function executeAIOnlyWorkflow(
                 requiresAppointment: nodeData.requiresAppointment,
                 appointmentDuration: nodeData.appointmentDuration
               })
-              
+
               if (node.type === 'product' && nodeData.name) {
                 let productName = nodeData.name
                 if (nodeData.price) {
@@ -1739,7 +1739,7 @@ async function executeAIOnlyWorkflow(
                 }
                 catalogProducts.push(productName)
                 console.log(`✅ Produto adicionado: ${productName}`)
-                
+
                 // Registra interesse se cliente visualizou produto
                 if (contactNumber) {
                   try {
@@ -1764,7 +1764,7 @@ async function executeAIOnlyWorkflow(
                   serviceName += ` - R$ ${nodeData.price.toFixed(2).replace('.', ',')}`
                 }
                 catalogServices.push(serviceName)
-                
+
                 // Coleta informações de agendamento do serviço
                 if (nodeData.requiresAppointment) {
                   servicesWithAppointment.push({
@@ -1774,7 +1774,7 @@ async function executeAIOnlyWorkflow(
                   })
                   console.log(`📅 Serviço com agendamento: ${nodeData.name} (duração: ${nodeData.appointmentDuration || 'não especificada'} min)`)
                 }
-                
+
                 // Coleta informações de agendamento do serviço
                 if (nodeData.requiresAppointment) {
                   servicesWithAppointment.push({
@@ -1784,9 +1784,9 @@ async function executeAIOnlyWorkflow(
                   })
                   console.log(`📅 Serviço com agendamento: ${nodeData.name} (duração: ${nodeData.appointmentDuration || 'não especificada'} min)`)
                 }
-                
+
                 console.log(`✅ Serviço adicionado: ${serviceName}`)
-                
+
                 // Registra interesse se cliente visualizou serviço
                 if (contactNumber) {
                   try {
@@ -1817,14 +1817,14 @@ async function executeAIOnlyWorkflow(
           // Limpa produtos/serviços manuais quando há catálogo
           businessDetails.products = catalogProducts.length > 0 ? catalogProducts : []
           businessDetails.services = catalogServices.length > 0 ? catalogServices : []
-          
+
           // Armazena informações de agendamento dos serviços
           businessDetails.servicesWithAppointment = servicesWithAppointment
-          
+
           console.log(`📦 Produtos do catálogo carregados: ${catalogProducts.length} produtos`, catalogProducts)
           console.log(`🛠️ Serviços do catálogo carregados: ${catalogServices.length} serviços`, catalogServices)
           console.log(`🔄 Produtos/Serviços manuais foram SUBSTITUÍDOS pelos do catálogo`)
-          
+
           // Log para debug
           console.log(`📊 Catálogo processado:`, {
             catalogId: businessDetails.catalogId,
@@ -1885,7 +1885,7 @@ async function executeAIOnlyWorkflow(
     // Considera primeira interação se há menos de 3 mensagens OU se não há nenhuma mensagem da IA ainda
     const hasAIResponse = recentMessages.some(msg => msg.isFromMe)
     const isFirstInteraction = conversationHistory.length <= 2 || !hasAIResponse
-    
+
     console.log(`🔍 Debug primeira interação:`, {
       conversationHistoryLength: conversationHistory.length,
       hasAIResponse,
@@ -1894,30 +1894,30 @@ async function executeAIOnlyWorkflow(
       businessName: businessDetails.businessName,
       hasBusinessDetails: !!workflow.aiBusinessDetails
     })
-    
+
     // SEMPRE usa resposta pré-definida se:
     // 1. É primeira interação E tem nome do negócio
     // 2. OU se não há resposta da IA ainda (primeira vez que o workflow responde)
     // Isso garante que sempre apresente o negócio corretamente, sem depender da IA
     const shouldUsePredefined = (isFirstInteraction || !hasAIResponse) && businessDetails.businessName
-    
+
     console.log(`🤖 Decisão de resposta:`, {
       shouldUsePredefined,
       isFirstInteraction,
       hasBusinessName: !!businessDetails.businessName,
       businessName: businessDetails.businessName
     })
-    
+
     if (shouldUsePredefined) {
       const servicesList = businessDetails.services?.join(', ') || ''
       const productsList = businessDetails.products?.join(', ') || ''
       const howToBuyText = businessDetails.howToBuy || ''
       const pricingText = businessDetails.pricingInfo || ''
       const businessDesc = businessDetails.businessDescription || ''
-      
+
       // Monta resposta pré-definida para garantir que sempre apresente o negócio
       let predefinedResponse = ''
-      
+
       // Monta resposta mais natural e conversacional
       if (howToBuyText && howToBuyText.trim().length > 10) {
         predefinedResponse = `${howToBuyText}`
@@ -1928,7 +1928,7 @@ async function executeAIOnlyWorkflow(
           predefinedResponse += ` ${businessDesc}`
         }
       }
-      
+
       if (servicesList || productsList) {
         predefinedResponse += `\n\n`
         if (servicesList && productsList) {
@@ -1941,11 +1941,11 @@ async function executeAIOnlyWorkflow(
           predefinedResponse += `Temos os seguintes produtos:\n${productsArray.map((p: string) => `- ${p}`).join('\n')}`
         }
       }
-      
+
       if (pricingText) {
         predefinedResponse += `\n\n${pricingText}`
       }
-      
+
       // Finalização mais natural e variada
       const closings = [
         'Em que posso ajudar?',
@@ -1955,7 +1955,7 @@ async function executeAIOnlyWorkflow(
       ]
       const randomClosing = closings[Math.floor(Math.random() * closings.length)]
       predefinedResponse += `\n\n${randomClosing}`
-      
+
       // Envia imagem primeiro se configurado
       if (businessDetails.businessImage && businessDetails.sendImageInFirstMessage) {
         const { sendWhatsAppImage } = await import('./whatsapp-cloud-api')
@@ -1971,20 +1971,20 @@ async function executeAIOnlyWorkflow(
           await sendWhatsAppMessage(instanceId, contactNumber, predefinedResponse.trim(), 'service')
         })
       }
-      
+
       console.log(`🤖 Resposta pré-definida enviada para ${contactNumber} (primeira interação)`)
       return // Não gera resposta da IA na primeira vez, usa a pré-definida
     }
-    
+
     // Para mensagens seguintes, usa IA normalmente
     // MAS sempre força mencionar o negócio mesmo em mensagens seguintes
     let userMessageWithContext = userMessage
-    
+
     // Adiciona contexto FORTE mesmo em mensagens seguintes para garantir que sempre mencione o negócio
     if (businessDetails.businessName) {
       const servicesList = businessDetails.services?.join('\n- ') || ''
       const productsList = businessDetails.products?.join('\n- ') || ''
-      
+
       let listFormatting = ''
       if (servicesList || productsList) {
         listFormatting = `\n\n⚠️ IMPORTANTE: Quando listar produtos ou serviços, SEMPRE use formato de lista:\n`
@@ -1996,7 +1996,7 @@ async function executeAIOnlyWorkflow(
         }
         listFormatting += `NUNCA use vírgulas. SEMPRE use marcadores (-) e quebra de linha.`
       }
-      
+
       userMessageWithContext = `[CONTEXTO: Você representa ${businessDetails.businessName}. Seja NATURAL e CONVERSACIONAL como uma pessoa real. Não precisa se apresentar repetidamente - apenas na primeira mensagem se necessário. Fale de forma natural, como em uma conversa normal. Varie suas respostas - não termine sempre com "Como posso te ajudar?". Seja direto e objetivo. NUNCA seja genérico como "teste de eco".${listFormatting}]\n\nMensagem do cliente: ${userMessage}`
     }
 
@@ -2004,7 +2004,7 @@ async function executeAIOnlyWorkflow(
     try {
       const { registerProductInterest } = await import('./promotions')
       const { detectDiscountRequest } = await import('./ai-promotions')
-      
+
       // Detecta se cliente pediu desconto
       if (detectDiscountRequest(userMessage)) {
         // Tenta identificar qual produto/serviço o cliente está interessado
@@ -2013,7 +2013,7 @@ async function executeAIOnlyWorkflow(
           where: { userId: workflow.userId },
           select: { id: true, name: true },
         })
-        
+
         for (const service of userServices) {
           if (userMessage.toLowerCase().includes(service.name.toLowerCase())) {
             await registerProductInterest({
@@ -2036,14 +2036,14 @@ async function executeAIOnlyWorkflow(
 
     // Gera resposta usando IA
     const { generateAIResponse } = await import('./openai')
-    
+
     // Se for primeira interação, não usa histórico para forçar seguir o template
     // E aumenta temperatura para ser mais criativo seguindo as instruções
     const finalConversationHistory = isFirstInteraction ? [] : conversationHistory
     const temperature = isFirstInteraction ? 0.9 : 0.8 // Mais criativo e natural
-    
+
     console.log(`🤖 Gerando resposta IA-only. Primeira interação: ${isFirstInteraction}, Histórico: ${finalConversationHistory.length} mensagens`)
-    
+
     // Define funções de agendamento para a IA usar quando necessário
     // Função principal: criar agendamento
     const appointmentFunction = {
@@ -2075,11 +2075,11 @@ async function executeAIOnlyWorkflow(
       // Cria uma string ISO assumindo que é no fuso do Brasil (UTC-3)
       // Formato: YYYY-MM-DDTHH:mm:ss-03:00
       const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00-03:00`
-      
+
       // Cria a data a partir da string ISO (JavaScript converte automaticamente para UTC)
       return new Date(dateStr)
     }
-    
+
     // Função auxiliar para converter data de UTC para componentes do Brasil
     const utcToBrazilianComponents = (utcDate: Date): { year: number; month: number; day: number; hour: number; minute: number } => {
       const parts = new Intl.DateTimeFormat('pt-BR', {
@@ -2091,7 +2091,7 @@ async function executeAIOnlyWorkflow(
         minute: '2-digit',
         hour12: false,
       }).formatToParts(utcDate)
-      
+
       return {
         year: parseInt(parts.find(p => p.type === 'year')!.value),
         month: parseInt(parts.find(p => p.type === 'month')!.value) - 1,
@@ -2105,49 +2105,49 @@ async function executeAIOnlyWorkflow(
     const parsePortugueseDate = (dateStr: string): Date | null => {
       const lower = dateStr.toLowerCase().trim()
       const nowBrazilian = getBrazilDate() // Usa horário do Brasil
-      
+
       // Extrai hora se mencionada (ex: "5 da tarde", "17h", "17:00", "meio-dia")
       let targetHour = 14 // Padrão: 14:00
       let targetMinute = 0
-      
+
       // Verifica "meio-dia" primeiro
       if (lower.includes('meio-dia') || lower.includes('meio dia')) {
         targetHour = 12
         targetMinute = 0
       } else {
-      // Procura por padrões de hora - MELHORADO para entender mais variações
-      const hourPatterns = [
-        /às?\s*(\d{1,2})\s*(?:da\s*)?(?:tarde|manhã|manha|noite)/i, // "às 4 da tarde", "as 5 da tarde"
-        /(\d{1,2})\s*(?:da\s*)?(?:tarde|manhã|manha|noite)/i, // "5 da tarde", "17 da tarde"
-        /às?\s*(\d{1,2})(?:\s*h)?/i, // "às 4", "as 4h", "às 16"
-        /(\d{1,2}):(\d{2})/, // "17:30"
-        /(\d{1,2})h/i, // "17h", "4h"
-      ]
-      
-      for (const pattern of hourPatterns) {
-        const match = lower.match(pattern)
-        if (match) {
-          targetHour = parseInt(match[1])
-          if (match[2]) {
-            targetMinute = parseInt(match[2])
-          }
-          
-          // Se mencionou "tarde" ou "noite" e hora < 12, adiciona 12 (ex: "5 da tarde" = 17h, "às 4" = 16h se contexto for tarde)
-          if ((lower.includes('tarde') || lower.includes('noite')) && targetHour < 12) {
-            targetHour += 12
-          } else if (lower.includes('às') || lower.includes('as')) {
-            // Se disse "às X" sem especificar manhã/tarde/noite, assume tarde se X < 12
-            // Mas se X >= 12, já está em formato 24h
-            if (targetHour < 12 && !lower.includes('manhã') && !lower.includes('manha')) {
-              // Se não especificou manhã e é < 12, assume tarde (mais comum)
-            targetHour += 12
+        // Procura por padrões de hora - MELHORADO para entender mais variações
+        const hourPatterns = [
+          /às?\s*(\d{1,2})\s*(?:da\s*)?(?:tarde|manhã|manha|noite)/i, // "às 4 da tarde", "as 5 da tarde"
+          /(\d{1,2})\s*(?:da\s*)?(?:tarde|manhã|manha|noite)/i, // "5 da tarde", "17 da tarde"
+          /às?\s*(\d{1,2})(?:\s*h)?/i, // "às 4", "as 4h", "às 16"
+          /(\d{1,2}):(\d{2})/, // "17:30"
+          /(\d{1,2})h/i, // "17h", "4h"
+        ]
+
+        for (const pattern of hourPatterns) {
+          const match = lower.match(pattern)
+          if (match) {
+            targetHour = parseInt(match[1])
+            if (match[2]) {
+              targetMinute = parseInt(match[2])
             }
-          }
-          break
+
+            // Se mencionou "tarde" ou "noite" e hora < 12, adiciona 12 (ex: "5 da tarde" = 17h, "às 4" = 16h se contexto for tarde)
+            if ((lower.includes('tarde') || lower.includes('noite')) && targetHour < 12) {
+              targetHour += 12
+            } else if (lower.includes('às') || lower.includes('as')) {
+              // Se disse "às X" sem especificar manhã/tarde/noite, assume tarde se X < 12
+              // Mas se X >= 12, já está em formato 24h
+              if (targetHour < 12 && !lower.includes('manhã') && !lower.includes('manha')) {
+                // Se não especificou manhã e é < 12, assume tarde (mais comum)
+                targetHour += 12
+              }
+            }
+            break
           }
         }
       }
-      
+
       // Usa utilitário compartilhado (estilo Midas) para converter datas relativas
       const relativeDate = parseRelativeDate(lower)
       if (relativeDate) {
@@ -2170,14 +2170,14 @@ async function executeAIOnlyWorkflow(
         }
         return isoDate
       }
-      
+
       // Tenta parsear formatos comuns
       const formats = [
         /(\d{1,2})\/(\d{1,2})\/(\d{4})/, // DD/MM/YYYY
         /(\d{4})-(\d{1,2})-(\d{1,2})/, // YYYY-MM-DD
         /(\d{1,2})\/(\d{1,2})/, // DD/MM (sem ano, assume ano atual)
       ]
-      
+
       for (const format of formats) {
         const match = dateStr.match(format)
         if (match) {
@@ -2213,7 +2213,7 @@ async function executeAIOnlyWorkflow(
           }
         }
       }
-      
+
       return null
     }
 
@@ -2221,17 +2221,17 @@ async function executeAIOnlyWorkflow(
     // Agora recebe data e hora separadamente para processamento mais simples e confiável
     const handleFunctionCall = async (functionName: string, args: any) => {
       console.log(`🔧 handleFunctionCall chamado: functionName="${functionName}", userId=${userId}, instanceId=${instanceId}`)
-      
+
       // CRÍTICO: Normaliza o número ANTES de qualquer processamento
       const normalizedContactNumber = contactNumber.replace(/\D/g, '')
       console.log(`🔧 handleFunctionCall - contactNumber original: "${contactNumber}"`)
       console.log(`🔧 handleFunctionCall - contactNumber normalizado: "${normalizedContactNumber}"`)
-      
+
       if (functionName === 'create_appointment' && userId) {
         try {
           console.log(`📅 Tentando criar agendamento com args:`, args)
           console.log(`📅 Contexto: userId=${userId}, instanceId=${instanceId}, contactNumber=${normalizedContactNumber}`)
-          
+
           // CRÍTICO: Verifica se já há um agendamento pendente antes de criar um novo (usa número normalizado)
           const { getPendingAppointment } = await import('./pending-appointments')
           const existingPending = await getPendingAppointment(instanceId, normalizedContactNumber)
@@ -2249,7 +2249,7 @@ async function executeAIOnlyWorkflow(
               message: reminderMessage,
             }
           }
-          
+
           // CRÍTICO: Verifica se acabou de confirmar um agendamento (últimos 60 segundos)
           // Se sim, não cria novo agendamento para evitar loop (usa número normalizado)
           // Usa select explícito para evitar erro se endDate não existir no banco
@@ -2273,7 +2273,7 @@ async function executeAIOnlyWorkflow(
               createdAt: 'desc',
             },
           })
-          
+
           if (recentConfirmedAppointment) {
             console.log(`⚠️ Agendamento confirmado recentemente encontrado. Não criando novo agendamento para evitar loop.`)
             return {
@@ -2281,7 +2281,7 @@ async function executeAIOnlyWorkflow(
               error: 'Você acabou de confirmar um agendamento. Se precisar fazer outro agendamento, aguarde alguns instantes.',
             }
           }
-          
+
           // Validações iniciais
           if (!userId) {
             console.error('❌ userId não está definido')
@@ -2290,7 +2290,7 @@ async function executeAIOnlyWorkflow(
               error: 'Erro interno: userId não está definido',
             }
           }
-          
+
           if (!instanceId) {
             console.error('❌ instanceId não está definido')
             return {
@@ -2298,7 +2298,7 @@ async function executeAIOnlyWorkflow(
               error: 'Erro interno: instanceId não está definido',
             }
           }
-          
+
           if (!contactNumber) {
             console.error('❌ contactNumber não está definido')
             return {
@@ -2306,7 +2306,7 @@ async function executeAIOnlyWorkflow(
               error: 'Erro interno: contactNumber não está definido',
             }
           }
-          
+
           // Valida que temos data e hora
           if (!args.date || !args.time) {
             return {
@@ -2314,13 +2314,13 @@ async function executeAIOnlyWorkflow(
               error: 'É necessário informar tanto a data quanto a hora do agendamento.',
             }
           }
-          
+
           // Processa a hora primeiro - MELHORADO para aceitar mais formatos
           let hour: number
           let minute: number
-          
+
           const timeLower = args.time.toLowerCase().trim()
-          
+
           // Verifica se é "meio-dia"
           if (timeLower.includes('meio-dia') || timeLower.includes('meio dia')) {
             hour = 12
@@ -2328,19 +2328,19 @@ async function executeAIOnlyWorkflow(
           } else {
             // Tenta múltiplos formatos de hora
             let timeMatch: RegExpMatchArray | null = null
-            
+
             // Formato HH:MM (ex: "16:00", "4:00")
             timeMatch = args.time.match(/(\d{1,2}):(\d{2})/)
-            
+
             // Se não encontrou, tenta formato "Xh" ou "X" (ex: "16h", "4", "às 4")
-          if (!timeMatch) {
+            if (!timeMatch) {
               // Remove "às" ou "as" se presente
               const cleanedTime = timeLower.replace(/^às?\s*/, '').replace(/\s*h$/, '')
               const numberMatch = cleanedTime.match(/^(\d{1,2})$/)
               if (numberMatch) {
                 hour = parseInt(numberMatch[1])
                 minute = 0
-                
+
                 // Se hora < 12 e não especificou manhã, assume tarde (mais comum)
                 // Mas se hora >= 12, já está em formato 24h
                 if (hour < 12) {
@@ -2349,35 +2349,35 @@ async function executeAIOnlyWorkflow(
                   hour += 12
                 }
               } else {
-            return {
-              success: false,
+                return {
+                  success: false,
                   error: `Hora inválida: "${args.time}". Use formato HH:MM (ex: 16:00), apenas o número (ex: 16), ou "meio-dia".`,
-            }
-          }
+                }
+              }
             } else {
-            hour = parseInt(timeMatch[1])
-            minute = parseInt(timeMatch[2])
+              hour = parseInt(timeMatch[1])
+              minute = parseInt(timeMatch[2])
             }
-          
-          // Valida valores
+
+            // Valida valores
             if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
-            return {
-              success: false,
+              return {
+                success: false,
                 error: 'Hora inválida. Verifique os valores informados.',
               }
             }
           }
-          
+
           console.log(`🕐 [handleFunctionCall] Hora parseada: "${args.time}" → ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`)
-          
+
           // Tenta primeiro parsear como data em português (dias da semana, "amanhã", etc)
           // Mas agora passamos a hora também para parsePortugueseDate considerar
           let appointmentDateUTC: Date | null = null
-          
+
           // Cria uma string combinada de data e hora para parsePortugueseDate processar
           const dateTimeStr = `${args.date} ${args.time}`
           let parsedPortugueseDate = parsePortugueseDate(dateTimeStr)
-          
+
           // Fallback: se a IA mandou data já convertida (ex: DD/MM) mas o cliente falou em linguagem natural,
           // tenta interpretar a data direto da mensagem original para evitar erros como "próxima segunda = 29/11".
           if (!parsedPortugueseDate && userMessage) {
@@ -2387,7 +2387,7 @@ async function executeAIOnlyWorkflow(
               console.log(`📅 [handleFunctionCall] Data reinterpretada a partir da mensagem original do cliente: "${userMessage}"`)
             }
           }
-          
+
           if (parsedPortugueseDate) {
             // Se conseguiu parsear como data em português, já vem em UTC com hora
             appointmentDateUTC = parsedPortugueseDate
@@ -2395,7 +2395,7 @@ async function executeAIOnlyWorkflow(
             console.log(`📅 Data parseada do português (UTC): ${appointmentDateUTC.toISOString()}`)
             console.log(`📅 Data parseada do português (Brasil): ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year} às ${brazilianCheck.hour}:${brazilianCheck.minute.toString().padStart(2, '0')}`)
           }
-          
+
           // Se não conseguiu parsear como português, tenta formato DD/MM/YYYY
           if (!appointmentDateUTC) {
             const dateMatch = args.date.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
@@ -2403,26 +2403,26 @@ async function executeAIOnlyWorkflow(
               return {
                 success: false,
                 error: `Data inválida: "${args.date}". Use o formato DD/MM/YYYY (ex: 24/11/2025) ou linguagem natural (ex: "terça-feira", "amanhã").`,
+              }
             }
-          }
-            
+
             const day = parseInt(dateMatch[1])
             const month = parseInt(dateMatch[2]) - 1 // JavaScript usa meses 0-11
             let year = parseInt(dateMatch[3])
-          
-          // Cria a data no horário do Brasil
-          const nowBrazilian = getBrazilDate()
-          const currentYear = nowBrazilian.getFullYear()
-          
-          // Corrige o ano se necessário
-          if (year < currentYear) {
+
+            // Cria a data no horário do Brasil
+            const nowBrazilian = getBrazilDate()
+            const currentYear = nowBrazilian.getFullYear()
+
+            // Corrige o ano se necessário
+            if (year < currentYear) {
               year = currentYear
               console.log(`⚠️ Ano ${year} é menor que o atual (${currentYear}), corrigindo para ${year}`)
-          } else if (year > currentYear + 1) {
+            } else if (year > currentYear + 1) {
               year = currentYear
               console.log(`⚠️ Ano ${year} é muito no futuro, corrigindo para ${year}`)
-          }
-          
+            }
+
             // Cria a data no fuso do Brasil e converte para UTC com a hora correta
             appointmentDateUTC = createBrazilianDateAsUTC(year, month, day, hour, minute)
           } else {
@@ -2436,14 +2436,14 @@ async function executeAIOnlyWorkflow(
               minute
             )
           }
-          
+
           // Obtém componentes brasileiros para validação
           const brazilianComponents = utcToBrazilianComponents(appointmentDateUTC)
           const day = brazilianComponents.day
           const month = brazilianComponents.month
           const year = brazilianComponents.year
-          
-          
+
+
           // Cria a data no horário do Brasil para comparação
           const nowBrazilian = getBrazilDate()
           const currentYear = nowBrazilian.getFullYear()
@@ -2451,16 +2451,16 @@ async function executeAIOnlyWorkflow(
           const currentDay = nowBrazilian.getDate()
           const currentHour = nowBrazilian.getHours()
           const currentMinute = nowBrazilian.getMinutes()
-          
+
           console.log(`📅 Data/hora recebida da IA: date="${args.date}", time="${args.time}"`)
           console.log(`📅 Data/hora atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear} às ${currentHour}:${currentMinute.toString().padStart(2, '0')}`)
           console.log(`📅 Data/hora processada (Brasil): ${day}/${month + 1}/${year} às ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`)
           console.log(`📅 Data/hora processada (UTC): ${appointmentDateUTC.toISOString()}`)
-          
+
           // Valida se a data não é no passado (comparando componentes brasileiros)
           const appointmentDateOnly = new Date(year, month, day)
           const todayOnly = new Date(currentYear, currentMonth, currentDay)
-          
+
           // Se a data é hoje, verifica se a hora não passou
           if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
             const appointmentTime = hour * 60 + minute
@@ -2479,11 +2479,11 @@ async function executeAIOnlyWorkflow(
               error: 'Não é possível agendar para uma data no passado. Por favor, escolha uma data futura.',
             }
           }
-          
+
           // Verifica se a conversão está correta
           const verificationBrazilian = utcToBrazilianComponents(appointmentDateUTC)
           console.log(`📅 Verificação (UTC→Brasil): ${verificationBrazilian.day}/${verificationBrazilian.month + 1}/${verificationBrazilian.year} às ${verificationBrazilian.hour}:${verificationBrazilian.minute.toString().padStart(2, '0')}`)
-          
+
           // Valida se a hora está correta após conversão
           if (verificationBrazilian.hour !== hour || verificationBrazilian.minute !== minute) {
             console.error(`❌ ERRO: Hora não corresponde após conversão! Esperado: ${hour}:${minute.toString().padStart(2, '0')}, Obtido: ${verificationBrazilian.hour}:${verificationBrazilian.minute.toString().padStart(2, '0')}`)
@@ -2492,25 +2492,25 @@ async function executeAIOnlyWorkflow(
           // Formata data e hora para exibição (declara ANTES de usar)
           const formattedDate = `${day.toString().padStart(2, '0')}/${(month + 1).toString().padStart(2, '0')}/${year}`
           const formattedTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
-          
+
           // CRÍTICO: Busca informações do serviço para obter duração e imagem
           // A duração DEVE vir do serviço, não pode ser um padrão fixo
           let serviceDuration: number | undefined
           let serviceImageUrl: string | undefined
           const servicesWithAppointment: ServiceWithAppointment[] = businessDetails.servicesWithAppointment || []
           const serviceName = args.description?.toLowerCase().trim() || ''
-          
+
           console.log(`🔍 [handleFunctionCall] Buscando dados do serviço: "${serviceName}"`)
           console.log(`🔍 [handleFunctionCall] Serviços disponíveis:`, servicesWithAppointment.map((s) => `${s.name} (${s.duration || 'sem duração'} min)`))
-          
+
           let matchedService: ServiceWithAppointment | null = null
-          
+
           if (serviceName && servicesWithAppointment.length > 0) {
-          for (const service of servicesWithAppointment) {
+            for (const service of servicesWithAppointment) {
               if (!service.name) continue
               const serviceNameLower = service.name.toLowerCase()
               const firstWord = serviceNameLower.split(' ')[0]
-              
+
               // Verifica se o nome do serviço está na descrição OU se a descrição está no nome do serviço
               if (
                 serviceName.includes(serviceNameLower) ||
@@ -2519,11 +2519,11 @@ async function executeAIOnlyWorkflow(
               ) {
                 matchedService = service
                 console.log(`✅ [handleFunctionCall] Serviço identificado: ${service.name}`)
-              break
+                break
               }
             }
           }
-          
+
           if (matchedService) {
             serviceDuration = matchedService.duration
             serviceImageUrl = matchedService.imageUrl
@@ -2532,29 +2532,29 @@ async function executeAIOnlyWorkflow(
               console.log(`🖼️ [handleFunctionCall] Imagem encontrada para o serviço: ${serviceImageUrl}`)
             }
           }
-          
+
           // CRÍTICO: Se não encontrou a duração, retorna erro ANTES de criar agendamento pendente
           if (!serviceDuration || serviceDuration <= 0) {
             console.error(`❌ [handleFunctionCall] Duração do serviço não encontrada ou inválida!`)
             console.error(`   Serviço procurado: "${serviceName}"`)
             console.error(`   Descrição completa: "${args.description}"`)
             console.error(`   Serviços disponíveis:`, servicesWithAppointment)
-            
+
             // Lista serviços disponíveis para ajudar o usuário
             const availableServices = servicesWithAppointment.map((s) => s.name).join(', ')
             const errorMessage = `Não foi possível determinar a duração do serviço "${args.description || 'não especificado'}".\n\nServiços disponíveis com agendamento:\n${servicesWithAppointment.map((s) => `- ${s.name}${s.duration ? ` (${s.duration} min)` : ' (duração não configurada)'}`).join('\n')}\n\nPor favor, verifique se o serviço tem duração configurada no catálogo.`
-            
+
             return {
               success: false,
               error: errorMessage,
             }
           }
-          
+
           // CRÍTICO: Verifica disponibilidade ANTES de criar agendamento pendente
           // Verifica tanto agendamentos confirmados quanto pendentes
           console.log(`🔍 [handleFunctionCall] Verificando disponibilidade do horário...`)
           const availabilityCheck = await checkAvailability(userId, appointmentDateUTC, instanceId)
-          
+
           // CRÍTICO: Também verifica agendamentos pendentes de confirmação
           let pendingConflict = false
           try {
@@ -2568,19 +2568,19 @@ async function executeAIOnlyWorkflow(
                 },
               },
             })
-            
+
             // Verifica se há conflito com agendamentos pendentes
             for (const pending of allPending) {
               const [pendingHour, pendingMinute] = pending.time.split(':').map(Number)
               const pendingDuration = pending.duration || 60
-              
+
               // Verifica se o horário solicitado conflita com algum pendente
               // CRÍTICO: Usa a duração real do serviço, não padrão fixo
               const requestedStart = hour * 60 + minute
               const requestedEnd = requestedStart + serviceDuration // Duração do serviço
               const pendingStart = pendingHour * 60 + pendingMinute
               const pendingEnd = pendingStart + pendingDuration
-              
+
               if (requestedStart < pendingEnd && requestedEnd > pendingStart) {
                 pendingConflict = true
                 console.log(`⚠️ [handleFunctionCall] Conflito com agendamento pendente: ${pending.time} - ${pending.service}`)
@@ -2591,24 +2591,24 @@ async function executeAIOnlyWorkflow(
             console.error('Erro ao verificar agendamentos pendentes:', error)
             // Continua mesmo se houver erro
           }
-          
+
           if (availabilityCheck.success && availabilityCheck.appointments) {
             // Verifica se há conflitos de horário com agendamentos confirmados
             // CRÍTICO: Usa a duração real do serviço, não padrão fixo
             const appointmentDuration = serviceDuration // Duração do serviço em minutos
             const appointmentStart = appointmentDateUTC
             const appointmentEnd = new Date(appointmentStart.getTime() + appointmentDuration * 60000)
-            
+
             let hasConflict = false
             let conflictMessage = ''
-            
+
             for (const existingApt of availabilityCheck.appointments) {
               const existingStart = new Date(existingApt.date)
               // CRÍTICO: Usa horário de término real se disponível, senão calcula baseado na duração
-              const existingEnd = existingApt.endDate 
+              const existingEnd = existingApt.endDate
                 ? new Date(existingApt.endDate)
                 : new Date(existingStart.getTime() + (existingApt.duration || 60) * 60000)
-              
+
               // Verifica sobreposição de intervalos
               if (appointmentStart < existingEnd && appointmentEnd > existingStart) {
                 hasConflict = true
@@ -2625,7 +2625,7 @@ async function executeAIOnlyWorkflow(
                   hour: '2-digit',
                   minute: '2-digit',
                 })
-                
+
                 conflictMessage = `❌ Este horário não está disponível!\n\nJá existe um agendamento:\n📅 Data: ${existingFormattedDate}\n🕐 Horário: ${existingFormattedStartTime} às ${existingFormattedEndTime}`
                 if (existingApt.description) {
                   conflictMessage += `\n🛠️ Serviço: ${existingApt.description}`
@@ -2635,12 +2635,12 @@ async function executeAIOnlyWorkflow(
                 break
               }
             }
-            
+
             if (hasConflict || pendingConflict) {
               if (pendingConflict && !hasConflict) {
                 conflictMessage = `❌ Este horário não está disponível!\n\nJá existe um agendamento pendente de confirmação para este horário.\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis usando "quais horários estão disponíveis?".`
               }
-              
+
               return {
                 success: false,
                 error: conflictMessage,
@@ -2654,9 +2654,9 @@ async function executeAIOnlyWorkflow(
               message: `❌ Este horário não está disponível!\n\nJá existe um agendamento pendente de confirmação para este horário.\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis usando "quais horários estão disponíveis?".`,
             }
           }
-          
+
           console.log(`✅ [handleFunctionCall] Horário disponível! Prosseguindo com criação do agendamento pendente.`)
-          
+
           // Armazena temporariamente o agendamento pendente
           console.log(`📅📅📅 [handleFunctionCall] ========== CRIANDO AGENDAMENTO PENDENTE ==========`)
           console.log(`   instanceId: ${instanceId}`)
@@ -2665,29 +2665,29 @@ async function executeAIOnlyWorkflow(
           console.log(`   date: ${formattedDate}`)
           console.log(`   time: ${formattedTime}`)
           console.log(`   service: ${args.description || 'Serviço não especificado'}`)
-          
+
           // CRÍTICO: NÃO limpa a execução aqui - ela ainda é necessária para continuar o fluxo
           // A execução só será limpa quando o agendamento for confirmado ou cancelado
-          
+
           const { storePendingAppointment, getPendingAppointment: verifyPending } = await import('./pending-appointments')
-          
+
           try {
             // CRÍTICO: Usa número normalizado para garantir consistência
             await storePendingAppointment(instanceId, normalizedContactNumber, {
-            date: formattedDate,
-            time: formattedTime,
-            duration: serviceDuration,
-            service: args.description || 'Serviço não especificado',
-            description: args.description,
+              date: formattedDate,
+              time: formattedTime,
+              duration: serviceDuration,
+              service: args.description || 'Serviço não especificado',
+              description: args.description,
             }, userId) // Passa userId como parâmetro obrigatório
-            
+
             console.log(`✅✅✅ [handleFunctionCall] storePendingAppointment chamado com SUCESSO`)
           } catch (storeError) {
             console.error(`❌❌❌ [handleFunctionCall] ERRO ao chamar storePendingAppointment:`, storeError)
             console.error(`❌❌❌ [handleFunctionCall] Stack trace:`, storeError instanceof Error ? storeError.stack : 'N/A')
             throw storeError // Propaga o erro
           }
-          
+
           // CRÍTICO: Aguarda e verifica se foi salvo corretamente ANTES de retornar
           // Tenta múltiplas vezes com delays crescentes para garantir sincronização
           // CRÍTICO: Aumenta tentativas e delays para garantir que está salvo antes de retornar
@@ -2696,24 +2696,24 @@ async function executeAIOnlyWorkflow(
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
             // Delay crescente mais agressivo: 200ms, 400ms, 600ms, 800ms, 1000ms
             await new Promise(resolve => setTimeout(resolve, 200 * attempt))
-            
+
             // CRÍTICO: Usa número normalizado para verificação
             verification = await verifyPending(instanceId, normalizedContactNumber)
-          if (verification) {
+            if (verification) {
               console.log(`✅✅✅ [handleFunctionCall] VERIFICAÇÃO (tentativa ${attempt}/${maxRetries}): Agendamento pendente confirmado no banco`)
-            console.log(`✅✅✅ [handleFunctionCall] Dados verificados:`, JSON.stringify(verification, null, 2))
+              console.log(`✅✅✅ [handleFunctionCall] Dados verificados:`, JSON.stringify(verification, null, 2))
               break
             } else if (attempt < maxRetries) {
               console.log(`⚠️ [handleFunctionCall] Tentativa ${attempt}/${maxRetries} falhou, tentando novamente...`)
             }
           }
-          
+
           if (!verification) {
             console.error(`❌❌❌ [handleFunctionCall] ERRO CRÍTICO: Agendamento pendente NÃO encontrado após ${maxRetries} tentativas!`)
             console.error(`❌❌❌ [handleFunctionCall] instanceId usado: ${instanceId}`)
             console.error(`❌❌❌ [handleFunctionCall] contactNumber usado: ${normalizedContactNumber}`)
             console.error(`❌❌❌ [handleFunctionCall] Isso pode causar problemas na confirmação!`)
-            
+
             // Tenta buscar diretamente no banco para debug
             try {
               const directCheck = await (prisma as any).pendingAppointment.findMany({
@@ -2730,7 +2730,7 @@ async function executeAIOnlyWorkflow(
             } catch (dbError) {
               console.error(`❌❌❌ [handleFunctionCall] Erro ao buscar diretamente no banco:`, dbError)
             }
-            
+
             // Mesmo assim continua - o agendamento pode ter sido salvo mas não está sincronizado ainda
             // A verificação na confirmação vai tentar novamente
           }
@@ -2738,10 +2738,10 @@ async function executeAIOnlyWorkflow(
           // Prepara mídia (imagem do serviço) se disponível
           const mediaAttachment = serviceImageUrl
             ? {
-                type: 'image' as const,
-                url: serviceImageUrl,
-                caption: `${args.description || 'Serviço'} - confirme o agendamento`,
-              }
+              type: 'image' as const,
+              url: serviceImageUrl,
+              caption: `${args.description || 'Serviço'} - confirme o agendamento`,
+            }
             : undefined
 
           // Retorna mensagem de confirmação para o usuário
@@ -2759,8 +2759,8 @@ async function executeAIOnlyWorkflow(
           // Retorna como erro (success: false) para que a IA não confirme automaticamente
           // Mas com uma mensagem amigável que será exibida ao usuário
           // A mensagem inclui instruções claras para a IA repassar sem modificar
-            return {
-              success: false,
+          return {
+            success: false,
             pending: true,
             error: `CONFIRMAÇÃO_PENDENTE: ${confirmationMessage}`,
             message: confirmationMessage,
@@ -2782,24 +2782,24 @@ async function executeAIOnlyWorkflow(
           }
         }
       }
-      
+
       // Função para verificar disponibilidade em uma data
       if (functionName === 'check_availability' && userId) {
         try {
           console.log(`🔍 [check_availability] Chamada com args:`, args)
-          
+
           if (!args.date) {
             return {
               success: false,
               error: 'Data é obrigatória para verificar disponibilidade.',
             }
           }
-          
+
           // Parse da data
           const dateStr = args.date
           console.log(`🔍 [check_availability] Parseando data: "${dateStr}"`)
           const parsedDate = parsePortugueseDate(dateStr)
-          
+
           if (!parsedDate) {
             console.error(`❌ [check_availability] Falha ao parsear data: "${dateStr}"`)
             return {
@@ -2807,22 +2807,22 @@ async function executeAIOnlyWorkflow(
               error: `Data inválida: "${dateStr}". Use formato DD/MM/YYYY ou linguagem natural (ex: "amanhã", "terça-feira").`,
             }
           }
-          
+
           console.log(`✅ [check_availability] Data parseada: ${parsedDate.toISOString()}`)
           console.log(`🔍 [check_availability] Chamando checkAvailability com userId=${userId}, instanceId=${instanceId}`)
-          
+
           // CRÍTICO: Passa instanceId para considerar agendamentos pendentes também
           const result = await checkAvailability(userId, parsedDate, instanceId)
-          
+
           console.log(`📊 [check_availability] Resultado:`, result)
-          
+
           if (result.success) {
             const formattedDate = parsedDate.toLocaleDateString('pt-BR', {
               day: '2-digit',
               month: '2-digit',
               year: 'numeric',
             })
-            
+
             // CRÍTICO: Também verifica agendamentos pendentes para dar informação completa
             let pendingInfo = ''
             try {
@@ -2837,7 +2837,7 @@ async function executeAIOnlyWorkflow(
                   },
                 },
               })
-              
+
               if (pendingAppointments.length > 0) {
                 const pendingList = pendingAppointments.map((p) => {
                   return `- ${p.time} - ${p.service} (pendente de confirmação)`
@@ -2848,13 +2848,13 @@ async function executeAIOnlyWorkflow(
               console.error('Erro ao buscar agendamentos pendentes:', error)
               // Continua mesmo se houver erro
             }
-            
+
             if (result.appointments && result.appointments.length > 0) {
               const appointmentsList = result.appointments.map((apt: any) => {
                 const aptDate = new Date(apt.date)
                 return `- ${aptDate.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })} - ${apt.description || 'Agendamento'}`
               }).join('\n')
-              
+
               return {
                 success: true,
                 message: `📅 Horários ocupados em ${formattedDate}:\n\n${appointmentsList}${pendingInfo}\n\nEstes horários já estão reservados. Escolha outro horário ou pergunte quais horários estão disponíveis.`,
@@ -2879,7 +2879,7 @@ async function executeAIOnlyWorkflow(
           }
         }
       }
-      
+
       // Função para listar horários disponíveis em uma data
       if (functionName === 'get_available_times' && userId) {
         try {
@@ -2889,7 +2889,7 @@ async function executeAIOnlyWorkflow(
               error: 'Data é obrigatória para listar horários disponíveis.',
             }
           }
-          
+
           const dateStr = args.date
           const parsedDate = parsePortugueseDate(dateStr)
           if (!parsedDate) {
@@ -2898,11 +2898,11 @@ async function executeAIOnlyWorkflow(
               error: `Data inválida: "${dateStr}". Use formato DD/MM/YYYY ou linguagem natural.`,
             }
           }
-          
+
           // CRÍTICO: Tenta obter a duração do serviço mencionado pelo cliente
           // Se não especificada, usa a duração mínima dos serviços ou 60min como padrão
           let duration = args.duration
-          
+
           if (!duration || duration <= 0) {
             // Busca duração mínima dos serviços disponíveis
             const servicesWithAppointment = businessDetails.servicesWithAppointment || []
@@ -2910,7 +2910,7 @@ async function executeAIOnlyWorkflow(
               const durations = servicesWithAppointment
                 .map((s: any) => s.duration)
                 .filter((d: number) => d && d > 0)
-              
+
               if (durations.length > 0) {
                 duration = Math.min(...durations)
                 console.log(`📅 [get_available_times] Usando duração mínima dos serviços: ${duration} minutos`)
@@ -2921,22 +2921,22 @@ async function executeAIOnlyWorkflow(
               duration = 60 // Fallback padrão
             }
           }
-          
+
           console.log(`📅 [get_available_times] Verificando disponibilidade com duração: ${duration} minutos`)
-          
+
           // Horários agora são globais do usuário, não precisam ser passados
           // A função getAvailableTimes busca automaticamente do usuário
           // CRÍTICO: Passa instanceId para considerar agendamentos pendentes também
           const result = await getAvailableTimes(userId, parsedDate, duration, 8, 18, instanceId)
-          
+
           if (result.success) {
             if (result.availableTimes && result.availableTimes.length > 0) {
               // Importa função de agrupamento
               const { groupConsecutiveTimes } = await import('./appointments')
-              
+
               // Agrupa horários consecutivos em intervalos quando há muitos horários
               const groupedTimes = groupConsecutiveTimes(result.availableTimes, duration)
-              
+
               // Formata a lista de horários
               let timesList: string
               if (groupedTimes.length <= 5) {
@@ -2946,7 +2946,7 @@ async function executeAIOnlyWorkflow(
                 // Muitos horários: mostra em intervalos
                 timesList = groupedTimes.join('\n')
               }
-              
+
               return {
                 success: true,
                 message: `📅 Horários disponíveis em ${result.date}:\n\n${timesList}\n\nQual horário você prefere?`,
@@ -2971,18 +2971,18 @@ async function executeAIOnlyWorkflow(
           }
         }
       }
-      
+
       // Função para listar agendamentos do usuário
       if (functionName === 'get_user_appointments' && userId) {
         try {
           const result = await getUserAppointments(userId, instanceId, normalizedContactNumber, args.include_past || false)
-          
+
           if (result.success) {
             if (result.appointments && result.appointments.length > 0) {
               const appointmentsList = result.appointments.map((apt: any) => {
                 return `📅 ${apt.formattedDate} às ${apt.formattedTime} - ${apt.description || 'Agendamento'} (${apt.status === 'confirmed' ? 'Confirmado' : apt.status === 'pending' ? 'Pendente' : 'Cancelado'})`
               }).join('\n')
-              
+
               return {
                 success: true,
                 message: `📅 Seus agendamentos:\n\n${appointmentsList}\n\nVocê pode alterar ou cancelar qualquer um deles.`,
@@ -3007,7 +3007,7 @@ async function executeAIOnlyWorkflow(
           }
         }
       }
-      
+
       // Função para alterar horário de um agendamento
       if (functionName === 'update_appointment' && userId) {
         try {
@@ -3017,20 +3017,20 @@ async function executeAIOnlyWorkflow(
               error: 'Nova data e hora são obrigatórias.',
             }
           }
-          
+
           // Busca o agendamento primeiro para verificar se existe e pertence ao usuário
           const userAppointments = await getUserAppointments(userId, instanceId, normalizedContactNumber, true)
-          
+
           if (!userAppointments.success || !userAppointments.appointments) {
             return {
               success: false,
               error: 'Erro ao buscar agendamentos.',
             }
           }
-          
+
           // Tenta encontrar o agendamento pelo ID ou pela descrição/data
           let appointmentToUpdate = userAppointments.appointments.find((apt: any) => apt.id === args.appointment_id)
-          
+
           // Se não encontrou pelo ID, tenta encontrar pelo mais recente ou próximo
           if (!appointmentToUpdate && userAppointments.appointments.length > 0) {
             // Pega o agendamento mais próximo no futuro
@@ -3038,37 +3038,37 @@ async function executeAIOnlyWorkflow(
               const aptDate = new Date(apt.date)
               return aptDate >= new Date() && (apt.status === 'pending' || apt.status === 'confirmed')
             })
-            
+
             if (futureAppointments.length > 0) {
               appointmentToUpdate = futureAppointments[0]
             }
           }
-          
+
           if (!appointmentToUpdate) {
             return {
               success: false,
               error: 'Agendamento não encontrado. Use get_user_appointments para ver seus agendamentos.',
             }
           }
-          
+
           // Parse da nova data e hora
           const dateTimeStr = `${args.new_date} ${args.new_time}`
           const parsedNewDate = parsePortugueseDate(dateTimeStr)
-          
+
           if (!parsedNewDate) {
             return {
               success: false,
               error: `Data/hora inválida: "${args.new_date} ${args.new_time}". Use formato DD/MM/YYYY HH:MM ou linguagem natural.`,
             }
           }
-          
+
           // Verifica disponibilidade do novo horário
           const availabilityCheck = await checkAvailability(userId, parsedNewDate)
           if (availabilityCheck.success && availabilityCheck.appointments) {
             for (const existingApt of availabilityCheck.appointments) {
               const existingStart = new Date(existingApt.date)
               const existingEnd = new Date(existingStart.getTime() + 60 * 60000)
-              
+
               if (parsedNewDate < existingEnd && new Date(parsedNewDate.getTime() + 60 * 60000) > existingStart) {
                 // Ignora o próprio agendamento que está sendo alterado
                 const existingAptDate = new Date(existingApt.date)
@@ -3081,9 +3081,9 @@ async function executeAIOnlyWorkflow(
               }
             }
           }
-          
+
           const result = await updateAppointment(appointmentToUpdate.id, userId, parsedNewDate)
-          
+
           if (result.success) {
             const formattedDate = parsedNewDate.toLocaleDateString('pt-BR', {
               day: '2-digit',
@@ -3094,7 +3094,7 @@ async function executeAIOnlyWorkflow(
               hour: '2-digit',
               minute: '2-digit',
             })
-            
+
             return {
               success: true,
               message: `✅ Agendamento alterado com sucesso!\n\nNovo horário:\n📅 Data: ${formattedDate}\n🕐 Hora: ${formattedTime}`,
@@ -3113,76 +3113,76 @@ async function executeAIOnlyWorkflow(
           }
         }
       }
-      
-       // Função para encerrar o chat
-       if (functionName === 'close_chat' && userId) {
-         try {
-           console.log(`🚪 [handleFunctionCall] Encerrando chat para ${instanceId}-${contactNumber}`)
-           
-           // Atualiza o status da conversa para 'closed'
-           const { updateConversationStatus } = await import('./conversation-status')
-           await updateConversationStatus(instanceId, contactNumber, 'closed')
-           
-           // Mensagem de encerramento padrão ou customizada
-           const closeMessage = args.message || 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
-           
-           // Envia mensagem de encerramento
-           const contactKey = `${instanceId}-${contactNumber}`
-           await queueMessage(contactKey, async () => {
-             await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
-           })
-           
-           // CRÍTICO: Limpa a execução do workflow após encerrar o chat
-           const executionKeyClose = `${instanceId}-${contactNumber}`
-           if (workflowExecutions.has(executionKeyClose)) {
-             console.log(`🧹 [handleFunctionCall] Limpando execução do workflow após encerrar chat`)
-             workflowExecutions.delete(executionKeyClose)
-           }
-           
-           console.log(`✅ [handleFunctionCall] Chat encerrado com sucesso`)
-           
-           return {
-             success: true,
-             message: closeMessage,
-           }
-         } catch (error) {
-           console.error('❌ Erro ao encerrar chat:', error)
-           return {
-             success: false,
-             error: 'Erro ao encerrar o chat. Por favor, tente novamente.',
-           }
-         }
-       }
-       
-       // Função para cancelar um agendamento específico
-       if (functionName === 'cancel_appointment' && userId) {
+
+      // Função para encerrar o chat
+      if (functionName === 'close_chat' && userId) {
+        try {
+          console.log(`🚪 [handleFunctionCall] Encerrando chat para ${instanceId}-${contactNumber}`)
+
+          // Atualiza o status da conversa para 'closed'
+          const { updateConversationStatus } = await import('./conversation-status')
+          await updateConversationStatus(instanceId, contactNumber, 'closed')
+
+          // Mensagem de encerramento padrão ou customizada
+          const closeMessage = args.message || 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
+
+          // Envia mensagem de encerramento
+          const contactKey = `${instanceId}-${contactNumber}`
+          await queueMessage(contactKey, async () => {
+            await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
+          })
+
+          // CRÍTICO: Limpa a execução do workflow após encerrar o chat
+          const executionKeyClose = `${instanceId}-${contactNumber}`
+          if (workflowExecutions.has(executionKeyClose)) {
+            console.log(`🧹 [handleFunctionCall] Limpando execução do workflow após encerrar chat`)
+            workflowExecutions.delete(executionKeyClose)
+          }
+
+          console.log(`✅ [handleFunctionCall] Chat encerrado com sucesso`)
+
+          return {
+            success: true,
+            message: closeMessage,
+          }
+        } catch (error) {
+          console.error('❌ Erro ao encerrar chat:', error)
+          return {
+            success: false,
+            error: 'Erro ao encerrar o chat. Por favor, tente novamente.',
+          }
+        }
+      }
+
+      // Função para cancelar um agendamento específico
+      if (functionName === 'cancel_appointment' && userId) {
         try {
           // Busca agendamentos do usuário
           const userAppointments = await getUserAppointments(userId, instanceId, normalizedContactNumber, false)
-          
+
           if (!userAppointments.success || !userAppointments.appointments || userAppointments.appointments.length === 0) {
             return {
               success: false,
               error: 'Você não tem agendamentos para cancelar.',
             }
           }
-          
+
           // Se não especificou ID, cancela o mais próximo
           let appointmentToCancel = userAppointments.appointments.find((apt: any) => apt.id === args.appointment_id)
-          
+
           if (!appointmentToCancel && userAppointments.appointments.length > 0) {
             appointmentToCancel = userAppointments.appointments[0] // Cancela o mais próximo
           }
-          
+
           if (!appointmentToCancel) {
             return {
               success: false,
               error: 'Agendamento não encontrado.',
             }
           }
-          
+
           const result = await cancelAppointment(appointmentToCancel.id, userId)
-          
+
           if (result.success) {
             const formattedDate = new Date(appointmentToCancel.date).toLocaleDateString('pt-BR', {
               day: '2-digit',
@@ -3193,7 +3193,7 @@ async function executeAIOnlyWorkflow(
               hour: '2-digit',
               minute: '2-digit',
             })
-            
+
             return {
               success: true,
               message: `✅ Agendamento cancelado com sucesso!\n\nAgendamento cancelado:\n📅 Data: ${formattedDate}\n🕐 Hora: ${formattedTime}`,
@@ -3217,7 +3217,7 @@ async function executeAIOnlyWorkflow(
       if (functionName === 'offer_promotion' && userId) {
         try {
           const { offerPromotionToAI } = await import('./ai-promotions')
-          
+
           if (!args.product_id) {
             return {
               success: false,
@@ -3262,7 +3262,7 @@ async function executeAIOnlyWorkflow(
             hasPromotions = service.hasPromotions || false
             pixKeyId = service.pixKeyId || undefined
             pixKeyValue = service.pixKey?.pixKey
-            
+
             // Parse do array dinâmico de promoções
             const levels: any = {}
             if (service.promotions) {
@@ -3284,7 +3284,7 @@ async function executeAIOnlyWorkflow(
                 console.error('Erro ao parsear promoções:', error)
               }
             }
-            
+
             promotionData = {
               hasPromotions,
               levels,
@@ -3307,7 +3307,7 @@ async function executeAIOnlyWorkflow(
               basePrice = nodeData.price || 0
               hasPromotions = nodeData.hasPromotions || false
               pixKeyId = nodeData.pixKeyId || undefined
-              
+
               if (pixKeyId) {
                 try {
                   const pixKeyData = await prisma.businessPixKey.findUnique({
@@ -3335,7 +3335,7 @@ async function executeAIOnlyWorkflow(
                   }
                 })
               }
-              
+
               promotionData = {
                 hasPromotions,
                 levels,
@@ -3361,7 +3361,7 @@ async function executeAIOnlyWorkflow(
           // Determina qual promoção oferecer baseado na tentativa (usa índice do array)
           const levelKey = `level${attempt}` as 'level1' | 'level2' | 'level3'
           const selectedPromo = promotionData.levels[levelKey]
-          
+
           if (!selectedPromo) {
             return {
               success: false,
@@ -3452,7 +3452,7 @@ async function executeAIOnlyWorkflow(
       if (functionName === 'add_to_cart' && userId) {
         try {
           const { addToCart, getCart } = await import('./cart')
-          
+
           if (!args.product_id || !args.product_type || !args.product_name) {
             return {
               success: false,
@@ -3502,12 +3502,11 @@ async function executeAIOnlyWorkflow(
             productName: args.product_name,
             quantity,
             unitPrice,
-            totalPrice,
             notes: args.notes,
           })
 
           const itemCount = cart.items.length
-          const cartTotal = cart.items.reduce((sum, item) => sum + item.totalPrice, 0)
+          const cartTotal = cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
 
           return {
             success: true,
@@ -3528,9 +3527,9 @@ async function executeAIOnlyWorkflow(
       if (functionName === 'view_cart' && userId) {
         try {
           const { getCart, getCartTotal } = await import('./cart')
-          
+
           const cart = getCart(instanceId, contactNumber)
-          
+
           if (cart.items.length === 0) {
             return {
               success: true,
@@ -3542,18 +3541,18 @@ async function executeAIOnlyWorkflow(
 
           const total = getCartTotal(cart)
           let message = '🛒 **Seu Carrinho:**\n\n'
-          
+
           cart.items.forEach((item, index) => {
             message += `${index + 1}. ${item.productName}`
             if (item.quantity > 1) {
               message += ` (${item.quantity}x)`
             }
-            message += ` - R$ ${item.totalPrice.toFixed(2).replace('.', ',')}\n`
+            message += ` - R$ ${(item.quantity * item.unitPrice).toFixed(2).replace('.', ',')}\n`
             if (item.notes) {
               message += `   📝 ${item.notes}\n`
             }
           })
-          
+
           message += `\n💰 **Total: R$ ${total.toFixed(2).replace('.', ',')}**\n\n`
           message += 'Deseja adicionar mais algo ou finalizar o pedido?'
 
@@ -3576,9 +3575,9 @@ async function executeAIOnlyWorkflow(
       if (functionName === 'checkout' && userId) {
         try {
           const { getCart, createOrderFromCart } = await import('./cart')
-          
+
           const cart = getCart(instanceId, contactNumber)
-          
+
           if (cart.items.length === 0) {
             return {
               success: false,
@@ -3640,7 +3639,7 @@ async function executeAIOnlyWorkflow(
           if (args.delivery_type === 'delivery' && args.delivery_address) {
             message += `📍 Endereço: ${args.delivery_address}\n`
           }
-          message += `💰 Total: R$ ${cart.items.reduce((sum, item) => sum + item.totalPrice, 0).toFixed(2).replace('.', ',')}\n\n`
+          message += `💰 Total: R$ ${cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0).toFixed(2).replace('.', ',')}\n\n`
 
           // Adiciona informações de pagamento se houver
           if (result.paymentLink) {
@@ -3649,7 +3648,7 @@ async function executeAIOnlyWorkflow(
           } else if (result.paymentPixKey) {
             message += `💳 **Pagamento via Pix:**\n`
             message += `Chave Pix: ${result.paymentPixKey}\n`
-            message += `Valor: R$ ${cart.items.reduce((sum, item) => sum + item.totalPrice, 0).toFixed(2).replace('.', ',')}\n\n`
+            message += `Valor: R$ ${cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0).toFixed(2).replace('.', ',')}\n\n`
           } else {
             message += `💳 **Pagamento:**\n`
             message += `Você pode pagar na retirada ou no momento da entrega.\n\n`
@@ -3684,40 +3683,40 @@ async function executeAIOnlyWorkflow(
         error: 'Função não reconhecida.',
       }
     }
-    
+
     // Intercepta chamadas de função para verificar se há agendamento pendente
     let pendingAppointmentResponse: string | null = null
     let pendingAppointmentMedia: MediaAttachment | null = null
-    
+
     const interceptedFunctionCall = async (functionName: string, args: any) => {
       console.log(`🔧 [interceptedFunctionCall] Interceptando chamada de função: ${functionName}`)
       console.log(`🔧 [interceptedFunctionCall] Argumentos:`, JSON.stringify(args, null, 2))
-      
+
       try {
-      const result = await handleFunctionCall(functionName, args)
-        
+        const result = await handleFunctionCall(functionName, args)
+
         console.log(`✅ [interceptedFunctionCall] Função ${functionName} executada`)
         console.log(`📊 [interceptedFunctionCall] Resultado:`, JSON.stringify(result, null, 2))
-      
-      // Se retornou um agendamento pendente, intercepta a resposta
-      if (result && typeof result === 'object' && 'pending' in result && result.pending === true) {
-        pendingAppointmentResponse = result.message || result.error || 'Por favor, confirme os dados do agendamento.'
+
+        // Se retornou um agendamento pendente, intercepta a resposta
+        if (result && typeof result === 'object' && 'pending' in result && result.pending === true) {
+          pendingAppointmentResponse = result.message || result.error || 'Por favor, confirme os dados do agendamento.'
           console.log(`📅 [interceptedFunctionCall] Agendamento pendente interceptado:`, pendingAppointmentResponse)
-        if ('mediaAttachment' in result && result.mediaAttachment) {
-          pendingAppointmentMedia = result.mediaAttachment as MediaAttachment
+          if ('mediaAttachment' in result && result.mediaAttachment) {
+            pendingAppointmentMedia = result.mediaAttachment as MediaAttachment
+          }
+          // Retorna erro para que a IA não confirme automaticamente
+          return {
+            success: false,
+            error: pendingAppointmentResponse,
+          }
         }
-        // Retorna erro para que a IA não confirme automaticamente
-        return {
-          success: false,
-          error: pendingAppointmentResponse,
-        }
-      }
-      
-      return result
+
+        return result
       } catch (error) {
         console.error(`❌ [interceptedFunctionCall] Erro ao executar função ${functionName}:`, error)
         console.error(`❌ [interceptedFunctionCall] Stack trace:`, error instanceof Error ? error.stack : 'N/A')
-        
+
         // Retorna erro detalhado para a IA
         const errorMessage = error instanceof Error ? error.message : String(error)
         return {
@@ -3726,7 +3725,7 @@ async function executeAIOnlyWorkflow(
         }
       }
     }
-    
+
     const aiResponse = await generateAIResponse(userMessageWithContext, {
       systemPrompt,
       conversationHistory: finalConversationHistory,
@@ -3807,123 +3806,123 @@ async function executeAIOnlyWorkflow(
             required: ['new_date', 'new_time'],
           },
         },
-         {
-           name: 'cancel_appointment',
-           description: 'Cancela um agendamento existente. Use quando o cliente quiser desmarcar ou cancelar um agendamento (ex: "quero cancelar", "desmarcar", "não vou mais").',
-           parameters: {
-             type: 'object',
-             properties: {
-               appointment_id: {
-                 type: 'string',
-                 description: 'ID do agendamento a ser cancelado (opcional - se não informado, cancela o mais próximo).',
-               },
-             },
-             required: [],
-           },
-         },
-         {
-           name: 'close_chat',
-           description: 'Encerra a conversa com o cliente. Use quando o cliente pedir para encerrar o chat, finalizar a conversa, ou quando a conversa naturalmente chegou ao fim e o cliente não precisa de mais nada. Você também pode perguntar ao cliente se ele quer encerrar o chat quando apropriado.',
-           parameters: {
-             type: 'object',
-             properties: {
-               message: {
-                 type: 'string',
-                 description: 'Mensagem personalizada de encerramento (opcional). Se não informado, usa mensagem padrão.',
-               },
-             },
-             required: [],
-           },
-         },
-         {
-           name: 'offer_promotion',
-           description: 'Oferece uma promoção/desconto para um produto ou serviço quando o cliente pedir desconto, achar caro, ou demonstrar interesse mas não comprar. Use quando o cliente pedir desconto, disser que está caro, ou quando quiser oferecer uma oportunidade especial.',
-           parameters: {
-             type: 'object',
-             properties: {
-               product_id: {
-                 type: 'string',
-                 description: 'ID do produto/serviço para oferecer promoção. Use o ID do serviço que o cliente está interessado.',
-               },
-               attempt: {
-                 type: 'number',
-                 description: 'Nível de tentativa de desconto (1, 2 ou 3). Use 1 na primeira vez que o cliente pedir desconto, 2 se ele recusar o nível 1, e 3 se ele recusar o nível 2. Isso determina qual nível de promoção oferecer.',
-               },
-             },
-             required: ['product_id', 'attempt'],
-           },
-         },
-         {
-           name: 'add_to_cart',
-           description: 'Adiciona um produto ou serviço ao carrinho de compras. Use quando o cliente quiser adicionar algo ao carrinho antes de finalizar o pedido. Permite que o cliente adicione múltiplos itens antes de fazer o checkout.',
-           parameters: {
-             type: 'object',
-             properties: {
-               product_id: {
-                 type: 'string',
-                 description: 'ID do produto/serviço a ser adicionado ao carrinho.',
-               },
-               product_type: {
-                 type: 'string',
-                 enum: ['service', 'catalog'],
-                 description: 'Tipo do produto: "service" para serviços ou "catalog" para produtos do catálogo.',
-               },
-               product_name: {
-                 type: 'string',
-                 description: 'Nome do produto/serviço para exibição.',
-               },
-               quantity: {
-                 type: 'number',
-                 description: 'Quantidade do produto (padrão: 1).',
-               },
-               notes: {
-                 type: 'string',
-                 description: 'Observações específicas do cliente sobre este item (opcional).',
-               },
-             },
-             required: ['product_id', 'product_type', 'product_name'],
-           },
-         },
-         {
-           name: 'view_cart',
-           description: 'Visualiza o conteúdo atual do carrinho de compras. Use quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido" ou quando quiser ver o resumo antes de finalizar.',
-           parameters: {
-             type: 'object',
-             properties: {},
-             required: [],
-           },
-         },
-         {
-           name: 'checkout',
-           description: 'Finaliza o pedido e cria a ordem de compra. Use quando o cliente quiser finalizar o pedido, confirmar a compra, ou quando disser "quero fechar o pedido". Coleta informações de entrega/retirada e processa o pagamento.',
-           parameters: {
-             type: 'object',
-             properties: {
-               delivery_type: {
-                 type: 'string',
-                 enum: ['pickup', 'delivery'],
-                 description: 'Tipo de entrega: "pickup" para retirada no estabelecimento ou "delivery" para entrega no endereço.',
-               },
-               delivery_address: {
-                 type: 'string',
-                 description: 'Endereço completo de entrega (obrigatório se delivery_type for "delivery"). Inclua rua, número, bairro, cidade e CEP se possível.',
-               },
-               notes: {
-                 type: 'string',
-                 description: 'Observações gerais do pedido (opcional).',
-               },
-             },
-             required: ['delivery_type'],
-           },
-         },
-       ],
+        {
+          name: 'cancel_appointment',
+          description: 'Cancela um agendamento existente. Use quando o cliente quiser desmarcar ou cancelar um agendamento (ex: "quero cancelar", "desmarcar", "não vou mais").',
+          parameters: {
+            type: 'object',
+            properties: {
+              appointment_id: {
+                type: 'string',
+                description: 'ID do agendamento a ser cancelado (opcional - se não informado, cancela o mais próximo).',
+              },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'close_chat',
+          description: 'Encerra a conversa com o cliente. Use quando o cliente pedir para encerrar o chat, finalizar a conversa, ou quando a conversa naturalmente chegou ao fim e o cliente não precisa de mais nada. Você também pode perguntar ao cliente se ele quer encerrar o chat quando apropriado.',
+          parameters: {
+            type: 'object',
+            properties: {
+              message: {
+                type: 'string',
+                description: 'Mensagem personalizada de encerramento (opcional). Se não informado, usa mensagem padrão.',
+              },
+            },
+            required: [],
+          },
+        },
+        {
+          name: 'offer_promotion',
+          description: 'Oferece uma promoção/desconto para um produto ou serviço quando o cliente pedir desconto, achar caro, ou demonstrar interesse mas não comprar. Use quando o cliente pedir desconto, disser que está caro, ou quando quiser oferecer uma oportunidade especial.',
+          parameters: {
+            type: 'object',
+            properties: {
+              product_id: {
+                type: 'string',
+                description: 'ID do produto/serviço para oferecer promoção. Use o ID do serviço que o cliente está interessado.',
+              },
+              attempt: {
+                type: 'number',
+                description: 'Nível de tentativa de desconto (1, 2 ou 3). Use 1 na primeira vez que o cliente pedir desconto, 2 se ele recusar o nível 1, e 3 se ele recusar o nível 2. Isso determina qual nível de promoção oferecer.',
+              },
+            },
+            required: ['product_id', 'attempt'],
+          },
+        },
+        {
+          name: 'add_to_cart',
+          description: 'Adiciona um produto ou serviço ao carrinho de compras. Use quando o cliente quiser adicionar algo ao carrinho antes de finalizar o pedido. Permite que o cliente adicione múltiplos itens antes de fazer o checkout.',
+          parameters: {
+            type: 'object',
+            properties: {
+              product_id: {
+                type: 'string',
+                description: 'ID do produto/serviço a ser adicionado ao carrinho.',
+              },
+              product_type: {
+                type: 'string',
+                enum: ['service', 'catalog'],
+                description: 'Tipo do produto: "service" para serviços ou "catalog" para produtos do catálogo.',
+              },
+              product_name: {
+                type: 'string',
+                description: 'Nome do produto/serviço para exibição.',
+              },
+              quantity: {
+                type: 'number',
+                description: 'Quantidade do produto (padrão: 1).',
+              },
+              notes: {
+                type: 'string',
+                description: 'Observações específicas do cliente sobre este item (opcional).',
+              },
+            },
+            required: ['product_id', 'product_type', 'product_name'],
+          },
+        },
+        {
+          name: 'view_cart',
+          description: 'Visualiza o conteúdo atual do carrinho de compras. Use quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido" ou quando quiser ver o resumo antes de finalizar.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: [],
+          },
+        },
+        {
+          name: 'checkout',
+          description: 'Finaliza o pedido e cria a ordem de compra. Use quando o cliente quiser finalizar o pedido, confirmar a compra, ou quando disser "quero fechar o pedido". Coleta informações de entrega/retirada e processa o pagamento.',
+          parameters: {
+            type: 'object',
+            properties: {
+              delivery_type: {
+                type: 'string',
+                enum: ['pickup', 'delivery'],
+                description: 'Tipo de entrega: "pickup" para retirada no estabelecimento ou "delivery" para entrega no endereço.',
+              },
+              delivery_address: {
+                type: 'string',
+                description: 'Endereço completo de entrega (obrigatório se delivery_type for "delivery"). Inclua rua, número, bairro, cidade e CEP se possível.',
+              },
+              notes: {
+                type: 'string',
+                description: 'Observações gerais do pedido (opcional).',
+              },
+            },
+            required: ['delivery_type'],
+          },
+        },
+      ],
       onFunctionCall: interceptedFunctionCall,
     })
-    
+
     // Se há uma resposta de agendamento pendente, usa ela diretamente em vez da resposta da IA
     if (pendingAppointmentResponse) {
       const contactKey = `${instanceId}-${contactNumber}`
-      
+
       if (isImageAttachment(pendingAppointmentMedia)) {
         const media: MediaAttachment = pendingAppointmentMedia
         await queueMessage(contactKey, async () => {
@@ -3939,14 +3938,14 @@ async function executeAIOnlyWorkflow(
           }
         })
       }
-      
+
       await queueMessage(contactKey, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, pendingAppointmentResponse!, 'service')
       })
       console.log(`📅 Mensagem de confirmação de agendamento enviada diretamente`)
       return
     }
-    
+
     // Não força mais mencionar o nome do negócio em todas as mensagens para manter naturalidade
 
     // Envia a resposta gerada pela IA
@@ -3958,7 +3957,7 @@ async function executeAIOnlyWorkflow(
     console.log(`🤖 Resposta de IA autônoma gerada para ${contactNumber}`)
   } catch (error) {
     console.error('Erro ao executar workflow IA-only:', error)
-    
+
     // Envia mensagem de erro amigável
     const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Nossa equipe foi notificada.'
     const contactKey = `${instanceId}-${contactNumber}`
@@ -3992,7 +3991,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
     casual: 'casual, descontraído e próximo',
     formal: 'formal, respeitoso e polido',
   }
-  
+
   const toneDescription = toneDescriptions[tone] || 'amigável e prestativo'
 
   // Obtém a data atual no fuso horário do Brasil
@@ -4004,12 +4003,12 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
     day: '2-digit',
     weekday: 'long',
   }).formatToParts(now)
-  
+
   const currentYear = parseInt(brazilianDateParts.find(p => p.type === 'year')!.value)
   const currentMonth = parseInt(brazilianDateParts.find(p => p.type === 'month')!.value)
   const currentDay = parseInt(brazilianDateParts.find(p => p.type === 'day')!.value)
   const currentWeekday = brazilianDateParts.find(p => p.type === 'weekday')!.value
-  
+
   const currentDateFormatted = `${currentDay.toString().padStart(2, '0')}/${currentMonth.toString().padStart(2, '0')}/${currentYear}`
 
   // Determina o que o negócio oferece
@@ -4017,7 +4016,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   const sellsServices = businessType === 'services' || businessType === 'both'
 
   let prompt = `Você é um ASSISTENTE DE VENDAS da ${businessName}. Seu objetivo é APRESENTAR e VENDER os produtos/serviços do negócio de forma natural e persuasiva. Você NÃO é um chatbot genérico - você é um VENDEDOR especializado.\n\n`
-  
+
   // Adiciona informação sobre a data atual
   prompt += `📅 INFORMAÇÃO IMPORTANTE SOBRE A DATA ATUAL:\n`
   prompt += `- Hoje é ${currentWeekday}, dia ${currentDay} de ${getMonthName(currentMonth)} de ${currentYear} (${currentDateFormatted})\n`
@@ -4120,13 +4119,13 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `  - Item 1\n`
   prompt += `  - Item 2\n`
   prompt += `  - Item 3\n`
-  
+
   // Mensagem de boas-vindas personalizada se configurada
   if (howToBuy && howToBuy.trim().length > 10) {
     prompt += `\n- Na primeira interação, SEMPRE use esta mensagem de boas-vindas EXATA: "${howToBuy}"\n`
     prompt += `- Depois dessa mensagem inicial, continue apresentando os produtos/serviços\n`
   }
-  
+
   if (sellsProducts && products.length > 0) {
     prompt += `- Na primeira mensagem, SEMPRE mencione os produtos em formato de lista com marcadores:\n`
     products.forEach((p: string) => {
@@ -4143,20 +4142,20 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
     prompt += `- Quando perguntarem sobre serviços, SEMPRE liste-os em formato de lista com marcadores (-), um por linha\n`
     prompt += `- Seja detalhado e persuasivo ao apresentar serviços\n`
   }
-  
+
   if (pricingInfo) {
     prompt += `- Quando perguntarem sobre preços OU quando apropriado, mencione: ${pricingInfo}\n`
     prompt += `- Seja proativo em mencionar preços quando apresentar produtos/serviços\n`
   }
-  
+
   if (howToBuy && howToBuy.trim().length > 10) {
     prompt += `- Quando perguntarem como comprar/contratar, explique: ${howToBuy}\n`
   }
-  
+
   if (aiInstructions) {
     prompt += `\n- COMPORTAMENTO ESPECÍFICO SOLICITADO: ${aiInstructions}\n`
   }
-  
+
   prompt += `- Mantenha o foco em VENDER e APRESENTAR ${businessName} de forma positiva\n`
   prompt += `- Você está conversando com ${contactName}\n`
   prompt += `- Lembre-se: você é um VENDEDOR, não um assistente genérico\n`
@@ -4177,7 +4176,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- ⚠️ CRÍTICO: NUNCA peça ao cliente para usar formatos técnicos como "DD/MM/YYYY" ou "HH:MM" - você deve entender a linguagem natural dele\n`
   prompt += `- ⚠️ CRÍTICO: NUNCA seja repetitivo ou genérico ao responder sobre agendamento\n`
   prompt += `- ⚠️ CRÍTICO: Se o cliente acabou de confirmar um agendamento (disse "confirmar", "sim", "ok"), NÃO tente criar um novo agendamento. Apenas confirme que recebeu a confirmação e agradeça.\n`
-  
+
   prompt += `\n🎯 FLUXO DE AGENDAMENTO (SIGA EXATAMENTE ESTA SEQUÊNCIA):\n`
   prompt += `1. CLIENTE SOLICITA AGENDAMENTO:\n`
   prompt += `   - Cliente diz algo como "quero agendar X para amanhã às 3h" ou "pode ser às 4?"\n`
@@ -4202,7 +4201,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- ⚠️ CRÍTICO: Se você acabou de criar um agendamento pendente e o cliente responde qualquer coisa que não seja confirmação/cancelamento, NÃO crie outro agendamento. Aguarde a confirmação do primeiro.\n`
   prompt += `- ⚠️ CRÍTICO: Se o cliente sugerir outro horário DEPOIS de você ter criado um agendamento pendente, você DEVE criar um novo agendamento pendente com o novo horário (o sistema vai substituir automaticamente)\n`
   prompt += `- ⚠️ CRÍTICO: NUNCA crie múltiplos agendamentos pendentes para o mesmo cliente ao mesmo tempo\n`
-  
+
   prompt += `\n📋 FUNÇÕES DISPONÍVEIS PARA AGENDAMENTO:\n`
   prompt += `1. create_appointment - Cria um novo agendamento (verifica disponibilidade automaticamente)\n`
   prompt += `2. check_availability - Verifica se uma data tem horários disponíveis\n`
@@ -4210,7 +4209,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `4. get_user_appointments - Lista agendamentos do cliente\n`
   prompt += `5. update_appointment - Altera horário de um agendamento existente\n`
   prompt += `6. cancel_appointment - Cancela um agendamento existente\n`
-  
+
   prompt += `\n🎯 QUANDO USAR CADA FUNÇÃO (IMPORTANTE - LEIA COM ATENÇÃO):\n`
   prompt += `- ⚠️ CRÍTICO: Quando cliente perguntar "quais horários estão disponíveis?" ou "que horários tem?" → use APENAS get_available_times (NÃO use check_availability junto)\n`
   prompt += `- ⚠️ CRÍTICO: Quando cliente perguntar "tem horário disponível amanhã?" ou "está livre amanhã?" → use check_availability (NÃO use get_available_times junto)\n`
@@ -4220,7 +4219,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- Quando cliente quiser cancelar (ex: "quero cancelar", "desmarcar", "não vou mais") → use cancel_appointment\n`
   prompt += `- Quando cliente quiser agendar → use create_appointment (a função verifica disponibilidade automaticamente ANTES de criar)\n`
   prompt += `- ⚠️ REGRA DE OURO: Se você já chamou get_available_times e mostrou os horários disponíveis, NÃO chame check_availability depois. Use apenas UMA função por resposta!\n`
-  
+
   prompt += `\n💡 EXEMPLOS DE USO (SIGA EXATAMENTE):\n`
   prompt += `- Cliente: "Quais horários estão disponíveis amanhã?" ou "que horários tem amanhã?"\n`
   prompt += `  → Você: Chama APENAS get_available_times(date: "amanhã") e mostra os horários disponíveis\n`
@@ -4245,7 +4244,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- ⚠️ CRÍTICO: Se o cliente perguntar "tem horário disponível?", use check_availability e diga se há horários ocupados\n`
   prompt += `- ⚠️ CRÍTICO: Se você disse que um horário não está disponível, NÃO mostre esse mesmo horário como disponível depois!\n`
   prompt += `- ⚠️ CRÍTICO: Se você mostrou horários disponíveis, NÃO diga que algum deles está ocupado!\n`
-  
+
   prompt += `\n- Quando o cliente quiser agendar algo, marcar uma consulta, ou definir um horário, você deve ENTENDER a linguagem natural do cliente e converter internamente\n`
   prompt += `- PROCESSO DE COLETA (CONVERSA NATURAL):\n`
   prompt += `  1. Se o cliente já mencionou data E hora completa (ex: "amanhã às 7 da manhã", "próxima terça-feira às 3 da tarde"), você DEVE:\n`
@@ -4321,7 +4320,7 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   prompt += `- Varie suas respostas - não termine sempre com "Como posso te ajudar?"\n`
   prompt += `- Use linguagem natural, como se estivesse conversando com um amigo\n`
   prompt += `- Seja direto e objetivo, mas mantenha o tom ${toneDescription}\n`
-  
+
   // Template de primeira resposta OBRIGATÓRIO
   prompt += `\n\nTEMPLATE OBRIGATÓRIO PARA PRIMEIRA RESPOSTA:\n`
   if (howToBuy && howToBuy.trim().length > 10) {
@@ -4329,11 +4328,11 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
   } else {
     prompt += `1. Apresente-se: "Olá! Sou assistente da ${businessName}"\n`
   }
-  
+
   if (businessDescription) {
     prompt += `2. Explique o negócio: "${businessDescription.substring(0, 150)}"\n`
   }
-  
+
   if (services.length > 0) {
     prompt += `3. Liste os serviços em formato de lista:\n`
     services.forEach((s: string) => {
@@ -4346,11 +4345,11 @@ function buildAISystemPrompt(businessDetails: any, contactName: string): string 
       prompt += `   - ${p}\n`
     })
   }
-  
+
   if (pricingInfo) {
     prompt += `4. Mencione preços: "${pricingInfo}"\n`
   }
-  
+
   prompt += `5. Finalize: "Como posso te ajudar hoje?"\n`
   prompt += `\n⚠️ CRÍTICO: Use este template SEMPRE na primeira mensagem. NUNCA seja genérico como "teste de eco" ou "Como posso ajudar?" sem contexto!\n`
   prompt += `⚠️ PROIBIDO: Respostas genéricas sem mencionar ${businessName}, produtos ou serviços\n`
