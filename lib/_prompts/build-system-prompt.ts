@@ -55,7 +55,7 @@ export function buildSystemPrompt(
     casual: 'casual, descontraído e próximo',
     formal: 'formal, respeitoso e polido',
   }
-  
+
   const toneDescription = toneDescriptions[tone] || 'amigável e prestativo'
 
   // Obtém a data atual no fuso horário do Brasil
@@ -67,12 +67,12 @@ export function buildSystemPrompt(
     day: '2-digit',
     weekday: 'long',
   }).formatToParts(now)
-  
+
   const currentYear = parseInt(brazilianDateParts.find(p => p.type === 'year')!.value)
   const currentMonth = parseInt(brazilianDateParts.find(p => p.type === 'month')!.value) - 1 // JavaScript usa 0-11
   const currentDay = parseInt(brazilianDateParts.find(p => p.type === 'day')!.value)
   const currentWeekdayName = brazilianDateParts.find(p => p.type === 'weekday')!.value
-  
+
   // Converte nome do dia da semana para número (0=domingo, 1=segunda, etc)
   const weekdayMap: Record<string, number> = {
     'domingo': 0, 'sunday': 0,
@@ -84,9 +84,9 @@ export function buildSystemPrompt(
     'sábado': 6, 'sabado': 6, 'saturday': 6,
   }
   const currentWeekday = weekdayMap[currentWeekdayName.toLowerCase()] ?? new Date(currentYear, currentMonth, currentDay).getDay()
-  
+
   const currentDateFormatted = `${currentDay.toString().padStart(2, '0')}/${(currentMonth + 1).toString().padStart(2, '0')}/${currentYear}`
-  
+
   // Determina o que o negócio oferece
   const sellsProducts = businessType === 'products' || businessType === 'both'
   const sellsServices = businessType === 'services' || businessType === 'both'
@@ -95,7 +95,7 @@ export function buildSystemPrompt(
   // INÍCIO DO PROMPT - IDENTIDADE DA IA
   // ==========================================
   let prompt = `Você é um ASSISTENTE DE VENDAS da ${businessName}. Seu objetivo é APRESENTAR e VENDER os produtos/serviços do negócio de forma natural e persuasiva. Você NÃO é um chatbot genérico - você é um VENDEDOR especializado.\n\n`
-  
+
   // ==========================================
   // INFORMAÇÕES TEMPORAIS
   // ==========================================
@@ -205,7 +205,7 @@ export function buildSystemPrompt(
   prompt += `  - Item 1\n`
   prompt += `  - Item 2\n`
   prompt += `  - Item 3\n`
-  
+
   // Instruções sobre promoções
   prompt += `\n\n🎯 SISTEMA DE PROMOÇÕES E DESCONTOS:\n`
   prompt += `- Quando o cliente pedir desconto, disser que está caro, ou demonstrar interesse mas não comprar, você PODE oferecer promoções\n`
@@ -223,12 +223,23 @@ export function buildSystemPrompt(
   prompt += `- Se o cliente aceitar, forneça as informações de pagamento (Pix ou gateway)\n`
   prompt += `- Palavras-chave que indicam pedido de desconto: "desconto", "promoção", "mais barato", "está caro", "muito caro", "tem desconto", "negociar"\n`
 
+  // ==========================================
+  // INFERÊNCIA DE INTENÇÃO E FLUXO DE CONVERSA
+  // ==========================================
+  prompt += `\n\n🧠 INFERÊNCIA DE INTENÇÃO (MUITO IMPORTANTE):\n`
+  prompt += `- Você deve analisar o FLUXO da conversa para entender a intenção do usuário\n`
+  prompt += `- Se você perguntou "Deseja adicionar mais algo?" e o usuário respondeu "não", "só isso", "por enquanto é só", "tá bom assim" → A intenção é FINALIZAR O PEDIDO (checkout)\n`
+  prompt += `- Se o usuário diz "vou finalizar", "fechar pedido", "concluir" → A intenção é FINALIZAR O PEDIDO (checkout), NÃO encerrar o chat\n`
+  prompt += `- ⚠️ CRÍTICO: "Finalizar pedido" é DIFERENTE de "Encerrar conversa". Nunca chame close_chat quando o usuário quer comprar!\n`
+  prompt += `- Se o usuário acabou de adicionar um item e diz "só isso" → Ofereça o checkout imediatamente\n`
+
   // Instruções sobre carrinho de compras
   prompt += `\n\n🛒 SISTEMA DE CARRINHO DE COMPRAS:\n`
   prompt += `- Você pode permitir que o cliente adicione múltiplos produtos ao carrinho antes de finalizar o pedido\n`
   prompt += `- Use a função "add_to_cart" quando o cliente quiser adicionar um produto ao carrinho\n`
   prompt += `- Use a função "view_cart" quando o cliente perguntar sobre o carrinho, quiser ver os itens, ou quando perguntar "o que tem no carrinho"\n`
   prompt += `- Use a função "checkout" quando o cliente quiser finalizar o pedido, confirmar a compra, ou quando disser "quero fechar o pedido"\n`
+  prompt += `- ⚠️ GATILHOS DE CHECKOUT: "finalizar", "fechar", "concluir", "só isso", "por enquanto é só", "tá bom assim", "pode fechar", "acho que vou querer só isso"\n`
   prompt += `- ⚠️ IMPORTANTE: Antes de finalizar o pedido (checkout), pergunte se o cliente quer entrega ou retirada no estabelecimento\n`
   prompt += `- ⚠️ IMPORTANTE: Se o cliente escolher entrega, você DEVE coletar o endereço completo antes de finalizar\n`
   prompt += `- ⚠️ IMPORTANTE: Alguns produtos podem não permitir entrega ou retirada - verifique antes de oferecer\n`
@@ -236,7 +247,7 @@ export function buildSystemPrompt(
   prompt += `- Se o cliente quiser adicionar mais de um produto, sugira usar o carrinho para facilitar\n`
   prompt += `- Palavras-chave que indicam interesse em adicionar ao carrinho: "adicionar", "colocar no carrinho", "quero esse", "vou levar"\n`
   prompt += `- Palavras-chave que indicam interesse em ver o carrinho: "meu carrinho", "o que tem no carrinho", "itens do pedido", "resumo"\n`
-  prompt += `- Palavras-chave que indicam interesse em finalizar: "finalizar", "fechar pedido", "confirmar compra", "quero comprar", "fazer pedido"\n`
+  prompt += `- Palavras-chave que indicam interesse em finalizar: "finalizar", "fechar pedido", "confirmar compra", "quero comprar", "fazer pedido", "só isso", "não quero mais nada"\n`
 
   // Mensagem de boas-vindas personalizada
   if (howToBuy && howToBuy.trim().length > 10) {
@@ -295,7 +306,7 @@ export function buildSystemPrompt(
     prompt += `- Quando o cliente mencionar interesse em algum desses serviços, você DEVE oferecer agendamento de forma natural e proativa\n`
     prompt += `- Se o cliente perguntar sobre um serviço que requer agendamento, mencione que é necessário agendar e ofereça ajuda para marcar\n`
   }
-  
+
   prompt += `- ⚠️ CRÍTICO: Você tem AUTONOMIA COMPLETA para gerenciar agendamentos. Use as funções disponíveis de forma inteligente!\n`
   prompt += `- ⚠️ CRÍTICO: NUNCA peça ao cliente para usar formatos técnicos como "DD/MM/YYYY" ou "HH:MM" - você deve entender a linguagem natural dele\n`
   prompt += `- ⚠️ CRÍTICO: NUNCA seja repetitivo ou genérico ao responder sobre agendamento\n`

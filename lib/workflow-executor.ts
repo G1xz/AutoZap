@@ -3822,7 +3822,7 @@ async function executeAIOnlyWorkflow(
         },
         {
           name: 'close_chat',
-          description: 'Encerra a conversa com o cliente. Use quando o cliente pedir para encerrar o chat, finalizar a conversa, ou quando a conversa naturalmente chegou ao fim e o cliente não precisa de mais nada. Você também pode perguntar ao cliente se ele quer encerrar o chat quando apropriado.',
+          description: 'Encerra a conversa com o cliente. Use APENAS quando o cliente pedir explicitamente para encerrar o chat (ex: "tchau", "até logo", "encerrar atendimento") ou quando a conversa já foi concluída e o cliente se despediu. ⚠️ IMPORTANTE: NÃO use esta função quando o cliente disser "finalizar pedido", "fechar compra" ou "só isso" - nesses casos, use a função CHECKOUT.',
           parameters: {
             type: 'object',
             properties: {
@@ -3854,7 +3854,7 @@ async function executeAIOnlyWorkflow(
         },
         {
           name: 'add_to_cart',
-          description: 'Adiciona um produto ou serviço ao carrinho de compras. Use quando o cliente quiser adicionar algo ao carrinho antes de finalizar o pedido. Permite que o cliente adicione múltiplos itens antes de fazer o checkout.',
+          description: 'Adiciona um produto ou serviço ao carrinho de compras. Use quando o cliente quiser adicionar algo ao carrinho. APÓS adicionar, a IA deve perguntar: "Deseja adicionar mais algo ou finalizar o pedido?". Se o cliente responder "não", "só isso" ou "finalizar", a IA deve chamar a função CHECKOUT.',
           parameters: {
             type: 'object',
             properties: {
@@ -3894,7 +3894,7 @@ async function executeAIOnlyWorkflow(
         },
         {
           name: 'checkout',
-          description: 'Finaliza o pedido e cria a ordem de compra. Use quando o cliente quiser finalizar o pedido, confirmar a compra, ou quando disser "quero fechar o pedido". Coleta informações de entrega/retirada e processa o pagamento.',
+          description: 'Finaliza o pedido e cria a ordem de compra. Use quando o cliente quiser finalizar o pedido, confirmar a compra, ou quando disser "quero fechar o pedido", "só isso", "por enquanto é só", "tá bom assim", "pode fechar". Coleta informações de entrega/retirada e processa o pagamento.',
           parameters: {
             type: 'object',
             properties: {
