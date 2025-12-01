@@ -3639,24 +3639,58 @@ async function executeAIOnlyWorkflow(
             args.notes
           )
 
-          let message = `✅ **Pedido confirmado!**\n\n`
-          message += `📦 Tipo: ${args.delivery_type === 'delivery' ? 'Entrega' : 'Retirada no estabelecimento'}\n`
-          if (args.delivery_type === 'delivery' && args.delivery_address) {
-            message += `📍 Endereço: ${args.delivery_address}\n`
+          // Calcula o total
+          const totalAmount = cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+          const formattedTotal = totalAmount.toFixed(2).replace('.', ',')
+
+          // Monta mensagem de confirmação com resumo detalhado
+          let message = `✅ *Pedido confirmado com sucesso!*\\n\\n`
+
+          // Lista de itens
+          message += `📦 *ITENS DO PEDIDO:*\\n`
+          cart.items.forEach((item) => {
+            const itemTotal = item.quantity * item.unitPrice
+            const formattedUnitPrice = item.unitPrice.toFixed(2).replace('.', ',')
+            const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
+            message += `• ${item.quantity}x ${item.productName} - R$ ${formattedUnitPrice} cada = *R$ ${formattedItemTotal}*\\n`
+            if (item.notes) {
+              message += `  _Obs: ${item.notes}_\\n`
+            }
+          })
+
+          message += `\\n💰 *TOTAL: R$ ${formattedTotal}*\\n\\n`
+
+          // Informações de entrega
+          if (args.delivery_type === 'delivery') {
+            message += `🚚 *Tipo:* Entrega\\n`
+            if (args.delivery_address) {
+              message += `📍 *Endereço:* ${args.delivery_address}\\n`
+            }
+          } else {
+            message += `🏪 *Tipo:* Retirada no estabelecimento\\n`
           }
-          message += `💰 Total: R$ ${cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0).toFixed(2).replace('.', ',')}\n\n`
+
+          if (args.notes) {
+            message += `📝 *Observações:* ${args.notes}\\n`
+          }
+
+          message += `\\n`
 
           // Adiciona informações de pagamento se houver
           if (result.paymentLink) {
-            message += `💳 **Pagamento:**\n`
-            message += `Clique no link para pagar: ${result.paymentLink}\n\n`
+            message += `💳 *PAGAMENTO:*\\n`
+            message += `Clique no link para pagar: ${result.paymentLink}\\n\\n`
           } else if (result.paymentPixKey) {
-            message += `💳 **Pagamento via Pix:**\n`
-            message += `Chave Pix: ${result.paymentPixKey}\n`
-            message += `Valor: R$ ${cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0).toFixed(2).replace('.', ',')}\n\n`
+            message += `💳 *PAGAMENTO VIA PIX:*\\n`
+            message += `Chave Pix: \`${result.paymentPixKey}\`\\n`
+            message += `Valor: R$ ${formattedTotal}\\n\\n`
           } else {
-            message += `💳 **Pagamento:**\n`
-            message += `Você pode pagar na retirada ou no momento da entrega.\n\n`
+            message += `💳 *PAGAMENTO:*\\n`
+            if (args.delivery_type === 'delivery') {
+              message += `Você pode pagar no momento da entrega.\\n\\n`
+            } else {
+              message += `Você pode pagar na retirada.\\n\\n`
+            }
           }
 
           message += `Obrigado pela preferência! 🎉`

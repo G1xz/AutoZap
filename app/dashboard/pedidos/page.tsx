@@ -1,6 +1,6 @@
-import ProductsManager from '@/components/ProductsManager'
+import OrdersManager from '@/components/OrdersManager'
 
 export default function PedidosPage() {
-  return <ProductsManager />
+  return <OrdersManager />
 }
 
