@@ -898,17 +898,22 @@ export async function processAppointmentConfirmation(
     .replace(/[\u0300-\u036f]/g, '') // Remove acentos
 
   // CRÍTICO: Verifica se o usuário quer encerrar o chat ANTES de verificar agendamento pendente
+  // ⚠️ IMPORTANTE: NÃO confundir "finalizar pedido" com "encerrar conversa"!
   const wantsToCloseChat =
-    userMessageLower.includes('encerrar') ||
-    userMessageLower.includes('fechar') ||
-    userMessageLower.includes('finalizar') ||
-    userMessageLower.includes('terminar') ||
-    normalizedMessage.includes('encerrar') ||
-    normalizedMessage.includes('fechar') ||
-    normalizedMessage.includes('finalizar') ||
-    normalizedMessage.includes('terminar') ||
-    (userMessageLower.includes('chat') && (userMessageLower.includes('encerrar') || userMessageLower.includes('fechar'))) ||
-    (userMessageLower.includes('conversa') && (userMessageLower.includes('encerrar') || userMessageLower.includes('fechar')))
+    // Detecta explicitamente "encerrar chat/conversa"
+    (userMessageLower.includes('encerrar') && (userMessageLower.includes('chat') || userMessageLower.includes('conversa') || userMessageLower.includes('atendimento'))) ||
+    (normalizedMessage.includes('encerrar') && (normalizedMessage.includes('chat') || normalizedMessage.includes('conversa') || normalizedMessage.includes('atendimento'))) ||
+    // Detecta explicitamente "fechar chat/conversa"
+    (userMessageLower.includes('fechar') && (userMessageLower.includes('chat') || userMessageLower.includes('conversa') || userMessageLower.includes('atendimento'))) ||
+    (normalizedMessage.includes('fechar') && (normalizedMessage.includes('chat') || normalizedMessage.includes('conversa') || normalizedMessage.includes('atendimento'))) ||
+    // Detecta "tchau", "até logo", "obrigado e tchau" como intenção de encerrar
+    userMessageLower.includes('tchau') ||
+    userMessageLower.includes('até logo') ||
+    userMessageLower.includes('ate logo') ||
+    (userMessageLower.includes('obrigado') && (userMessageLower.includes('tchau') || userMessageLower.includes('até') || userMessageLower.includes('ate'))) ||
+    // Detecta "terminar" apenas se for sobre chat/conversa/atendimento
+    (userMessageLower.includes('terminar') && (userMessageLower.includes('chat') || userMessageLower.includes('conversa') || userMessageLower.includes('atendimento'))) ||
+    (normalizedMessage.includes('terminar') && (normalizedMessage.includes('chat') || normalizedMessage.includes('conversa') || normalizedMessage.includes('atendimento')))
 
   // Verifica se está aguardando confirmação de encerramento
   const conversationStatus = await prisma.conversationStatus.findUnique({
