@@ -3836,6 +3836,7 @@ async function executeAIOnlyWorkflow(
             required: [],
           },
         },
+        /*
         {
           name: 'close_chat',
           description: 'Encerra a conversa com o cliente. Use APENAS quando o cliente pedir explicitamente para encerrar o chat (ex: "tchau", "até logo", "encerrar atendimento") ou quando a conversa já foi concluída e o cliente se despediu. ⚠️ IMPORTANTE: NÃO use esta função quando o cliente disser "finalizar pedido", "fechar compra" ou "só isso" - nesses casos, use a função CHECKOUT.',
@@ -3850,6 +3851,7 @@ async function executeAIOnlyWorkflow(
             required: [],
           },
         },
+        */
         {
           name: 'offer_promotion',
           description: 'Oferece uma promoção/desconto para um produto ou serviço quando o cliente pedir desconto, achar caro, ou demonstrar interesse mas não comprar. Use quando o cliente pedir desconto, disser que está caro, ou quando quiser oferecer uma oportunidade especial.',
