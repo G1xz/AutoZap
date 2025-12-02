@@ -52,6 +52,12 @@ function normalizeContactNumber(contactNumber: string): string {
 export async function getCart(instanceId: string, contactNumber: string): Promise<Cart> {
   const normalizedContact = normalizeContactNumber(contactNumber)
   
+  // Log detalhado para debug
+  console.log(`🛒 [getCart] ========== BUSCANDO CARRINHO ==========`)
+  console.log(`   instanceId: ${instanceId}`)
+  console.log(`   contactNumber original: "${contactNumber}"`)
+  console.log(`   contactNumber normalizado: "${normalizedContact}"`)
+  
   // Busca instância para obter userId
   const instance = await prisma.whatsAppInstance.findUnique({
     where: { id: instanceId },
@@ -61,6 +67,15 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
   if (!instance) {
     throw new Error(`Instância ${instanceId} não encontrada`)
   }
+  
+  // Busca TODOS os carrinhos desta instância para debug
+  const allCarts = await prisma.cart.findMany({
+    where: { instanceId },
+  })
+  console.log(`🛒 [getCart] Total de carrinhos para esta instância: ${allCarts.length}`)
+  allCarts.forEach((c, i) => {
+    console.log(`   [${i + 1}] contactNumber: "${c.contactNumber}", Itens: ${c.items}, ID: ${c.id}`)
+  })
   
   // Busca carrinho no banco
   let cartRecord = await prisma.cart.findUnique({
@@ -73,6 +88,7 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
   })
   
   if (!cartRecord) {
+    console.log(`🛒 [getCart] Carrinho NÃO encontrado, criando novo...`)
     // Cria novo carrinho
     cartRecord = await prisma.cart.create({
       data: {
@@ -82,12 +98,14 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
         items: JSON.stringify([]),
       },
     })
+    console.log(`🛒 [getCart] ✅ Carrinho criado no banco: ID=${cartRecord.id}`)
     log.debug('Carrinho criado no banco', { 
       instanceId, 
       contactNumber: normalizedContact,
       cartId: cartRecord.id,
     })
   } else {
+    console.log(`🛒 [getCart] ✅ Carrinho encontrado no banco: ID=${cartRecord.id}`)
     log.debug('Carrinho encontrado no banco', { 
       instanceId, 
       contactNumber: normalizedContact,
@@ -99,7 +117,12 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
   let items: CartItem[] = []
   try {
     items = JSON.parse(cartRecord.items) as CartItem[]
+    console.log(`🛒 [getCart] Itens parseados: ${items.length} itens`)
+    items.forEach((item, i) => {
+      console.log(`   [${i + 1}] ${item.productName} x${item.quantity} - R$ ${item.unitPrice}`)
+    })
   } catch (error) {
+    console.error(`🛒 [getCart] ❌ Erro ao fazer parse dos itens:`, error)
     log.error('Erro ao fazer parse dos itens do carrinho', { cartId: cartRecord.id, error })
     items = []
   }
@@ -118,7 +141,13 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
 async function saveCart(cart: Cart, userId: string): Promise<void> {
   const itemsJson = JSON.stringify(cart.items)
   
-  await prisma.cart.upsert({
+  console.log(`🛒 [saveCart] ========== SALVANDO CARRINHO ==========`)
+  console.log(`   instanceId: ${cart.instanceId}`)
+  console.log(`   contactNumber: "${cart.contactNumber}"`)
+  console.log(`   itemCount: ${cart.items.length}`)
+  console.log(`   itemsJson: ${itemsJson.substring(0, 200)}...`)
+  
+  const result = await prisma.cart.upsert({
     where: {
       instanceId_contactNumber: {
         instanceId: cart.instanceId,
@@ -137,10 +166,22 @@ async function saveCart(cart: Cart, userId: string): Promise<void> {
     },
   })
   
+  console.log(`🛒 [saveCart] ✅ Carrinho salvo: ID=${result.id}, Itens=${cart.items.length}`)
+  
+  // Verifica se foi salvo corretamente
+  const verify = await prisma.cart.findUnique({
+    where: { id: result.id },
+  })
+  if (verify) {
+    const verifyItems = JSON.parse(verify.items) as CartItem[]
+    console.log(`🛒 [saveCart] ✅ Verificação: ${verifyItems.length} itens no banco`)
+  }
+  
   log.debug('Carrinho salvo no banco', { 
     instanceId: cart.instanceId,
     contactNumber: cart.contactNumber,
     itemCount: cart.items.length,
+    cartId: result.id,
   })
 }
 

@@ -1545,6 +1545,13 @@ async function executeAIOnlyWorkflow(
   contactName?: string
 ): Promise<void> {
   try {
+    // Log do número recebido
+    console.log(`🤖 [executeAIOnlyWorkflow] ========== INICIANDO WORKFLOW IA ==========`)
+    console.log(`   instanceId: ${instanceId}`)
+    console.log(`   contactNumber recebido: "${contactNumber}"`)
+    console.log(`   contactNumber normalizado: "${contactNumber.replace(/\D/g, '')}"`)
+    console.log(`   userMessage: "${userMessage}"`)
+    
     // Busca informações do contato
     let contactNameFinal = contactName || undefined
     if (!contactNameFinal) {
