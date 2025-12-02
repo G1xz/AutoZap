@@ -3504,6 +3504,16 @@ async function executeAIOnlyWorkflow(
           const quantity = args.quantity || 1
           const totalPrice = unitPrice * quantity
 
+          // Log antes de adicionar
+          log.debug('Adicionando ao carrinho', {
+            instanceId,
+            normalizedContactNumber,
+            productId: args.product_id,
+            productName: args.product_name,
+            quantity,
+            unitPrice,
+          })
+
           const cart = addToCart(instanceId, normalizedContactNumber, {
             productId: args.product_id,
             productType: args.product_type as 'service' | 'catalog',
@@ -3511,6 +3521,18 @@ async function executeAIOnlyWorkflow(
             quantity,
             unitPrice,
             notes: args.notes,
+          })
+
+          // Log após adicionar
+          log.debug('Item adicionado com sucesso', {
+            instanceId,
+            normalizedContactNumber,
+            cartItemCount: cart.items.length,
+            cartItems: cart.items.map(i => ({
+              productId: i.productId,
+              productName: i.productName,
+              quantity: i.quantity,
+            })),
           })
 
           const itemCount = cart.items.length
@@ -3591,7 +3613,26 @@ async function executeAIOnlyWorkflow(
           // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
           const normalizedContactNumber = contactNumber.replace(/\D/g, '')
 
+          // Log antes de buscar carrinho
+          log.debug('Buscando carrinho para checkout', {
+            instanceId,
+            originalContactNumber: contactNumber,
+            normalizedContactNumber,
+          })
+
           const cart = getCart(instanceId, normalizedContactNumber)
+
+          // Log do carrinho encontrado
+          log.debug('Carrinho encontrado no checkout', {
+            instanceId,
+            normalizedContactNumber,
+            itemCount: cart.items.length,
+            items: cart.items.map(i => ({
+              productId: i.productId,
+              productName: i.productName,
+              quantity: i.quantity,
+            })),
+          })
 
           if (cart.items.length === 0) {
             return {
