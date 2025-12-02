@@ -29,8 +29,8 @@ const carts = new Map<string, Cart>()
  * Obtém ou cria carrinho para um contato
  */
 export function getCart(instanceId: string, contactNumber: string): Cart {
-  const key = `${instanceId}-${contactNumber}`
   const normalizedContact = contactNumber.replace(/\D/g, '')
+  const key = `${instanceId}-${normalizedContact}`
   
   let cart = carts.get(key)
   
