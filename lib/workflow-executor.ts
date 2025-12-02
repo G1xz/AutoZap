@@ -3514,7 +3514,7 @@ async function executeAIOnlyWorkflow(
             unitPrice,
           })
 
-          const cart = addToCart(instanceId, normalizedContactNumber, {
+          const cart = await addToCart(instanceId, normalizedContactNumber, {
             productId: args.product_id,
             productType: args.product_type as 'service' | 'catalog',
             productName: args.product_name,
@@ -3562,7 +3562,7 @@ async function executeAIOnlyWorkflow(
           // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
           const normalizedContactNumber = contactNumber.replace(/\D/g, '')
 
-          const cart = getCart(instanceId, normalizedContactNumber)
+          const cart = await getCart(instanceId, normalizedContactNumber)
 
           if (cart.items.length === 0) {
             return {
@@ -3620,7 +3620,7 @@ async function executeAIOnlyWorkflow(
             normalizedContactNumber,
           })
 
-          const cart = getCart(instanceId, normalizedContactNumber)
+          const cart = await getCart(instanceId, normalizedContactNumber)
 
           // Log do carrinho encontrado
           log.debug('Carrinho encontrado no checkout', {

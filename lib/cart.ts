@@ -1,6 +1,6 @@
 /**
  * Gerenciamento de carrinho de compras consolidado
- * Estrutura robusta inspirada em padrões de arquitetura limpa
+ * Persistido no banco de dados para garantir que não seja perdido entre requisições
  * 
  * IMPORTANTE: Todas as funções normalizam o número de contato internamente
  * para garantir consistência na chave do carrinho
@@ -41,71 +41,106 @@ function normalizeContactNumber(contactNumber: string): string {
   return contactNumber.replace(/\D/g, '')
 }
 
-/**
- * Gera chave única do carrinho
- */
-function getCartKey(instanceId: string, contactNumber: string): string {
-  const normalized = normalizeContactNumber(contactNumber)
-  return `${instanceId}-${normalized}`
-}
-
 // ============================================================================
-// ARMAZENAMENTO EM MEMÓRIA
-// ============================================================================
-
-// Armazena carrinhos em memória
-// TODO: Em produção, considerar Redis ou banco de dados para persistência
-const carts = new Map<string, Cart>()
-
-// ============================================================================
-// OPERAÇÕES BÁSICAS DO CARRINHO
+// OPERAÇÕES BÁSICAS DO CARRINHO (PERSISTIDAS NO BANCO)
 // ============================================================================
 
 /**
  * Obtém ou cria carrinho para um contato
- * Sempre normaliza o número de contato internamente
+ * Busca do banco de dados para garantir persistência
  */
-export function getCart(instanceId: string, contactNumber: string): Cart {
+export async function getCart(instanceId: string, contactNumber: string): Promise<Cart> {
   const normalizedContact = normalizeContactNumber(contactNumber)
-  const key = getCartKey(instanceId, normalizedContact)
   
-  let cart = carts.get(key)
+  // Busca instância para obter userId
+  const instance = await prisma.whatsAppInstance.findUnique({
+    where: { id: instanceId },
+    select: { userId: true },
+  })
   
-  if (!cart) {
-    cart = {
-      instanceId,
-      contactNumber: normalizedContact,
-      items: [],
-      updatedAt: new Date(),
-    }
-    carts.set(key, cart)
-    log.debug('Carrinho criado', { 
+  if (!instance) {
+    throw new Error(`Instância ${instanceId} não encontrada`)
+  }
+  
+  // Busca carrinho no banco
+  let cartRecord = await prisma.cart.findUnique({
+    where: {
+      instanceId_contactNumber: {
+        instanceId,
+        contactNumber: normalizedContact,
+      },
+    },
+  })
+  
+  if (!cartRecord) {
+    // Cria novo carrinho
+    cartRecord = await prisma.cart.create({
+      data: {
+        userId: instance.userId,
+        instanceId,
+        contactNumber: normalizedContact,
+        items: JSON.stringify([]),
+      },
+    })
+    log.debug('Carrinho criado no banco', { 
       instanceId, 
-      contactNumber: normalizedContact, 
-      key 
+      contactNumber: normalizedContact,
+      cartId: cartRecord.id,
     })
   } else {
-    log.debug('Carrinho encontrado', { 
+    log.debug('Carrinho encontrado no banco', { 
       instanceId, 
-      contactNumber: normalizedContact, 
-      itemCount: cart.items.length 
+      contactNumber: normalizedContact,
+      cartId: cartRecord.id,
     })
   }
   
-  return cart
+  // Parse dos itens do JSON
+  let items: CartItem[] = []
+  try {
+    items = JSON.parse(cartRecord.items) as CartItem[]
+  } catch (error) {
+    log.error('Erro ao fazer parse dos itens do carrinho', { cartId: cartRecord.id, error })
+    items = []
+  }
+  
+  return {
+    instanceId: cartRecord.instanceId,
+    contactNumber: cartRecord.contactNumber,
+    items,
+    updatedAt: cartRecord.updatedAt,
+  }
 }
 
 /**
- * Salva carrinho no armazenamento
- * Garante que a chave seja sempre normalizada
+ * Salva carrinho no banco de dados
  */
-function saveCart(cart: Cart): void {
-  const key = getCartKey(cart.instanceId, cart.contactNumber)
-  cart.updatedAt = new Date()
-  carts.set(key, cart)
-  log.debug('Carrinho salvo', { 
-    key, 
-    itemCount: cart.items.length 
+async function saveCart(cart: Cart, userId: string): Promise<void> {
+  const itemsJson = JSON.stringify(cart.items)
+  
+  await prisma.cart.upsert({
+    where: {
+      instanceId_contactNumber: {
+        instanceId: cart.instanceId,
+        contactNumber: cart.contactNumber,
+      },
+    },
+    update: {
+      items: itemsJson,
+      updatedAt: new Date(),
+    },
+    create: {
+      userId,
+      instanceId: cart.instanceId,
+      contactNumber: cart.contactNumber,
+      items: itemsJson,
+    },
+  })
+  
+  log.debug('Carrinho salvo no banco', { 
+    instanceId: cart.instanceId,
+    contactNumber: cart.contactNumber,
+    itemCount: cart.items.length,
   })
 }
 
@@ -113,11 +148,11 @@ function saveCart(cart: Cart): void {
  * Adiciona item ao carrinho
  * Valida dados e garante consistência
  */
-export function addToCart(
+export async function addToCart(
   instanceId: string,
   contactNumber: string,
   item: CartItem
-): Cart {
+): Promise<Cart> {
   // Validação de entrada
   if (!item.productId || !item.productName) {
     throw new Error('ID e nome do produto são obrigatórios')
@@ -133,7 +168,17 @@ export function addToCart(
 
   // Normaliza número e obtém carrinho
   const normalizedContact = normalizeContactNumber(contactNumber)
-  const cart = getCart(instanceId, normalizedContact)
+  const cart = await getCart(instanceId, normalizedContact)
+  
+  // Busca userId da instância
+  const instance = await prisma.whatsAppInstance.findUnique({
+    where: { id: instanceId },
+    select: { userId: true },
+  })
+  
+  if (!instance) {
+    throw new Error(`Instância ${instanceId} não encontrada`)
+  }
   
   // Verifica se o produto já está no carrinho
   const existingIndex = cart.items.findIndex(
@@ -160,8 +205,8 @@ export function addToCart(
     })
   }
   
-  // Salva carrinho atualizado
-  saveCart(cart)
+  // Salva carrinho atualizado no banco
+  await saveCart(cart, instance.userId)
   
   log.debug('Item adicionado ao carrinho', {
     instanceId,
@@ -178,14 +223,23 @@ export function addToCart(
 /**
  * Remove item do carrinho
  */
-export function removeFromCart(
+export async function removeFromCart(
   instanceId: string,
   contactNumber: string,
   productId: string,
   productType: 'service' | 'catalog'
-): Cart {
+): Promise<Cart> {
   const normalizedContact = normalizeContactNumber(contactNumber)
-  const cart = getCart(instanceId, normalizedContact)
+  const cart = await getCart(instanceId, normalizedContact)
+  
+  const instance = await prisma.whatsAppInstance.findUnique({
+    where: { id: instanceId },
+    select: { userId: true },
+  })
+  
+  if (!instance) {
+    throw new Error(`Instância ${instanceId} não encontrada`)
+  }
   
   const initialCount = cart.items.length
   cart.items = cart.items.filter(
@@ -193,7 +247,7 @@ export function removeFromCart(
   )
   
   if (cart.items.length < initialCount) {
-    saveCart(cart)
+    await saveCart(cart, instance.userId)
     log.debug('Item removido do carrinho', {
       productId,
       productType,
@@ -207,19 +261,28 @@ export function removeFromCart(
 /**
  * Atualiza quantidade de um item no carrinho
  */
-export function updateCartItemQuantity(
+export async function updateCartItemQuantity(
   instanceId: string,
   contactNumber: string,
   productId: string,
   productType: 'service' | 'catalog',
   quantity: number
-): Cart {
+): Promise<Cart> {
   if (quantity <= 0) {
     return removeFromCart(instanceId, contactNumber, productId, productType)
   }
   
   const normalizedContact = normalizeContactNumber(contactNumber)
-  const cart = getCart(instanceId, normalizedContact)
+  const cart = await getCart(instanceId, normalizedContact)
+  
+  const instance = await prisma.whatsAppInstance.findUnique({
+    where: { id: instanceId },
+    select: { userId: true },
+  })
+  
+  if (!instance) {
+    throw new Error(`Instância ${instanceId} não encontrada`)
+  }
   
   const item = cart.items.find(
     (i) => i.productId === productId && i.productType === productType
@@ -227,7 +290,7 @@ export function updateCartItemQuantity(
   
   if (item) {
     item.quantity = quantity
-    saveCart(cart)
+    await saveCart(cart, instance.userId)
     log.debug('Quantidade atualizada', {
       productId,
       newQuantity: quantity,
@@ -240,12 +303,17 @@ export function updateCartItemQuantity(
 /**
  * Limpa o carrinho completamente
  */
-export function clearCart(instanceId: string, contactNumber: string): void {
+export async function clearCart(instanceId: string, contactNumber: string): Promise<void> {
   const normalizedContact = normalizeContactNumber(contactNumber)
-  const key = getCartKey(instanceId, normalizedContact)
-  const deleted = carts.delete(key)
   
-  if (deleted) {
+  const deleted = await prisma.cart.deleteMany({
+    where: {
+      instanceId,
+      contactNumber: normalizedContact,
+    },
+  })
+  
+  if (deleted.count > 0) {
     log.debug('Carrinho limpo', { instanceId, contactNumber: normalizedContact })
   }
 }
@@ -279,7 +347,7 @@ export async function createOrderFromCart(
 ): Promise<{ orderId: string; paymentLink?: string; paymentPixKey?: string }> {
   // Normaliza número e obtém carrinho
   const normalizedContact = normalizeContactNumber(contactNumber)
-  const cart = getCart(instanceId, normalizedContact)
+  const cart = await getCart(instanceId, normalizedContact)
   
   // Validação
   if (cart.items.length === 0) {
@@ -378,7 +446,7 @@ export async function createOrderFromCart(
   }
   
   // Limpa o carrinho após criar o pedido com sucesso
-  clearCart(instanceId, normalizedContact)
+  await clearCart(instanceId, normalizedContact)
   
   // Marca produtos como convertidos (não bloqueia se falhar)
   for (const item of cart.items) {

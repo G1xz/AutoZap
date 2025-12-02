@@ -29,6 +29,7 @@ model User {
   pixKeys             BusinessPixKey[]
   productInterests    ProductInterest[]
   orders              Order[]
+  carts               Cart[]
 }
 
 model WhatsAppInstance {
@@ -60,6 +61,7 @@ model WhatsAppInstance {
   contacts             Contact[]
   productInterests     ProductInterest[]
   orders               Order[]
+  carts                Cart[]
 }
 
 model Message {
@@ -406,5 +408,24 @@ model OrderItem {
 
   @@index([orderId])
   @@index([productId, productType])
+}
+
+// Carrinho de compras (persistido no banco para evitar perda entre requisições)
+model Cart {
+  id            String   @id @default(cuid())
+  userId        String
+  instanceId    String
+  contactNumber String   // Sempre normalizado (apenas números)
+  items         String   // JSON array de CartItem[]
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, contactNumber]) // Um carrinho por contato por instância
+  @@index([userId])
+  @@index([instanceId, contactNumber])
+  @@index([updatedAt]) // Para limpar carrinhos antigos
 }
 
