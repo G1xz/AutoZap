@@ -3460,8 +3460,6 @@ async function executeAIOnlyWorkflow(
 
           // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
           const normalizedContactNumber = contactNumber.replace(/\D/g, '')
-          console.log(`🛒 [add_to_cart] contactNumber original: "${contactNumber}"`)
-          console.log(`🛒 [add_to_cart] contactNumber normalizado: "${normalizedContactNumber}"`)
 
           if (!args.product_id || !args.product_type || !args.product_name) {
             return {
@@ -3526,9 +3524,10 @@ async function executeAIOnlyWorkflow(
           }
         } catch (error) {
           log.error('Erro ao adicionar ao carrinho', error)
+          console.error('Erro detalhado ao adicionar ao carrinho:', error)
           return {
             success: false,
-            error: 'Erro ao adicionar produto ao carrinho.',
+            error: `Erro ao adicionar produto ao carrinho: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
           }
         }
       }
@@ -3540,11 +3539,8 @@ async function executeAIOnlyWorkflow(
 
           // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
           const normalizedContactNumber = contactNumber.replace(/\D/g, '')
-          console.log(`🛒 [view_cart] contactNumber original: "${contactNumber}"`)
-          console.log(`🛒 [view_cart] contactNumber normalizado: "${normalizedContactNumber}"`)
 
           const cart = getCart(instanceId, normalizedContactNumber)
-          console.log(`🛒 [view_cart] Itens no carrinho: ${cart.items.length}`)
 
           if (cart.items.length === 0) {
             return {
@@ -3594,11 +3590,8 @@ async function executeAIOnlyWorkflow(
 
           // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
           const normalizedContactNumber = contactNumber.replace(/\D/g, '')
-          console.log(`🛒 [checkout] contactNumber original: "${contactNumber}"`)
-          console.log(`🛒 [checkout] contactNumber normalizado: "${normalizedContactNumber}"`)
 
           const cart = getCart(instanceId, normalizedContactNumber)
-          console.log(`🛒 [checkout] Itens no carrinho: ${cart.items.length}`)
 
           if (cart.items.length === 0) {
             return {
@@ -4031,13 +4024,27 @@ async function executeAIOnlyWorkflow(
     console.log(`🤖 Resposta de IA autônoma gerada para ${contactNumber}`)
   } catch (error) {
     console.error('Erro ao executar workflow IA-only:', error)
+    log.error('Erro ao executar workflow IA-only', error)
+
+    // Log detalhado do erro
+    if (error instanceof Error) {
+      console.error('Erro detalhado:', {
+        message: error.message,
+        stack: error.stack,
+        name: error.name,
+      })
+    }
 
     // Envia mensagem de erro amigável
     const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Nossa equipe foi notificada.'
     const contactKey = `${instanceId}-${contactNumber}`
-    await queueMessage(contactKey, async () => {
-      await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
-    })
+    try {
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+      })
+    } catch (sendError) {
+      console.error('Erro ao enviar mensagem de erro:', sendError)
+    }
   }
 }
 
