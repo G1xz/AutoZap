@@ -32,9 +32,14 @@ export function getCart(instanceId: string, contactNumber: string): Cart {
   const normalizedContact = contactNumber.replace(/\D/g, '')
   const key = `${instanceId}-${normalizedContact}`
   
+  console.log(`🛒 [getCart] contactNumber recebido: "${contactNumber}"`)
+  console.log(`🛒 [getCart] contactNumber normalizado: "${normalizedContact}"`)
+  console.log(`🛒 [getCart] chave do carrinho: "${key}"`)
+  
   let cart = carts.get(key)
   
   if (!cart) {
+    console.log(`🛒 [getCart] Carrinho não encontrado, criando novo`)
     cart = {
       instanceId,
       contactNumber: normalizedContact,
@@ -42,6 +47,8 @@ export function getCart(instanceId: string, contactNumber: string): Cart {
       updatedAt: new Date(),
     }
     carts.set(key, cart)
+  } else {
+    console.log(`🛒 [getCart] Carrinho encontrado com ${cart.items.length} itens`)
   }
   
   return cart
@@ -55,6 +62,13 @@ export function addToCart(
   contactNumber: string,
   item: CartItem
 ): Cart {
+  const normalizedContact = contactNumber.replace(/\D/g, '')
+  const key = `${instanceId}-${normalizedContact}`
+  
+  console.log(`🛒 [addToCart] contactNumber recebido: "${contactNumber}"`)
+  console.log(`🛒 [addToCart] contactNumber normalizado: "${normalizedContact}"`)
+  console.log(`🛒 [addToCart] chave do carrinho: "${key}"`)
+  
   const cart = getCart(instanceId, contactNumber)
   
   // Verifica se o produto já está no carrinho
@@ -68,13 +82,16 @@ export function addToCart(
     if (item.notes) {
       cart.items[existingIndex].notes = item.notes
     }
+    console.log(`🛒 [addToCart] Item existente atualizado, quantidade agora: ${cart.items[existingIndex].quantity}`)
   } else {
     // Adiciona novo item
     cart.items.push(item)
+    console.log(`🛒 [addToCart] Novo item adicionado: ${item.productName} (qtd: ${item.quantity})`)
   }
   
   cart.updatedAt = new Date()
-  carts.set(`${instanceId}-${contactNumber.replace(/\D/g, '')}`, cart)
+  carts.set(key, cart)
+  console.log(`🛒 [addToCart] Carrinho salvo com ${cart.items.length} itens`)
   
   log.debug('Item adicionado ao carrinho', {
     instanceId,

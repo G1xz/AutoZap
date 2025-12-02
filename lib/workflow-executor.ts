@@ -3458,6 +3458,11 @@ async function executeAIOnlyWorkflow(
         try {
           const { addToCart, getCart } = await import('./cart')
 
+          // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
+          const normalizedContactNumber = contactNumber.replace(/\D/g, '')
+          console.log(`🛒 [add_to_cart] contactNumber original: "${contactNumber}"`)
+          console.log(`🛒 [add_to_cart] contactNumber normalizado: "${normalizedContactNumber}"`)
+
           if (!args.product_id || !args.product_type || !args.product_name) {
             return {
               success: false,
@@ -3501,7 +3506,7 @@ async function executeAIOnlyWorkflow(
           const quantity = args.quantity || 1
           const totalPrice = unitPrice * quantity
 
-          const cart = addToCart(instanceId, contactNumber, {
+          const cart = addToCart(instanceId, normalizedContactNumber, {
             productId: args.product_id,
             productType: args.product_type as 'service' | 'catalog',
             productName: args.product_name,
@@ -3533,7 +3538,13 @@ async function executeAIOnlyWorkflow(
         try {
           const { getCart, getCartTotal } = await import('./cart')
 
-          const cart = getCart(instanceId, contactNumber)
+          // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
+          const normalizedContactNumber = contactNumber.replace(/\D/g, '')
+          console.log(`🛒 [view_cart] contactNumber original: "${contactNumber}"`)
+          console.log(`🛒 [view_cart] contactNumber normalizado: "${normalizedContactNumber}"`)
+
+          const cart = getCart(instanceId, normalizedContactNumber)
+          console.log(`🛒 [view_cart] Itens no carrinho: ${cart.items.length}`)
 
           if (cart.items.length === 0) {
             return {
@@ -3581,7 +3592,13 @@ async function executeAIOnlyWorkflow(
         try {
           const { getCart, createOrderFromCart } = await import('./cart')
 
-          const cart = getCart(instanceId, contactNumber)
+          // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
+          const normalizedContactNumber = contactNumber.replace(/\D/g, '')
+          console.log(`🛒 [checkout] contactNumber original: "${contactNumber}"`)
+          console.log(`🛒 [checkout] contactNumber normalizado: "${normalizedContactNumber}"`)
+
+          const cart = getCart(instanceId, normalizedContactNumber)
+          console.log(`🛒 [checkout] Itens no carrinho: ${cart.items.length}`)
 
           if (cart.items.length === 0) {
             return {
@@ -3632,7 +3649,7 @@ async function executeAIOnlyWorkflow(
           const result = await createOrderFromCart(
             userId,
             instanceId,
-            contactNumber,
+            normalizedContactNumber,
             contactNameFinal,
             args.delivery_type as 'pickup' | 'delivery',
             args.delivery_address,
