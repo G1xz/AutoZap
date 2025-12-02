@@ -4129,18 +4129,18 @@ async function executeAIOnlyWorkflow(
         },
         {
           name: 'checkout',
-          description: 'Finaliza o pedido e cria a ordem de compra. Use quando o cliente quiser finalizar o pedido, confirmar a compra, ou quando disser "quero fechar o pedido", "só isso", "por enquanto é só", "tá bom assim", "pode fechar". Coleta informações de entrega/retirada e processa o pagamento.',
+          description: '⚠️⚠️⚠️ CRÍTICO: Finaliza o pedido e cria a ordem de compra. VOCÊ DEVE CHAMAR ESTA FUNÇÃO quando o cliente disser: "quero finalizar a compra", "finalizar", "fechar pedido", "completar pedido", "concluir compra", "só isso", "por enquanto é só", "tá bom assim", "pode fechar". NUNCA liste produtos novamente quando o cliente quer finalizar - ele já tem itens no carrinho! Esta função mostra automaticamente o que está no carrinho e processa o pedido. Se não souber o tipo de entrega, use "pickup" como padrão.',
           parameters: {
             type: 'object',
             properties: {
               delivery_type: {
                 type: 'string',
                 enum: ['pickup', 'delivery'],
-                description: 'Tipo de entrega: "pickup" para retirada no estabelecimento ou "delivery" para entrega no endereço.',
+                description: 'Tipo de entrega: "pickup" para retirada no estabelecimento (PADRÃO se não especificado) ou "delivery" para entrega no endereço. Se o cliente não especificar, use "pickup".',
               },
               delivery_address: {
                 type: 'string',
-                description: 'Endereço completo de entrega (obrigatório se delivery_type for "delivery"). Inclua rua, número, bairro, cidade e CEP se possível.',
+                description: 'Endereço completo de entrega (obrigatório APENAS se delivery_type for "delivery"). Inclua rua, número, bairro, cidade e CEP se possível. Se for pickup, pode omitir este campo.',
               },
               notes: {
                 type: 'string',
