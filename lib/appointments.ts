@@ -103,32 +103,57 @@ export async function createAppointment(
       description: params.description,
     })
 
-    // Validações
-    if (!params.userId) {
-      console.error('❌ userId é obrigatório')
+    // Validações robustas
+    if (!params.userId || typeof params.userId !== 'string' || params.userId.trim().length === 0) {
+      console.error('❌ userId é obrigatório e deve ser uma string válida')
       return {
         success: false,
-        error: 'userId é obrigatório',
+        error: 'userId é obrigatório e deve ser uma string válida',
       }
     }
 
     if (!params.instanceId) {
       console.warn('⚠️ instanceId não informado - criando agendamento sem vincular a uma instância específica')
+    } else if (typeof params.instanceId !== 'string' || params.instanceId.trim().length === 0) {
+      console.warn('⚠️ instanceId inválido, criando sem vincular')
+      params.instanceId = null
     }
 
-    if (!params.contactNumber) {
-      console.error('❌ contactNumber é obrigatório')
+    if (!params.contactNumber || typeof params.contactNumber !== 'string' || params.contactNumber.trim().length === 0) {
+      console.error('❌ contactNumber é obrigatório e deve ser uma string válida')
       return {
         success: false,
-        error: 'contactNumber é obrigatório',
+        error: 'contactNumber é obrigatório e deve ser uma string válida',
       }
     }
 
-    if (!params.date || isNaN(params.date.getTime())) {
+    if (!params.date || !(params.date instanceof Date) || isNaN(params.date.getTime())) {
       console.error('❌ date é inválida:', params.date)
       return {
         success: false,
-        error: 'date é inválida',
+        error: 'date deve ser uma data válida',
+      }
+    }
+    
+    // Valida que a data não é muito antiga (mais de 1 ano atrás)
+    const oneYearAgo = new Date()
+    oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1)
+    if (params.date < oneYearAgo) {
+      console.error('❌ date é muito antiga:', params.date)
+      return {
+        success: false,
+        error: 'Não é possível agendar para uma data há mais de 1 ano',
+      }
+    }
+    
+    // Valida que a data não é muito futura (mais de 2 anos)
+    const twoYearsFromNow = new Date()
+    twoYearsFromNow.setFullYear(twoYearsFromNow.getFullYear() + 2)
+    if (params.date > twoYearsFromNow) {
+      console.error('❌ date é muito futura:', params.date)
+      return {
+        success: false,
+        error: 'Não é possível agendar para mais de 2 anos no futuro',
       }
     }
 
@@ -153,7 +178,7 @@ export async function createAppointment(
 
     // CRÍTICO: Calcula horário de término baseado no início + duração
     // A duração DEVE vir do serviço agendado (não usar padrão fixo)
-    if (!params.duration || params.duration <= 0) {
+    if (!params.duration || typeof params.duration !== 'number' || params.duration <= 0) {
       console.error('❌ Duração não especificada ou inválida:', params.duration)
       console.error('❌ A duração deve vir do serviço agendado. Verifique se o serviço tem duração configurada.')
       return {
@@ -162,8 +187,34 @@ export async function createAppointment(
       }
     }
     
-    const duration = params.duration // Duração do serviço em minutos
+    // Valida limites razoáveis de duração
+    if (params.duration > 1440) { // 24 horas
+      console.error('❌ Duração muito longa:', params.duration)
+      return {
+        success: false,
+        error: 'Duração máxima permitida é 24 horas (1440 minutos)',
+      }
+    }
+    
+    if (params.duration < 5) { // Mínimo 5 minutos
+      console.error('❌ Duração muito curta:', params.duration)
+      return {
+        success: false,
+        error: 'Duração mínima permitida é 5 minutos',
+      }
+    }
+    
+    const duration = Math.round(params.duration) // Garante que é inteiro
     const endDate = new Date(params.date.getTime() + duration * 60000) // Adiciona minutos em milissegundos
+    
+    // Valida que o horário de término é válido
+    if (isNaN(endDate.getTime())) {
+      console.error('❌ Horário de término inválido calculado')
+      return {
+        success: false,
+        error: 'Erro ao calcular horário de término do agendamento',
+      }
+    }
 
     console.log('📅 Calculando horário de término:', {
       inicio: params.date.toISOString(),

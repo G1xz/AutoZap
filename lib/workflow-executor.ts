@@ -3551,14 +3551,26 @@ async function executeAIOnlyWorkflow(
             unitPrice,
           })
 
-          const cart = await addToCart(instanceId, normalizedContactNumber, {
-            productId: args.product_id,
-            productType: args.product_type as 'service' | 'catalog',
-            productName: args.product_name,
-            quantity,
-            unitPrice,
-            notes: args.notes,
-          })
+          let cart
+          try {
+            cart = await addToCart(instanceId, normalizedContactNumber, {
+              productId: args.product_id,
+              productType: args.product_type as 'service' | 'catalog',
+              productName: args.product_name,
+              quantity,
+              unitPrice,
+              notes: args.notes,
+            })
+          } catch (error) {
+            console.error(`🛒 [add_to_cart] Erro ao adicionar ao carrinho:`, error)
+            const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido ao adicionar item ao carrinho'
+            
+            // Retorna mensagem clara para a IA
+            return {
+              success: false,
+              error: `Não foi possível adicionar "${args.product_name}" ao carrinho. ${errorMessage}. Por favor, tente novamente ou informe ao cliente que houve um problema técnico.`,
+            }
+          }
 
           // Log após adicionar
           log.debug('Item adicionado com sucesso', {
@@ -3609,6 +3621,106 @@ async function executeAIOnlyWorkflow(
           return {
             success: false,
             error: `Erro ao adicionar produto ao carrinho: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+          }
+        }
+      }
+
+      // Função para remover item do carrinho
+      if (functionName === 'remove_from_cart' && userId) {
+        try {
+          const { removeFromCart, getCart } = await import('./cart')
+
+          // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
+          const normalizedContactNumber = contactNumber.replace(/\D/g, '')
+
+          if (!args.product_id || !args.product_type) {
+            return {
+              success: false,
+              error: 'ID e tipo do produto são obrigatórios para remover.',
+            }
+          }
+
+          console.log(`🛒 [remove_from_cart] Removendo item:`, {
+            product_id: args.product_id,
+            product_type: args.product_type,
+          })
+
+          const cart = await removeFromCart(
+            instanceId,
+            normalizedContactNumber,
+            args.product_id,
+            args.product_type as 'service' | 'catalog'
+          )
+
+          const itemCount = cart.items.length
+          const cartTotal = cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+
+          if (itemCount === 0) {
+            return {
+              success: true,
+              message: '✅ Item removido do carrinho.\n\n🛒 Seu carrinho está vazio agora.',
+              cartItems: 0,
+              cartTotal: 0,
+            }
+          }
+
+          let message = `✅ Item removido do carrinho!\n\n`
+          message += `📦 *Carrinho Atualizado:*\n`
+          message += `━━━━━━━━━━━━━━━━━━━━\n\n`
+
+          cart.items.forEach((item, index) => {
+            const itemTotal = item.quantity * item.unitPrice
+            const formattedUnitPrice = item.unitPrice.toFixed(2).replace('.', ',')
+            const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
+
+            message += `${index + 1}. *${item.productName}*\n`
+            message += `   ${item.quantity}x R$ ${formattedUnitPrice} = R$ ${formattedItemTotal}\n\n`
+          })
+
+          message += `━━━━━━━━━━━━━━━━━━━━\n`
+          message += `💰 *Total: R$ ${cartTotal.toFixed(2).replace('.', ',')}*\n\n`
+          message += `Deseja adicionar mais algo ou finalizar o pedido?`
+
+          return {
+            success: true,
+            message,
+            cartItems: itemCount,
+            cartTotal,
+          }
+        } catch (error) {
+          log.error('Erro ao remover do carrinho', error)
+          console.error('Erro detalhado ao remover do carrinho:', error)
+          return {
+            success: false,
+            error: `Erro ao remover item do carrinho: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+          }
+        }
+      }
+
+      // Função para limpar carrinho
+      if (functionName === 'clear_cart' && userId) {
+        try {
+          const { clearCart } = await import('./cart')
+
+          // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
+          const normalizedContactNumber = contactNumber.replace(/\D/g, '')
+
+          console.log(`🛒 [clear_cart] Limpando carrinho`)
+
+          await clearCart(instanceId, normalizedContactNumber)
+
+          return {
+            success: true,
+            message: '✅ Carrinho cancelado com sucesso.\n\nSeu carrinho foi limpo. Se quiser fazer um novo pedido, é só me avisar!',
+            cartItems: 0,
+            cartTotal: 0,
+          }
+        } catch (error) {
+          log.error('Erro ao limpar carrinho', error)
+          console.error('Erro detalhado ao limpar carrinho:', error)
+          return {
+            success: false,
+            error: `Erro ao cancelar carrinho: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
           }
         }
       }
@@ -3715,26 +3827,10 @@ async function executeAIOnlyWorkflow(
             }
           }
 
-          // Define tipo de entrega (padrão: pickup se não especificado)
-          const deliveryType = (args.delivery_type || 'pickup') as 'pickup' | 'delivery'
-          const deliveryAddress = args.delivery_address || undefined
+          // Verifica opções de entrega/retirada disponíveis para os produtos
+          let allowsDelivery = false
+          let allowsPickup = false
           
-          console.log(`🛒 [checkout] Parâmetros recebidos:`, {
-            delivery_type: args.delivery_type,
-            deliveryType,
-            delivery_address: args.delivery_address,
-            notes: args.notes,
-          })
-
-          // Valida tipo de entrega
-          if (deliveryType === 'delivery' && !deliveryAddress) {
-            return {
-              success: false,
-              error: 'Por favor, informe o endereço de entrega.',
-            }
-          }
-
-          // Verifica se os produtos permitem o tipo de entrega escolhido
           for (const item of cart.items) {
             if (item.productType === 'service') {
               const service = await prisma.service.findFirst({
@@ -3747,22 +3843,85 @@ async function executeAIOnlyWorkflow(
                   pickupAvailable: true,
                 },
               })
-
-              if (deliveryType === 'delivery' && !service?.deliveryAvailable) {
-                return {
-                  success: false,
-                  error: `O produto "${item.productName}" não permite entrega. Por favor, escolha retirada no estabelecimento ou remova este item do carrinho.`,
-                }
+              
+              if (service) {
+                if (service.deliveryAvailable) allowsDelivery = true
+                if (service.pickupAvailable) allowsPickup = true
               }
-
-              if (deliveryType === 'pickup' && !service?.pickupAvailable) {
-                return {
-                  success: false,
-                  error: `O produto "${item.productName}" não permite retirada. Por favor, escolha entrega ou remova este item do carrinho.`,
-                }
-              }
+            } else {
+              // Para produtos do catálogo, assume que permite ambos por padrão
+              allowsDelivery = true
+              allowsPickup = true
             }
           }
+          
+          // Se nenhum produto permite entrega, força pickup
+          if (!allowsDelivery) {
+            allowsPickup = true
+          }
+          
+          // Se nenhum produto permite pickup, força delivery
+          if (!allowsPickup) {
+            allowsDelivery = true
+          }
+          
+          // Se não especificou tipo de entrega, pergunta ao usuário
+          let deliveryType = args.delivery_type as 'pickup' | 'delivery' | undefined
+          let deliveryAddress = args.delivery_address || undefined
+          
+          console.log(`🛒 [checkout] Opções disponíveis:`, {
+            allowsDelivery,
+            allowsPickup,
+            deliveryType: args.delivery_type,
+          })
+          
+          // Se não especificou e ambos estão disponíveis, precisa perguntar
+          if (!deliveryType && allowsDelivery && allowsPickup) {
+            return {
+              success: false,
+              error: 'Por favor, escolha o tipo de entrega:\n\n🏪 Digite "retirada" para retirar no estabelecimento\n🚚 Digite "entrega" para receber em casa (será necessário informar o endereço)',
+              requiresDeliveryType: true,
+            }
+          }
+          
+          // Se não especificou mas só uma opção disponível, usa ela
+          if (!deliveryType) {
+            if (allowsPickup && !allowsDelivery) {
+              deliveryType = 'pickup'
+            } else if (allowsDelivery && !allowsPickup) {
+              deliveryType = 'delivery'
+            } else {
+              deliveryType = 'pickup' // Padrão
+            }
+          }
+          
+          // Valida tipo de entrega
+          if (deliveryType === 'delivery' && !allowsDelivery) {
+            return {
+              success: false,
+              error: 'Nenhum dos produtos no carrinho permite entrega. Por favor, escolha retirada no estabelecimento.',
+            }
+          }
+          
+          if (deliveryType === 'pickup' && !allowsPickup) {
+            return {
+              success: false,
+              error: 'Nenhum dos produtos no carrinho permite retirada. Por favor, escolha entrega.',
+            }
+          }
+          
+          if (deliveryType === 'delivery' && !deliveryAddress) {
+            return {
+              success: false,
+              error: 'Para entrega, é necessário informar o endereço completo. Por favor, informe o endereço de entrega (rua, número, bairro, cidade e CEP se possível).',
+              requiresDeliveryAddress: true,
+            }
+          }
+          
+          console.log(`🛒 [checkout] Tipo de entrega definido:`, {
+            deliveryType,
+            deliveryAddress: deliveryAddress ? 'fornecido' : 'não fornecido',
+          })
 
           // Log antes de criar pedido
           console.log(`🛒 [checkout] Criando pedido...`, {
@@ -4121,6 +4280,34 @@ async function executeAIOnlyWorkflow(
         {
           name: 'view_cart',
           description: 'Visualiza o conteúdo atual do carrinho de compras. Use quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido" ou quando quiser ver o resumo antes de finalizar.',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: [],
+          },
+        },
+        {
+          name: 'remove_from_cart',
+          description: 'Remove um item específico do carrinho de compras. Use quando o cliente quiser remover um produto do carrinho, disser "tira isso", "remove", "não quero mais esse", "cancela esse item". Você precisa do product_id e product_type do item que deseja remover.',
+          parameters: {
+            type: 'object',
+            properties: {
+              product_id: {
+                type: 'string',
+                description: 'ID do produto/serviço a ser removido do carrinho.',
+              },
+              product_type: {
+                type: 'string',
+                enum: ['service', 'catalog'],
+                description: 'Tipo do produto: "service" para serviços ou "catalog" para produtos do catálogo.',
+              },
+            },
+            required: ['product_id', 'product_type'],
+          },
+        },
+        {
+          name: 'clear_cart',
+          description: 'Limpa completamente o carrinho de compras, removendo todos os itens. Use quando o cliente quiser cancelar o pedido, disser "cancela tudo", "limpa o carrinho", "não quero mais nada", "desiste do pedido".',
           parameters: {
             type: 'object',
             properties: {},

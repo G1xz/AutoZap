@@ -239,26 +239,41 @@ export function buildSystemPrompt(
   prompt += `\n`
 
   // Instruções sobre carrinho de compras
-  prompt += `\n\n🛒 SISTEMA DE CARRINHO DE COMPRAS:\n`
-  prompt += `- Você pode permitir que o cliente adicione múltiplos produtos ao carrinho antes de finalizar o pedido\n`
-  prompt += `- Use a função "add_to_cart" quando o cliente quiser adicionar um produto ao carrinho\n`
-  prompt += `- Use a função "view_cart" quando o cliente perguntar sobre o carrinho, quiser ver os itens, ou quando perguntar "o que tem no carrinho"\n`
+  prompt += `\n\n🛒 SISTEMA DE CARRINHO DE COMPRAS (FORMULÁRIO ESTRUTURADO):\n`
   prompt += `\n`
-  prompt += `- ⚠️⚠️⚠️ CRÍTICO - FINALIZAÇÃO DE PEDIDO:\n`
-  prompt += `- Quando o cliente disser "quero finalizar a compra", "finalizar", "fechar pedido", "completar pedido", "concluir compra" → VOCÊ DEVE CHAMAR A FUNÇÃO "checkout" IMEDIATAMENTE\n`
+  prompt += `📝 FUNÇÕES DISPONÍVEIS:\n`
+  prompt += `1. "add_to_cart" - Adiciona produto ao carrinho\n`
+  prompt += `2. "view_cart" - Visualiza o carrinho atual\n`
+  prompt += `3. "remove_from_cart" - Remove um item específico do carrinho\n`
+  prompt += `4. "clear_cart" - Limpa/cancela todo o carrinho\n`
+  prompt += `5. "checkout" - Finaliza o pedido e cria a ordem\n`
+  prompt += `\n`
+  prompt += `📋 COMO FUNCIONA:\n`
+  prompt += `- O carrinho funciona como um formulário - o cliente pode adicionar, remover, visualizar e finalizar\n`
+  prompt += `- Use "add_to_cart" quando o cliente quiser adicionar um produto\n`
+  prompt += `- Use "remove_from_cart" quando o cliente quiser remover um item específico (precisa do product_id e product_type)\n`
+  prompt += `- Use "clear_cart" quando o cliente quiser cancelar tudo, disser "cancela", "desiste", "não quero mais nada"\n`
+  prompt += `- Use "view_cart" quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido"\n`
+  prompt += `\n`
+  prompt += `⚠️⚠️⚠️ CRÍTICO - FINALIZAÇÃO DE PEDIDO:\n`
+  prompt += `- Quando o cliente disser "quero finalizar a compra", "finalizar", "fechar pedido", "completar pedido", "concluir compra" → VOCÊ DEVE CHAMAR A FUNÇÃO "checkout"\n`
   prompt += `- NUNCA liste produtos novamente quando o cliente quer finalizar - ele já tem itens no carrinho!\n`
   prompt += `- NUNCA pergunte qual produto o cliente quer quando ele diz "finalizar" - use a função checkout!\n`
-  prompt += `- A função checkout vai mostrar automaticamente o que está no carrinho e processar o pedido\n`
-  prompt += `- GATILHOS QUE EXIGEM CHAMAR CHECKOUT: "finalizar", "fechar pedido", "quero finalizar a compra", "completar pedido", "concluir compra", "finalizar compra", "só isso", "por enquanto é só", "tá bom assim", "pode fechar", "acho que vou querer só isso"\n`
+  prompt += `- A função checkout pode retornar um erro pedindo para escolher entrega/retirada - nesse caso, pergunte ao cliente e chame checkout novamente\n`
+  prompt += `- A função checkout pode retornar um erro pedindo endereço - nesse caso, pergunte o endereço e chame checkout novamente\n`
+  prompt += `- GATILHOS QUE EXIGEM CHAMAR CHECKOUT: "finalizar", "fechar pedido", "quero finalizar a compra", "completar pedido", "concluir compra", "finalizar compra", "só isso", "por enquanto é só", "tá bom assim", "pode fechar"\n`
   prompt += `\n`
-  prompt += `- ⚠️ IMPORTANTE: A função checkout aceita delivery_type como "pickup" (padrão) ou "delivery"\n`
-  prompt += `- ⚠️ IMPORTANTE: Se o cliente escolher entrega, você DEVE coletar o endereço completo antes de chamar checkout\n`
-  prompt += `- ⚠️ IMPORTANTE: Se não souber o tipo de entrega, use "pickup" como padrão\n`
-  prompt += `- ⚠️ IMPORTANTE: Alguns produtos podem não permitir entrega ou retirada - verifique antes de oferecer\n`
-  prompt += `- ⚠️ IMPORTANTE: Se o produto tiver link de pagamento ou chave Pix configurados, eles serão enviados automaticamente após o checkout\n`
-  prompt += `- Se o cliente quiser adicionar mais de um produto, sugira usar o carrinho para facilitar\n`
-  prompt += `- Palavras-chave que indicam interesse em adicionar ao carrinho: "adicionar", "colocar no carrinho", "quero esse", "vou levar"\n`
-  prompt += `- Palavras-chave que indicam interesse em ver o carrinho: "meu carrinho", "o que tem no carrinho", "itens do pedido", "resumo"\n`
+  prompt += `🚚 SOBRE ENTREGA/RETIRADA:\n`
+  prompt += `- A função checkout vai verificar automaticamente quais opções estão disponíveis baseado nos produtos\n`
+  prompt += `- Se ambos estiverem disponíveis, a função pode pedir para você perguntar ao cliente\n`
+  prompt += `- Se o cliente escolher entrega, você DEVE coletar o endereço completo antes de chamar checkout novamente\n`
+  prompt += `- Se não souber o tipo de entrega e ambos estiverem disponíveis, pergunte ao cliente antes de chamar checkout\n`
+  prompt += `- Se apenas uma opção estiver disponível, a função vai usar automaticamente\n`
+  prompt += `\n`
+  prompt += `- Palavras-chave que indicam interesse em adicionar: "adicionar", "colocar no carrinho", "quero esse", "vou levar"\n`
+  prompt += `- Palavras-chave que indicam interesse em remover: "tira isso", "remove", "não quero mais esse", "cancela esse item"\n`
+  prompt += `- Palavras-chave que indicam interesse em cancelar: "cancela tudo", "limpa o carrinho", "não quero mais nada", "desiste do pedido"\n`
+  prompt += `- Palavras-chave que indicam interesse em ver: "meu carrinho", "o que tem no carrinho", "itens do pedido", "resumo"\n`
   prompt += `- Palavras-chave que indicam interesse em finalizar: "finalizar", "fechar pedido", "confirmar compra", "quero comprar", "fazer pedido", "só isso", "não quero mais nada", "quero finalizar a compra", "completar pedido"\n`
 
   // Mensagem de boas-vindas personalizada

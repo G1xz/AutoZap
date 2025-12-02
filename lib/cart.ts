@@ -68,22 +68,16 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
     throw new Error(`Instância ${instanceId} não encontrada`)
   }
   
-  // Busca TODOS os carrinhos desta instância para debug
-  const allCarts = await prisma.cart.findMany({
-    where: { instanceId },
-  })
-  console.log(`🛒 [getCart] Total de carrinhos para esta instância: ${allCarts.length}`)
-  allCarts.forEach((c, i) => {
-    console.log(`   [${i + 1}] contactNumber: "${c.contactNumber}", Itens: ${c.items}, ID: ${c.id}`)
-  })
-  
-  // Busca carrinho no banco
+  // Busca carrinho no banco com itens relacionados
   let cartRecord = await prisma.cart.findUnique({
     where: {
       instanceId_contactNumber: {
         instanceId,
         contactNumber: normalizedContact,
       },
+    },
+    include: {
+      items: true,
     },
   })
   
@@ -95,7 +89,9 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
         userId: instance.userId,
         instanceId,
         contactNumber: normalizedContact,
-        items: JSON.stringify([]),
+      },
+      include: {
+        items: true,
       },
     })
     console.log(`🛒 [getCart] ✅ Carrinho criado no banco: ID=${cartRecord.id}`)
@@ -105,27 +101,29 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
       cartId: cartRecord.id,
     })
   } else {
-    console.log(`🛒 [getCart] ✅ Carrinho encontrado no banco: ID=${cartRecord.id}`)
+    console.log(`🛒 [getCart] ✅ Carrinho encontrado no banco: ID=${cartRecord.id}, Itens: ${cartRecord.items.length}`)
     log.debug('Carrinho encontrado no banco', { 
       instanceId, 
       contactNumber: normalizedContact,
       cartId: cartRecord.id,
+      itemCount: cartRecord.items.length,
     })
   }
   
-  // Parse dos itens do JSON
-  let items: CartItem[] = []
-  try {
-    items = JSON.parse(cartRecord.items) as CartItem[]
-    console.log(`🛒 [getCart] Itens parseados: ${items.length} itens`)
-    items.forEach((item, i) => {
-      console.log(`   [${i + 1}] ${item.productName} x${item.quantity} - R$ ${item.unitPrice}`)
-    })
-  } catch (error) {
-    console.error(`🛒 [getCart] ❌ Erro ao fazer parse dos itens:`, error)
-    log.error('Erro ao fazer parse dos itens do carrinho', { cartId: cartRecord.id, error })
-    items = []
-  }
+  // Converte itens do banco para formato da interface
+  const items: CartItem[] = cartRecord.items.map(item => ({
+    productId: item.productId,
+    productType: item.productType as 'service' | 'catalog',
+    productName: item.productName,
+    quantity: item.quantity,
+    unitPrice: item.unitPrice,
+    notes: item.notes || undefined,
+  }))
+  
+  console.log(`🛒 [getCart] Itens carregados: ${items.length} itens`)
+  items.forEach((item, i) => {
+    console.log(`   [${i + 1}] ${item.productName} x${item.quantity} - R$ ${item.unitPrice}`)
+  })
   
   return {
     instanceId: cartRecord.instanceId,
@@ -135,55 +133,6 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
   }
 }
 
-/**
- * Salva carrinho no banco de dados
- */
-async function saveCart(cart: Cart, userId: string): Promise<void> {
-  const itemsJson = JSON.stringify(cart.items)
-  
-  console.log(`🛒 [saveCart] ========== SALVANDO CARRINHO ==========`)
-  console.log(`   instanceId: ${cart.instanceId}`)
-  console.log(`   contactNumber: "${cart.contactNumber}"`)
-  console.log(`   itemCount: ${cart.items.length}`)
-  console.log(`   itemsJson: ${itemsJson.substring(0, 200)}...`)
-  
-  const result = await prisma.cart.upsert({
-    where: {
-      instanceId_contactNumber: {
-        instanceId: cart.instanceId,
-        contactNumber: cart.contactNumber,
-      },
-    },
-    update: {
-      items: itemsJson,
-      updatedAt: new Date(),
-    },
-    create: {
-      userId,
-      instanceId: cart.instanceId,
-      contactNumber: cart.contactNumber,
-      items: itemsJson,
-    },
-  })
-  
-  console.log(`🛒 [saveCart] ✅ Carrinho salvo: ID=${result.id}, Itens=${cart.items.length}`)
-  
-  // Verifica se foi salvo corretamente
-  const verify = await prisma.cart.findUnique({
-    where: { id: result.id },
-  })
-  if (verify) {
-    const verifyItems = JSON.parse(verify.items) as CartItem[]
-    console.log(`🛒 [saveCart] ✅ Verificação: ${verifyItems.length} itens no banco`)
-  }
-  
-  log.debug('Carrinho salvo no banco', { 
-    instanceId: cart.instanceId,
-    contactNumber: cart.contactNumber,
-    itemCount: cart.items.length,
-    cartId: result.id,
-  })
-}
 
 /**
  * Adiciona item ao carrinho
@@ -194,22 +143,42 @@ export async function addToCart(
   contactNumber: string,
   item: CartItem
 ): Promise<Cart> {
-  // Validação de entrada
-  if (!item.productId || !item.productName) {
-    throw new Error('ID e nome do produto são obrigatórios')
+  // Validação de entrada robusta
+  if (!item) {
+    throw new Error('Item do carrinho é obrigatório')
   }
   
-  if (item.quantity <= 0) {
-    throw new Error('Quantidade deve ser maior que zero')
+  if (!item.productId || typeof item.productId !== 'string' || item.productId.trim().length === 0) {
+    throw new Error('ID do produto é obrigatório e deve ser uma string válida')
   }
   
-  if (item.unitPrice < 0) {
-    throw new Error('Preço unitário não pode ser negativo')
+  if (!item.productName || typeof item.productName !== 'string' || item.productName.trim().length === 0) {
+    throw new Error('Nome do produto é obrigatório e deve ser uma string válida')
+  }
+  
+  if (typeof item.quantity !== 'number' || item.quantity <= 0 || !Number.isInteger(item.quantity)) {
+    throw new Error('Quantidade deve ser um número inteiro maior que zero')
+  }
+  
+  if (typeof item.unitPrice !== 'number' || item.unitPrice < 0 || isNaN(item.unitPrice)) {
+    throw new Error('Preço unitário deve ser um número válido maior ou igual a zero')
+  }
+  
+  if (item.productType !== 'service' && item.productType !== 'catalog') {
+    throw new Error('Tipo do produto deve ser "service" ou "catalog"')
+  }
+  
+  // Valida limites razoáveis
+  if (item.quantity > 1000) {
+    throw new Error('Quantidade máxima permitida é 1000 unidades')
+  }
+  
+  if (item.unitPrice > 1000000) {
+    throw new Error('Preço unitário máximo permitido é R$ 1.000.000,00')
   }
 
-  // Normaliza número e obtém carrinho
+  // Normaliza número
   const normalizedContact = normalizeContactNumber(contactNumber)
-  const cart = await getCart(instanceId, normalizedContact)
   
   // Busca userId da instância
   const instance = await prisma.whatsAppInstance.findUnique({
@@ -221,24 +190,67 @@ export async function addToCart(
     throw new Error(`Instância ${instanceId} não encontrada`)
   }
   
-  // Verifica se o produto já está no carrinho
-  const existingIndex = cart.items.findIndex(
-    (i) => i.productId === item.productId && i.productType === item.productType
-  )
+  // Busca ou cria carrinho
+  let cartRecord = await prisma.cart.findUnique({
+    where: {
+      instanceId_contactNumber: {
+        instanceId,
+        contactNumber: normalizedContact,
+      },
+    },
+  })
   
-  if (existingIndex >= 0) {
+  if (!cartRecord) {
+    cartRecord = await prisma.cart.create({
+      data: {
+        userId: instance.userId,
+        instanceId,
+        contactNumber: normalizedContact,
+      },
+    })
+    console.log(`🛒 [addToCart] ✅ Carrinho criado: ID=${cartRecord.id}`)
+  }
+  
+  // Usa upsert para adicionar ou atualizar item
+  // O unique constraint garante que não haverá duplicatas
+  const existingItem = await prisma.cartItem.findUnique({
+    where: {
+      cartId_productId_productType: {
+        cartId: cartRecord.id,
+        productId: item.productId,
+        productType: item.productType,
+      },
+    },
+  })
+  
+  if (existingItem) {
     // Atualiza quantidade do item existente
-    cart.items[existingIndex].quantity += item.quantity
-    if (item.notes) {
-      cart.items[existingIndex].notes = item.notes
-    }
+    await prisma.cartItem.update({
+      where: { id: existingItem.id },
+      data: {
+        quantity: existingItem.quantity + item.quantity,
+        notes: item.notes || existingItem.notes,
+      },
+    })
+    console.log(`🛒 [addToCart] ✅ Item atualizado: ${item.productName} (quantidade: ${existingItem.quantity + item.quantity})`)
     log.debug('Item atualizado no carrinho', {
       productId: item.productId,
-      newQuantity: cart.items[existingIndex].quantity,
+      newQuantity: existingItem.quantity + item.quantity,
     })
   } else {
     // Adiciona novo item
-    cart.items.push(item)
+    await prisma.cartItem.create({
+      data: {
+        cartId: cartRecord.id,
+        productId: item.productId,
+        productType: item.productType,
+        productName: item.productName,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+        notes: item.notes,
+      },
+    })
+    console.log(`🛒 [addToCart] ✅ Item adicionado: ${item.productName} x${item.quantity}`)
     log.debug('Novo item adicionado ao carrinho', {
       productId: item.productId,
       productName: item.productName,
@@ -246,19 +258,14 @@ export async function addToCart(
     })
   }
   
-  // Salva carrinho atualizado no banco
-  await saveCart(cart, instance.userId)
-  
-  log.debug('Item adicionado ao carrinho', {
-    instanceId,
-    contactNumber: normalizedContact,
-    productId: item.productId,
-    productName: item.productName,
-    quantity: item.quantity,
-    totalItems: cart.items.length,
+  // Atualiza updatedAt do carrinho
+  await prisma.cart.update({
+    where: { id: cartRecord.id },
+    data: { updatedAt: new Date() },
   })
   
-  return cart
+  // Retorna carrinho atualizado
+  return getCart(instanceId, normalizedContact)
 }
 
 /**
@@ -271,32 +278,60 @@ export async function removeFromCart(
   productType: 'service' | 'catalog'
 ): Promise<Cart> {
   const normalizedContact = normalizeContactNumber(contactNumber)
-  const cart = await getCart(instanceId, normalizedContact)
   
-  const instance = await prisma.whatsAppInstance.findUnique({
-    where: { id: instanceId },
-    select: { userId: true },
+  // Busca carrinho
+  const cartRecord = await prisma.cart.findUnique({
+    where: {
+      instanceId_contactNumber: {
+        instanceId,
+        contactNumber: normalizedContact,
+      },
+    },
   })
   
-  if (!instance) {
-    throw new Error(`Instância ${instanceId} não encontrada`)
+  if (!cartRecord) {
+    // Carrinho não existe, retorna vazio
+    return {
+      instanceId,
+      contactNumber: normalizedContact,
+      items: [],
+      updatedAt: new Date(),
+    }
   }
   
-  const initialCount = cart.items.length
-  cart.items = cart.items.filter(
-    (item) => !(item.productId === productId && item.productType === productType)
-  )
-  
-  if (cart.items.length < initialCount) {
-    await saveCart(cart, instance.userId)
+  // Remove item usando unique constraint
+  try {
+    await prisma.cartItem.delete({
+      where: {
+        cartId_productId_productType: {
+          cartId: cartRecord.id,
+          productId,
+          productType,
+        },
+      },
+    })
+    
+    // Atualiza updatedAt do carrinho
+    await prisma.cart.update({
+      where: { id: cartRecord.id },
+      data: { updatedAt: new Date() },
+    })
+    
+    console.log(`🛒 [removeFromCart] ✅ Item removido: ${productId} (${productType})`)
     log.debug('Item removido do carrinho', {
       productId,
       productType,
-      remainingItems: cart.items.length,
     })
+  } catch (error: any) {
+    // Se não encontrou o item, não é erro crítico
+    if (error.code !== 'P2025') {
+      throw error
+    }
+    console.log(`🛒 [removeFromCart] ⚠️ Item não encontrado no carrinho: ${productId}`)
   }
   
-  return cart
+  // Retorna carrinho atualizado
+  return getCart(instanceId, normalizedContact)
 }
 
 /**
@@ -314,31 +349,56 @@ export async function updateCartItemQuantity(
   }
   
   const normalizedContact = normalizeContactNumber(contactNumber)
-  const cart = await getCart(instanceId, normalizedContact)
   
-  const instance = await prisma.whatsAppInstance.findUnique({
-    where: { id: instanceId },
-    select: { userId: true },
+  // Busca carrinho
+  const cartRecord = await prisma.cart.findUnique({
+    where: {
+      instanceId_contactNumber: {
+        instanceId,
+        contactNumber: normalizedContact,
+      },
+    },
   })
   
-  if (!instance) {
-    throw new Error(`Instância ${instanceId} não encontrada`)
+  if (!cartRecord) {
+    throw new Error('Carrinho não encontrado')
   }
   
-  const item = cart.items.find(
-    (i) => i.productId === productId && i.productType === productType
-  )
-  
-  if (item) {
-    item.quantity = quantity
-    await saveCart(cart, instance.userId)
+  // Atualiza quantidade do item
+  try {
+    await prisma.cartItem.update({
+      where: {
+        cartId_productId_productType: {
+          cartId: cartRecord.id,
+          productId,
+          productType,
+        },
+      },
+      data: {
+        quantity,
+      },
+    })
+    
+    // Atualiza updatedAt do carrinho
+    await prisma.cart.update({
+      where: { id: cartRecord.id },
+      data: { updatedAt: new Date() },
+    })
+    
+    console.log(`🛒 [updateCartItemQuantity] ✅ Quantidade atualizada: ${productId} → ${quantity}`)
     log.debug('Quantidade atualizada', {
       productId,
       newQuantity: quantity,
     })
+  } catch (error: any) {
+    if (error.code === 'P2025') {
+      throw new Error('Item não encontrado no carrinho')
+    }
+    throw error
   }
   
-  return cart
+  // Retorna carrinho atualizado
+  return getCart(instanceId, normalizedContact)
 }
 
 /**
@@ -347,14 +407,28 @@ export async function updateCartItemQuantity(
 export async function clearCart(instanceId: string, contactNumber: string): Promise<void> {
   const normalizedContact = normalizeContactNumber(contactNumber)
   
-  const deleted = await prisma.cart.deleteMany({
+  // Busca carrinho
+  const cartRecord = await prisma.cart.findUnique({
     where: {
-      instanceId,
-      contactNumber: normalizedContact,
+      instanceId_contactNumber: {
+        instanceId,
+        contactNumber: normalizedContact,
+      },
     },
   })
   
-  if (deleted.count > 0) {
+  if (cartRecord) {
+    // Remove todos os itens (cascade vai remover automaticamente, mas vamos fazer explicitamente)
+    await prisma.cartItem.deleteMany({
+      where: { cartId: cartRecord.id },
+    })
+    
+    // Remove o carrinho
+    await prisma.cart.delete({
+      where: { id: cartRecord.id },
+    })
+    
+    console.log(`🛒 [clearCart] ✅ Carrinho limpo: ID=${cartRecord.id}`)
     log.debug('Carrinho limpo', { instanceId, contactNumber: normalizedContact })
   }
 }
@@ -363,10 +437,70 @@ export async function clearCart(instanceId: string, contactNumber: string): Prom
  * Calcula total do carrinho
  */
 export function getCartTotal(cart: Cart): number {
+  if (!cart || !Array.isArray(cart.items)) {
+    return 0
+  }
+  
   return cart.items.reduce(
-    (total, item) => total + (item.quantity * item.unitPrice), 
+    (total, item) => {
+      const itemTotal = (item.quantity || 0) * (item.unitPrice || 0)
+      // Valida que o cálculo não resultou em NaN ou Infinity
+      if (isNaN(itemTotal) || !isFinite(itemTotal)) {
+        console.warn(`🛒 [getCartTotal] ⚠️ Item com cálculo inválido:`, item)
+        return total
+      }
+      return total + itemTotal
+    }, 
     0
   )
+}
+
+/**
+ * Valida e limpa carrinho, removendo itens inválidos
+ */
+export function validateAndCleanCart(cart: Cart): Cart {
+  if (!cart || !Array.isArray(cart.items)) {
+    return {
+      instanceId: cart?.instanceId || '',
+      contactNumber: cart?.contactNumber || '',
+      items: [],
+      updatedAt: cart?.updatedAt || new Date(),
+    }
+  }
+  
+  const validItems = cart.items.filter(item => {
+    const isValid = 
+      item &&
+      typeof item === 'object' &&
+      typeof item.productId === 'string' &&
+      item.productId.trim().length > 0 &&
+      typeof item.productName === 'string' &&
+      item.productName.trim().length > 0 &&
+      typeof item.quantity === 'number' &&
+      item.quantity > 0 &&
+      item.quantity <= 1000 &&
+      Number.isInteger(item.quantity) &&
+      typeof item.unitPrice === 'number' &&
+      item.unitPrice >= 0 &&
+      item.unitPrice <= 1000000 &&
+      isFinite(item.unitPrice) &&
+      (item.productType === 'service' || item.productType === 'catalog')
+    
+    if (!isValid) {
+      console.warn(`🛒 [validateAndCleanCart] ⚠️ Item inválido removido:`, item)
+    }
+    
+    return isValid
+  })
+  
+  if (validItems.length !== cart.items.length) {
+    console.warn(`🛒 [validateAndCleanCart] ⚠️ ${cart.items.length - validItems.length} itens inválidos removidos`)
+  }
+  
+  return {
+    ...cart,
+    items: validItems,
+  }
 }
 
 // ============================================================================
