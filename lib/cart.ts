@@ -446,6 +446,18 @@ export async function createOrderFromCart(
   // Cria o pedido no banco
   let order
   try {
+    console.log(`🛒 [createOrderFromCart] ========== CRIANDO PEDIDO ==========`)
+    console.log(`   userId: ${userId}`)
+    console.log(`   instanceId: ${instanceId}`)
+    console.log(`   contactNumber: ${normalizedContact}`)
+    console.log(`   itemCount: ${cart.items.length}`)
+    console.log(`   totalAmount: ${totalAmount}`)
+    console.log(`   deliveryType: ${deliveryType}`)
+    
+    cart.items.forEach((item, i) => {
+      console.log(`   Item ${i + 1}: ${item.productName} x${item.quantity} @ R$ ${item.unitPrice}`)
+    })
+    
     order = await prisma.order.create({
       data: {
         userId,
@@ -476,14 +488,21 @@ export async function createOrderFromCart(
         items: true,
       },
     })
+    
+    console.log(`🛒 [createOrderFromCart] ✅ Pedido criado no banco:`, {
+      orderId: order.id,
+      itemCount: order.items.length,
+      totalAmount: order.totalAmount,
+    })
   } catch (error) {
+    console.error(`🛒 [createOrderFromCart] ❌ Erro ao criar pedido:`, error)
     log.error('Erro ao criar pedido no banco de dados', {
       userId,
       instanceId,
       contactNumber: normalizedContact,
       error,
     })
-    throw new Error('Erro ao criar pedido. Tente novamente.')
+    throw new Error(`Erro ao criar pedido: ${error instanceof Error ? error.message : 'Erro desconhecido'}`)
   }
   
   // Limpa o carrinho após criar o pedido com sucesso

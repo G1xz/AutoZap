@@ -3477,6 +3477,13 @@ async function executeAIOnlyWorkflow(
 
           // Busca preço do produto
           let unitPrice = 0
+          console.log(`🛒 [add_to_cart] Buscando preço para produto:`, {
+            product_id: args.product_id,
+            product_type: args.product_type,
+            product_name: args.product_name,
+            userId,
+          })
+          
           if (args.product_type === 'service') {
             const service = await prisma.service.findFirst({
               where: {
@@ -3485,9 +3492,15 @@ async function executeAIOnlyWorkflow(
               },
               select: {
                 price: true,
+                name: true,
               },
             })
             unitPrice = service?.price || 0
+            console.log(`🛒 [add_to_cart] Serviço encontrado:`, {
+              name: service?.name,
+              price: service?.price,
+              unitPrice,
+            })
           } else {
             // Para produtos do catálogo, precisa buscar do CatalogNode
             const catalogNode = await prisma.catalogNode.findFirst({
@@ -3502,14 +3515,31 @@ async function executeAIOnlyWorkflow(
               try {
                 const nodeData = JSON.parse(catalogNode.data)
                 unitPrice = nodeData.price || 0
-              } catch {
+                console.log(`🛒 [add_to_cart] Produto do catálogo encontrado:`, {
+                  nodeData,
+                  unitPrice,
+                })
+              } catch (error) {
+                console.error(`🛒 [add_to_cart] Erro ao fazer parse do nodeData:`, error)
                 unitPrice = 0
               }
+            } else {
+              console.warn(`🛒 [add_to_cart] CatalogNode não encontrado para ID: ${args.product_id}`)
             }
+          }
+
+          if (unitPrice === 0) {
+            console.warn(`🛒 [add_to_cart] ⚠️ ATENÇÃO: Preço zerado para produto ${args.product_name} (ID: ${args.product_id})`)
           }
 
           const quantity = args.quantity || 1
           const totalPrice = unitPrice * quantity
+          
+          console.log(`🛒 [add_to_cart] Preço final:`, {
+            unitPrice,
+            quantity,
+            totalPrice,
+          })
 
           // Log antes de adicionar
           log.debug('Adicionando ao carrinho', {
@@ -3544,10 +3574,32 @@ async function executeAIOnlyWorkflow(
 
           const itemCount = cart.items.length
           const cartTotal = cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+          
+          // Monta mensagem detalhada e bonita
+          let message = `✅ *${args.product_name}* adicionado ao carrinho!\n\n`
+          message += `📦 *Resumo do Carrinho:*\n`
+          message += `━━━━━━━━━━━━━━━━━━━━\n\n`
+          
+          cart.items.forEach((item, index) => {
+            const itemTotal = item.quantity * item.unitPrice
+            const formattedUnitPrice = item.unitPrice.toFixed(2).replace('.', ',')
+            const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
+            
+            message += `${index + 1}. *${item.productName}*\n`
+            message += `   ${item.quantity}x R$ ${formattedUnitPrice} = R$ ${formattedItemTotal}\n`
+            if (item.notes) {
+              message += `   📝 ${item.notes}\n`
+            }
+            message += `\n`
+          })
+          
+          message += `━━━━━━━━━━━━━━━━━━━━\n`
+          message += `💰 *Total: R$ ${cartTotal.toFixed(2).replace('.', ',')}*\n\n`
+          message += `Deseja adicionar mais algo ou finalizar o pedido?`
 
           return {
             success: true,
-            message: `✅ ${args.product_name} adicionado ao carrinho!\n\n🛒 Carrinho: ${itemCount} item${itemCount !== 1 ? 's' : ''}\n💰 Total: R$ ${cartTotal.toFixed(2).replace('.', ',')}\n\nDeseja adicionar mais algo ou finalizar o pedido?`,
+            message,
             cartItems: itemCount,
             cartTotal,
           }
@@ -3581,21 +3633,36 @@ async function executeAIOnlyWorkflow(
           }
 
           const total = getCartTotal(cart)
-          let message = '🛒 **Seu Carrinho:**\n\n'
-
-          cart.items.forEach((item, index) => {
-            message += `${index + 1}. ${item.productName}`
-            if (item.quantity > 1) {
-              message += ` (${item.quantity}x)`
-            }
-            message += ` - R$ ${(item.quantity * item.unitPrice).toFixed(2).replace('.', ',')}\n`
-            if (item.notes) {
-              message += `   📝 ${item.notes}\n`
-            }
-          })
-
-          message += `\n💰 **Total: R$ ${total.toFixed(2).replace('.', ',')}**\n\n`
-          message += 'Deseja adicionar mais algo ou finalizar o pedido?'
+          
+          // Monta mensagem detalhada e bonita do carrinho
+          let message = `🛒 *Seu Carrinho de Compras*\n`
+          message += `━━━━━━━━━━━━━━━━━━━━\n\n`
+          
+          if (cart.items.length === 0) {
+            message += `Seu carrinho está vazio.\n\n`
+            message += `Adicione produtos ou serviços para começar seu pedido!`
+          } else {
+            message += `📦 *Itens no Carrinho:*\n\n`
+            
+            cart.items.forEach((item, index) => {
+              const itemTotal = item.quantity * item.unitPrice
+              const formattedUnitPrice = item.unitPrice.toFixed(2).replace('.', ',')
+              const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
+              
+              message += `${index + 1}. *${item.productName}*\n`
+              message += `   Quantidade: ${item.quantity}x\n`
+              message += `   Preço unitário: R$ ${formattedUnitPrice}\n`
+              message += `   Subtotal: R$ ${formattedItemTotal}\n`
+              if (item.notes) {
+                message += `   📝 Observação: ${item.notes}\n`
+              }
+              message += `\n`
+            })
+            
+            message += `━━━━━━━━━━━━━━━━━━━━\n`
+            message += `💰 *Total do Pedido: R$ ${total.toFixed(2).replace('.', ',')}*\n\n`
+            message += `Deseja adicionar mais algo ou finalizar o pedido?`
+          }
 
           return {
             success: true,
@@ -3648,8 +3715,19 @@ async function executeAIOnlyWorkflow(
             }
           }
 
+          // Define tipo de entrega (padrão: pickup se não especificado)
+          const deliveryType = (args.delivery_type || 'pickup') as 'pickup' | 'delivery'
+          const deliveryAddress = args.delivery_address || undefined
+          
+          console.log(`🛒 [checkout] Parâmetros recebidos:`, {
+            delivery_type: args.delivery_type,
+            deliveryType,
+            delivery_address: args.delivery_address,
+            notes: args.notes,
+          })
+
           // Valida tipo de entrega
-          if (args.delivery_type === 'delivery' && !args.delivery_address) {
+          if (deliveryType === 'delivery' && !deliveryAddress) {
             return {
               success: false,
               error: 'Por favor, informe o endereço de entrega.',
@@ -3670,14 +3748,14 @@ async function executeAIOnlyWorkflow(
                 },
               })
 
-              if (args.delivery_type === 'delivery' && !service?.deliveryAvailable) {
+              if (deliveryType === 'delivery' && !service?.deliveryAvailable) {
                 return {
                   success: false,
                   error: `O produto "${item.productName}" não permite entrega. Por favor, escolha retirada no estabelecimento ou remova este item do carrinho.`,
                 }
               }
 
-              if (args.delivery_type === 'pickup' && !service?.pickupAvailable) {
+              if (deliveryType === 'pickup' && !service?.pickupAvailable) {
                 return {
                   success: false,
                   error: `O produto "${item.productName}" não permite retirada. Por favor, escolha entrega ou remova este item do carrinho.`,
@@ -3686,72 +3764,114 @@ async function executeAIOnlyWorkflow(
             }
           }
 
-          // Cria o pedido
-          const result = await createOrderFromCart(
+          // Log antes de criar pedido
+          console.log(`🛒 [checkout] Criando pedido...`, {
             userId,
             instanceId,
             normalizedContactNumber,
-            contactNameFinal,
-            args.delivery_type as 'pickup' | 'delivery',
-            args.delivery_address,
-            args.notes
-          )
+            itemCount: cart.items.length,
+            deliveryType,
+          })
+
+          // Cria o pedido
+          let result
+          try {
+            result = await createOrderFromCart(
+              userId,
+              instanceId,
+              normalizedContactNumber,
+              contactNameFinal,
+              deliveryType,
+              deliveryAddress,
+              args.notes
+            )
+            console.log(`🛒 [checkout] ✅ Pedido criado com sucesso:`, {
+              orderId: result.orderId,
+              paymentLink: result.paymentLink,
+              paymentPixKey: result.paymentPixKey,
+            })
+          } catch (error) {
+            console.error(`🛒 [checkout] ❌ Erro ao criar pedido:`, error)
+            log.error('Erro ao criar pedido no checkout', error)
+            return {
+              success: false,
+              error: `Erro ao criar pedido: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+            }
+          }
 
           // Calcula o total
           const totalAmount = cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
           const formattedTotal = totalAmount.toFixed(2).replace('.', ',')
 
-          // Monta mensagem de confirmação com resumo detalhado
-          let message = `✅ *Pedido confirmado com sucesso!*\\n\\n`
+          // Monta mensagem de confirmação com resumo detalhado e bonito
+          let message = `✅ *Pedido Confirmado com Sucesso!*\n`
+          message += `━━━━━━━━━━━━━━━━━━━━\n\n`
+          message += `📋 *Resumo do Pedido*\n\n`
 
           // Lista de itens
-          message += `📦 *ITENS DO PEDIDO:*\\n`
-          cart.items.forEach((item) => {
+          message += `📦 *Itens do Pedido:*\n\n`
+          cart.items.forEach((item, index) => {
             const itemTotal = item.quantity * item.unitPrice
             const formattedUnitPrice = item.unitPrice.toFixed(2).replace('.', ',')
             const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
-            message += `• ${item.quantity}x ${item.productName} - R$ ${formattedUnitPrice} cada = *R$ ${formattedItemTotal}*\\n`
+            
+            message += `${index + 1}. *${item.productName}*\n`
+            message += `   Quantidade: ${item.quantity}x\n`
+            message += `   Preço unitário: R$ ${formattedUnitPrice}\n`
+            message += `   Subtotal: R$ ${formattedItemTotal}\n`
             if (item.notes) {
-              message += `  _Obs: ${item.notes}_\\n`
+              message += `   📝 Observação: ${item.notes}\n`
             }
+            message += `\n`
           })
 
-          message += `\\n💰 *TOTAL: R$ ${formattedTotal}*\\n\\n`
+          message += `━━━━━━━━━━━━━━━━━━━━\n`
+          message += `💰 *Total do Pedido: R$ ${formattedTotal}*\n\n`
 
           // Informações de entrega
-          if (args.delivery_type === 'delivery') {
-            message += `🚚 *Tipo:* Entrega\\n`
-            if (args.delivery_address) {
-              message += `📍 *Endereço:* ${args.delivery_address}\\n`
+          message += `🚚 *Informações de Entrega:*\n\n`
+          if (deliveryType === 'delivery') {
+            message += `Tipo: *Entrega*\n`
+            if (deliveryAddress) {
+              message += `📍 Endereço: ${deliveryAddress}\n`
             }
           } else {
-            message += `🏪 *Tipo:* Retirada no estabelecimento\\n`
+            message += `Tipo: *Retirada no estabelecimento*\n`
+            message += `Você pode retirar seu pedido no nosso estabelecimento.\n`
           }
 
           if (args.notes) {
-            message += `📝 *Observações:* ${args.notes}\\n`
+            message += `\n📝 *Observações do Pedido:*\n`
+            message += `${args.notes}\n`
           }
 
-          message += `\\n`
+          message += `\n━━━━━━━━━━━━━━━━━━━━\n\n`
 
           // Adiciona informações de pagamento se houver
+          message += `💳 *Informações de Pagamento:*\n\n`
           if (result.paymentLink) {
-            message += `💳 *PAGAMENTO:*\\n`
-            message += `Clique no link para pagar: ${result.paymentLink}\\n\\n`
+            message += `Método: *Pagamento Online*\n`
+            message += `🔗 Link de pagamento:\n`
+            message += `${result.paymentLink}\n\n`
+            message += `Clique no link acima para realizar o pagamento.\n`
           } else if (result.paymentPixKey) {
-            message += `💳 *PAGAMENTO VIA PIX:*\\n`
-            message += `Chave Pix: \`${result.paymentPixKey}\`\\n`
-            message += `Valor: R$ ${formattedTotal}\\n\\n`
+            message += `Método: *PIX*\n`
+            message += `🔑 Chave Pix:\n`
+            message += `\`${result.paymentPixKey}\`\n\n`
+            message += `💰 Valor: R$ ${formattedTotal}\n\n`
+            message += `Copie a chave Pix acima e realize o pagamento no valor de R$ ${formattedTotal}.\n`
           } else {
-            message += `💳 *PAGAMENTO:*\\n`
-            if (args.delivery_type === 'delivery') {
-              message += `Você pode pagar no momento da entrega.\\n\\n`
+            message += `Método: *Pagamento na Entrega/Retirada*\n`
+            if (deliveryType === 'delivery') {
+              message += `Você pode pagar no momento da entrega.\n`
             } else {
-              message += `Você pode pagar na retirada.\\n\\n`
+              message += `Você pode pagar na retirada do pedido.\n`
             }
           }
 
-          message += `Obrigado pela preferência! 🎉`
+          message += `\n━━━━━━━━━━━━━━━━━━━━\n\n`
+          message += `🎉 *Obrigado pela sua preferência!*\n\n`
+          message += `Seu pedido foi registrado e em breve entraremos em contato.`
 
           // Envia mensagem de confirmação
           const contactKey = `${instanceId}-${contactNumber}`
