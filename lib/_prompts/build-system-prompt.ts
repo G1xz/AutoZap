@@ -263,8 +263,11 @@ export function buildSystemPrompt(
   prompt += `- Quando o cliente disser "quero finalizar a compra", "finalizar", "fechar pedido", "completar pedido", "concluir compra" → VOCÊ DEVE CHAMAR A FUNÇÃO "checkout"\n`
   prompt += `- NUNCA liste produtos novamente quando o cliente quer finalizar - ele já tem itens no carrinho!\n`
   prompt += `- NUNCA pergunte qual produto o cliente quer quando ele diz "finalizar" - use a função checkout!\n`
-  prompt += `- A função checkout pode retornar um erro pedindo para escolher entrega/retirada - nesse caso, pergunte ao cliente e chame checkout novamente\n`
-  prompt += `- A função checkout pode retornar um erro pedindo endereço - nesse caso, pergunte o endereço e chame checkout novamente\n`
+  prompt += `- ⚠️ CRÍTICO: Se a função checkout retornar um erro pedindo para escolher entrega/retirada, você DEVE perguntar ao cliente e CHAMAR checkout NOVAMENTE com o delivery_type correto ("pickup" para retirada, "delivery" para entrega)\n`
+  prompt += `- ⚠️ CRÍTICO: Se o cliente responder "retirada" ou "entrega" após você perguntar, você DEVE CHAMAR checkout IMEDIATAMENTE com o delivery_type correspondente\n`
+  prompt += `- ⚠️ CRÍTICO: Se o cliente disser "retirada", use delivery_type="pickup" na função checkout\n`
+  prompt += `- ⚠️ CRÍTICO: Se o cliente disser "entrega", use delivery_type="delivery" na função checkout (e peça o endereço se necessário)\n`
+  prompt += `- A função checkout pode retornar um erro pedindo endereço - nesse caso, pergunte o endereço e chame checkout novamente com delivery_address preenchido\n`
   prompt += `- GATILHOS QUE EXIGEM CHAMAR CHECKOUT: "finalizar", "fechar pedido", "quero finalizar a compra", "completar pedido", "concluir compra", "finalizar compra", "só isso", "por enquanto é só", "tá bom assim", "pode fechar"\n`
   prompt += `\n`
   prompt += `🚚 SOBRE ENTREGA/RETIRADA:\n`

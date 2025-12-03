@@ -171,14 +171,33 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
   
   // Converte itens do banco para formato da interface
   // CRÍTICO: Converte Decimal para Number se necessário
-  const items: CartItem[] = cartRecord.items.map(item => ({
-    productId: item.productId,
-    productType: item.productType as 'service' | 'catalog',
-    productName: item.productName,
-    quantity: item.quantity,
-    unitPrice: typeof item.unitPrice === 'number' ? item.unitPrice : Number(item.unitPrice),
-    notes: item.notes || undefined,
-  }))
+  const items: CartItem[] = cartRecord.items.map(item => {
+    // Converte unitPrice de Decimal para Number
+    let unitPrice: number
+    if (typeof item.unitPrice === 'number') {
+      unitPrice = item.unitPrice
+    } else if (item.unitPrice && typeof item.unitPrice === 'object' && 'toNumber' in item.unitPrice) {
+      // Prisma Decimal type
+      unitPrice = (item.unitPrice as any).toNumber()
+    } else {
+      unitPrice = Number(item.unitPrice) || 0
+    }
+    
+    if (unitPrice === 0) {
+      console.warn(`🛒 [getCart] ⚠️ ATENÇÃO: Item "${item.productName}" tem preço zerado!`)
+      console.warn(`   Product ID: ${item.productId}, Product Type: ${item.productType}`)
+      console.warn(`   unitPrice original: ${item.unitPrice}, tipo: ${typeof item.unitPrice}`)
+    }
+    
+    return {
+      productId: item.productId,
+      productType: item.productType as 'service' | 'catalog',
+      productName: item.productName,
+      quantity: item.quantity,
+      unitPrice,
+      notes: item.notes || undefined,
+    }
+  })
   
   console.log(`🛒 [getCart] Itens carregados: ${items.length} itens`)
   items.forEach((item, i) => {

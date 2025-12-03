@@ -1590,8 +1590,19 @@ async function executeAIOnlyWorkflow(
       console.log(`   Itens no carrinho: ${cart.items.length}`)
       console.log(`   hasCartItems: ${hasCartItems}`)
       
+      // Detecta se a mensagem é sobre escolher tipo de entrega (retirada/entrega)
+      const isDeliveryTypeResponse = hasCartItems && (
+        userMessage.toLowerCase().trim() === 'retirada' ||
+        userMessage.toLowerCase().trim() === 'entrega' ||
+        userMessage.toLowerCase().includes('retirar') ||
+        userMessage.toLowerCase().includes('receber em casa') ||
+        userMessage.toLowerCase().includes('delivery') ||
+        userMessage.toLowerCase().includes('pickup')
+      )
+      
       // Se há itens no carrinho e mensagem é sobre confirmar/finalizar, NÃO processa agendamento
       const isCartContext = hasCartItems && (
+        isDeliveryTypeResponse ||
         userMessage.toLowerCase().includes('confirmar') ||
         userMessage.toLowerCase().includes('finalizar') ||
         userMessage.toLowerCase().includes('fechar pedido') ||
@@ -3564,10 +3575,18 @@ async function executeAIOnlyWorkflow(
             if (catalogNode) {
               try {
                 const nodeData = JSON.parse(catalogNode.data)
-                unitPrice = nodeData.price || 0
+                unitPrice = typeof nodeData.price === 'number' ? nodeData.price : parseFloat(nodeData.price) || 0
+                
+                if (unitPrice === 0) {
+                  console.warn(`🛒 [add_to_cart] ⚠️ ATENÇÃO: Preço zerado no nodeData para produto ${args.product_name}`)
+                  console.warn(`   nodeData.price: ${nodeData.price}, tipo: ${typeof nodeData.price}`)
+                  console.warn(`   nodeData completo:`, JSON.stringify(nodeData, null, 2))
+                }
+                
                 console.log(`🛒 [add_to_cart] Produto do catálogo encontrado:`, {
                   nodeData,
                   unitPrice,
+                  priceFromData: nodeData.price,
                 })
               } catch (error) {
                 console.error(`🛒 [add_to_cart] Erro ao fazer parse do nodeData:`, error)
@@ -3575,6 +3594,31 @@ async function executeAIOnlyWorkflow(
               }
             } else {
               console.warn(`🛒 [add_to_cart] CatalogNode não encontrado para ID: ${args.product_id}`)
+              console.warn(`   Tentando buscar em todos os catálogos do usuário...`)
+              
+              // Tenta buscar em todos os catálogos do usuário
+              const allCatalogs = await prisma.catalog.findMany({
+                where: { userId },
+                include: {
+                  nodes: true,
+                },
+              })
+              
+              console.warn(`   Total de catálogos encontrados: ${allCatalogs.length}`)
+              for (const catalog of allCatalogs) {
+                const foundNode = catalog.nodes.find(n => n.id === args.product_id)
+                if (foundNode) {
+                  console.warn(`   ✅ Node encontrado no catálogo "${catalog.name}"`)
+                  try {
+                    const nodeData = JSON.parse(foundNode.data)
+                    unitPrice = typeof nodeData.price === 'number' ? nodeData.price : parseFloat(nodeData.price) || 0
+                    console.warn(`   Preço encontrado: R$ ${unitPrice}`)
+                    break
+                  } catch (e) {
+                    console.error(`   Erro ao fazer parse:`, e)
+                  }
+                }
+              }
             }
           }
 
