@@ -3595,7 +3595,10 @@ async function executeAIOnlyWorkflow(
           console.log(`🛒 [add_to_cart] ========== ADICIONANDO AO CARRINHO ==========`)
           console.log(`   instanceId: ${instanceId}`)
           console.log(`   contactNumber original: "${contactNumber}"`)
+          console.log(`   contactNumber tipo: ${typeof contactNumber}`)
+          console.log(`   contactNumber length: ${contactNumber.length}`)
           console.log(`   contactNumber normalizado: "${normalizedContactNumber}"`)
+          console.log(`   contactNumber normalizado length: ${normalizedContactNumber.length}`)
           console.log(`   produto: ${args.product_name} (${args.product_id})`)
           console.log(`   quantidade: ${quantity}`)
           console.log(`   preço unitário: R$ ${unitPrice}`)
@@ -3800,7 +3803,10 @@ async function executeAIOnlyWorkflow(
           console.log(`🛒 [view_cart] ========== VISUALIZANDO CARRINHO ==========`)
           console.log(`   instanceId: ${instanceId}`)
           console.log(`   contactNumber original: "${contactNumber}"`)
+          console.log(`   contactNumber tipo: ${typeof contactNumber}`)
+          console.log(`   contactNumber length: ${contactNumber.length}`)
           console.log(`   contactNumber normalizado: "${normalizedContactNumber}"`)
+          console.log(`   contactNumber normalizado length: ${normalizedContactNumber.length}`)
 
           const cart = await getCart(instanceId, normalizedContactNumber)
           

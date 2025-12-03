@@ -84,6 +84,19 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
   if (!cartRecord) {
     console.log(`🛒 [getCart] Carrinho NÃO encontrado com número exato, verificando variações...`)
     
+    // DEBUG: Lista TODOS os carrinhos da instância para debug
+    const allCartsInInstance = await prisma.cart.findMany({
+      where: { instanceId },
+      include: { items: true },
+    })
+    console.log(`🛒 [getCart] 🔍 DEBUG: Total de carrinhos na instância ${instanceId}: ${allCartsInInstance.length}`)
+    allCartsInInstance.forEach((c, i) => {
+      console.log(`   [${i + 1}] Cart ID: ${c.id}, ContactNumber: "${c.contactNumber}", Itens: ${c.items.length}`)
+      c.items.forEach((item, j) => {
+        console.log(`      Item ${j + 1}: ${item.productName} x${item.quantity}`)
+      })
+    })
+    
     // Tenta encontrar carrinho com variações do número (pode ter sido salvo com formato diferente)
     // Remove código do país (55) se presente
     const withoutCountryCode = normalizedContact.startsWith('55') && normalizedContact.length > 10 
@@ -92,6 +105,11 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
     const withCountryCode = normalizedContact.startsWith('55') 
       ? normalizedContact 
       : `55${normalizedContact}`
+    
+    console.log(`🛒 [getCart] 🔍 Tentando variações do número:`)
+    console.log(`   Número original normalizado: "${normalizedContact}"`)
+    console.log(`   Sem código do país: "${withoutCountryCode}"`)
+    console.log(`   Com código do país: "${withCountryCode}"`)
     
     // Busca carrinho com variações
     const alternativeCart = await prisma.cart.findFirst({
@@ -119,7 +137,10 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
       })
       console.log(`🛒 [getCart] ✅ Número do carrinho atualizado para formato normalizado`)
     } else {
-      console.log(`🛒 [getCart] Nenhum carrinho encontrado, criando novo...`)
+      console.log(`🛒 [getCart] ⚠️ NENHUM carrinho encontrado mesmo com variações!`)
+      console.log(`   Isso pode indicar que o carrinho não foi salvo ou foi salvo com número diferente`)
+      console.log(`   Criando novo carrinho vazio...`)
+      
       // Cria novo carrinho
       cartRecord = await prisma.cart.create({
         data: {
@@ -334,6 +355,19 @@ export async function addToCart(
   await prisma.cart.update({
     where: { id: cartRecord.id },
     data: { updatedAt: new Date() },
+  })
+  
+  // DEBUG: Verifica se o item foi realmente salvo
+  const verifyCart = await prisma.cart.findUnique({
+    where: { id: cartRecord.id },
+    include: { items: true },
+  })
+  console.log(`🛒 [addToCart] 🔍 VERIFICAÇÃO: Carrinho após adicionar item:`)
+  console.log(`   Cart ID: ${verifyCart?.id}`)
+  console.log(`   ContactNumber: "${verifyCart?.contactNumber}"`)
+  console.log(`   Total de itens: ${verifyCart?.items.length}`)
+  verifyCart?.items.forEach((item, i) => {
+    console.log(`   [${i + 1}] ${item.productName} x${item.quantity} - R$ ${item.unitPrice}`)
   })
   
   // Retorna carrinho atualizado
