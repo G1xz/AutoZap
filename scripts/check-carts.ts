@@ -72,15 +72,22 @@ async function checkCarts() {
     console.log(`   Carrinhos com itens: ${cartsWithItems}`)
     console.log(`   Carrinhos vazios: ${emptyCarts}`)
 
-    // Verifica CartItems órfãos (sem carrinho)
-    const orphanItems = await prisma.cartItem.findMany({
-      where: {
-        cart: null,
-      },
-    })
+    // Verifica CartItems órfãos (sem carrinho válido)
+    // Busca todos os CartItems e verifica se o carrinho existe
+    try {
+      const allCartItems = await prisma.cartItem.findMany({
+        include: {
+          cart: true,
+        },
+      })
 
-    if (orphanItems.length > 0) {
-      console.log(`\n⚠️ ATENÇÃO: ${orphanItems.length} CartItems órfãos encontrados (sem carrinho associado)!`)
+      const orphanItems = allCartItems.filter(item => !item.cart)
+      if (orphanItems.length > 0) {
+        console.log(`\n⚠️ ATENÇÃO: ${orphanItems.length} CartItems órfãos encontrados (sem carrinho associado)!`)
+      }
+    } catch (error) {
+      // Ignora erro se não conseguir verificar itens órfãos
+      console.log(`\n⚠️ Não foi possível verificar CartItems órfãos`)
     }
 
     // Verifica por instância
