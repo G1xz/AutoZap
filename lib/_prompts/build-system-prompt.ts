@@ -231,11 +231,15 @@ export function buildSystemPrompt(
   prompt += `\n`
   prompt += `⚠️⚠️⚠️ REGRAS CRÍTICAS DE FINALIZAÇÃO:\n`
   prompt += `- Se você perguntou "Deseja adicionar mais algo?" e o usuário respondeu "não", "só isso", "por enquanto é só", "tá bom assim" → VOCÊ DEVE CHAMAR A FUNÇÃO "checkout" IMEDIATAMENTE\n`
-  prompt += `- Se o usuário diz "quero finalizar a compra", "vou finalizar", "fechar pedido", "completar pedido", "concluir compra" → VOCÊ DEVE CHAMAR A FUNÇÃO "checkout" IMEDIATAMENTE\n`
+  prompt += `- Se o usuário diz "quero finalizar a compra", "vou finalizar", "fechar pedido", "completar pedido", "concluir compra", "confirmar compra", "confirmar pedido" → VOCÊ DEVE CHAMAR A FUNÇÃO "checkout" IMEDIATAMENTE\n`
   prompt += `- ⚠️ CRÍTICO: "Finalizar pedido" é DIFERENTE de "Encerrar conversa". Nunca chame close_chat quando o usuário quer comprar!\n`
+  prompt += `- ⚠️ CRÍTICO: "Confirmar" no contexto de CARRINHO/PEDIDO significa finalizar a compra (chame checkout), NÃO é sobre agendamento!\n`
   prompt += `- ⚠️ CRÍTICO: Quando o usuário quer finalizar, NUNCA liste produtos novamente - ele já tem itens no carrinho! Chame checkout!\n`
   prompt += `- Se o usuário acabou de adicionar um item e diz "só isso" → Chame checkout imediatamente\n`
   prompt += `- A função checkout vai mostrar automaticamente o que está no carrinho - você não precisa listar nada!\n`
+  prompt += `- ⚠️ CONTEXTO: Se você acabou de mostrar o carrinho e o usuário diz "confirmar", "sim", "ok" → É sobre o PEDIDO, chame checkout!\n`
+  prompt += `- ⚠️ CONTEXTO: Se você acabou de mostrar o carrinho (via view_cart) e o usuário responde qualquer coisa que indique confirmação/finalização → CHAME CHECKOUT IMEDIATAMENTE!\n`
+  prompt += `- ⚠️ FLUXO: Mostrou carrinho → Usuário diz "confirmar"/"sim"/"ok"/"finalizar" → CHAME checkout (não pergunte mais nada!)\n`
   prompt += `\n`
 
   // Instruções sobre carrinho de compras
@@ -274,7 +278,8 @@ export function buildSystemPrompt(
   prompt += `- Palavras-chave que indicam interesse em remover: "tira isso", "remove", "não quero mais esse", "cancela esse item"\n`
   prompt += `- Palavras-chave que indicam interesse em cancelar: "cancela tudo", "limpa o carrinho", "não quero mais nada", "desiste do pedido"\n`
   prompt += `- Palavras-chave que indicam interesse em ver: "meu carrinho", "o que tem no carrinho", "itens do pedido", "resumo"\n`
-  prompt += `- Palavras-chave que indicam interesse em finalizar: "finalizar", "fechar pedido", "confirmar compra", "quero comprar", "fazer pedido", "só isso", "não quero mais nada", "quero finalizar a compra", "completar pedido"\n`
+  prompt += `- Palavras-chave que indicam interesse em finalizar: "finalizar", "fechar pedido", "confirmar compra", "confirmar pedido", "confirmar", "quero comprar", "fazer pedido", "só isso", "não quero mais nada", "quero finalizar a compra", "completar pedido", "pode finalizar", "vamos finalizar"\n`
+  prompt += `- ⚠️ IMPORTANTE: "confirmar" após mostrar o carrinho = finalizar pedido (checkout), NÃO é sobre agendamento!\n`
 
   // Mensagem de boas-vindas personalizada
   if (howToBuy && howToBuy.trim().length > 10) {
@@ -404,6 +409,8 @@ function addAppointmentRules(businessName: string): string {
 - ⚠️ CRÍTICO: Se você acabou de criar um agendamento pendente e o cliente responde qualquer coisa que não seja confirmação/cancelamento, NÃO crie outro agendamento. Aguarde a confirmação do primeiro.
 - ⚠️ CRÍTICO: Se o cliente sugerir outro horário DEPOIS de você ter criado um agendamento pendente, você DEVE criar um novo agendamento pendente com o novo horário (o sistema vai substituir automaticamente)
 - ⚠️ CRÍTICO: NUNCA crie múltiplos agendamentos pendentes para o mesmo cliente ao mesmo tempo
+- ⚠️ CRÍTICO: DISTINGUIR CONTEXTO: Se você acabou de mostrar o CARRINHO e o cliente diz "confirmar", "sim", "ok" → É sobre FINALIZAR PEDIDO (chame checkout), NÃO é sobre agendamento!
+- ⚠️ CRÍTICO: DISTINGUIR CONTEXTO: "Confirmar" só é sobre agendamento se você acabou de mostrar um AGENDAMENTO PENDENTE. Se mostrou carrinho, é sobre pedido!
 
 📋 FUNÇÕES DISPONÍVEIS PARA AGENDAMENTO:
 1. create_appointment - Cria um novo agendamento (verifica disponibilidade automaticamente)

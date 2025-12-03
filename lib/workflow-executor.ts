@@ -1576,32 +1576,81 @@ async function executeAIOnlyWorkflow(
       return
     }
 
-    // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
-    // Se processou algo, retorna imediatamente SEM chamar a IA
-    console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
-    console.log(`   Mensagem do usuário: "${userMessage}"`)
+    // PRIMEIRO: Verifica contexto de carrinho ANTES de verificar agendamento
+    // Se há itens no carrinho e mensagem é sobre confirmar/finalizar, é sobre pedido, não agendamento
+    const normalizedContactForCart = contactNumber.replace(/\D/g, '')
+    let hasCartItems = false
+    
+    try {
+      const { getCart } = await import('./cart')
+      const cart = await getCart(instanceId, normalizedContactForCart)
+      hasCartItems = cart.items.length > 0
+      
+      console.log(`🛒 [executeAIOnlyWorkflow] Verificando contexto de carrinho:`)
+      console.log(`   Itens no carrinho: ${cart.items.length}`)
+      console.log(`   hasCartItems: ${hasCartItems}`)
+      
+      // Se há itens no carrinho e mensagem é sobre confirmar/finalizar, NÃO processa agendamento
+      const isCartContext = hasCartItems && (
+        userMessage.toLowerCase().includes('confirmar') ||
+        userMessage.toLowerCase().includes('finalizar') ||
+        userMessage.toLowerCase().includes('fechar pedido') ||
+        userMessage.toLowerCase().includes('completar pedido') ||
+        userMessage.toLowerCase().includes('concluir compra')
+      )
+      
+      if (isCartContext) {
+        console.log(`🛒 [executeAIOnlyWorkflow] ⚠️ Contexto é de CARRINHO, pulando verificação de agendamento`)
+        console.log(`   Mensagem: "${userMessage}"`)
+        console.log(`   Itens no carrinho: ${cart.items.length}`)
+        // Não processa agendamento, deixa a IA processar o checkout
+      } else {
+        // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
+        // Se processou algo, retorna imediatamente SEM chamar a IA
+        console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
+        console.log(`   Mensagem do usuário: "${userMessage}"`)
 
-    const processedAppointment = await processAppointmentConfirmation(
-      instanceId,
-      contactNumber,
-      userMessage,
-      userId,
-      contactNameFinal
-    )
+        const processedAppointment = await processAppointmentConfirmation(
+          instanceId,
+          contactNumber,
+          userMessage,
+          userId,
+          contactNameFinal
+        )
 
-    console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
+        console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
 
-    if (processedAppointment) {
-      console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
-      console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
+        if (processedAppointment) {
+          console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
+          console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
 
-      // CRÍTICO: Limpa a execução do workflow após processar agendamento
-      // Isso permite que novas mensagens iniciem um novo fluxo limpo
-      const executionKeyAI = `${instanceId}-${contactNumber}`
-      if (workflowExecutions.has(executionKeyAI)) {
-        console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após processar agendamento`)
-        workflowExecutions.delete(executionKeyAI)
+          // CRÍTICO: Limpa a execução do workflow após processar agendamento
+          // Isso permite que novas mensagens iniciem um novo fluxo limpo
+          const executionKeyAI = `${instanceId}-${contactNumber}`
+          if (workflowExecutions.has(executionKeyAI)) {
+            console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após processar agendamento`)
+            workflowExecutions.delete(executionKeyAI)
+          }
+          
+          return // Retorna sem chamar IA
+        }
       }
+    } catch (cartError) {
+      console.error(`🛒 [executeAIOnlyWorkflow] Erro ao verificar carrinho, continuando normalmente:`, cartError)
+      // Se houver erro ao verificar carrinho, continua normalmente verificando agendamento
+      const processedAppointment = await processAppointmentConfirmation(
+        instanceId,
+        contactNumber,
+        userMessage,
+        userId,
+        contactNameFinal
+      )
+
+      if (processedAppointment) {
+        const executionKeyAI = `${instanceId}-${contactNumber}`
+        if (workflowExecutions.has(executionKeyAI)) {
+          workflowExecutions.delete(executionKeyAI)
+        }
 
       return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO CHAMA IA
     }
@@ -3542,6 +3591,14 @@ async function executeAIOnlyWorkflow(
           })
 
           // Log antes de adicionar
+          console.log(`🛒 [add_to_cart] ========== ADICIONANDO AO CARRINHO ==========`)
+          console.log(`   instanceId: ${instanceId}`)
+          console.log(`   contactNumber original: "${contactNumber}"`)
+          console.log(`   contactNumber normalizado: "${normalizedContactNumber}"`)
+          console.log(`   produto: ${args.product_name} (${args.product_id})`)
+          console.log(`   quantidade: ${quantity}`)
+          console.log(`   preço unitário: R$ ${unitPrice}`)
+          
           log.debug('Adicionando ao carrinho', {
             instanceId,
             normalizedContactNumber,
@@ -3560,6 +3617,12 @@ async function executeAIOnlyWorkflow(
               quantity,
               unitPrice,
               notes: args.notes,
+            })
+            
+            console.log(`🛒 [add_to_cart] ✅ Item adicionado com sucesso!`)
+            console.log(`   Carrinho agora tem ${cart.items.length} itens`)
+            cart.items.forEach((item, i) => {
+              console.log(`   [${i + 1}] ${item.productName} x${item.quantity} - R$ ${item.unitPrice}`)
             })
           } catch (error) {
             console.error(`🛒 [add_to_cart] Erro ao adicionar ao carrinho:`, error)
@@ -3732,8 +3795,22 @@ async function executeAIOnlyWorkflow(
 
           // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
           const normalizedContactNumber = contactNumber.replace(/\D/g, '')
+          
+          console.log(`🛒 [view_cart] ========== VISUALIZANDO CARRINHO ==========`)
+          console.log(`   instanceId: ${instanceId}`)
+          console.log(`   contactNumber original: "${contactNumber}"`)
+          console.log(`   contactNumber normalizado: "${normalizedContactNumber}"`)
 
           const cart = await getCart(instanceId, normalizedContactNumber)
+          
+          console.log(`🛒 [view_cart] Carrinho retornado:`, {
+            itemCount: cart.items.length,
+            items: cart.items.map(i => ({
+              productId: i.productId,
+              productName: i.productName,
+              quantity: i.quantity,
+            })),
+          })
 
           if (cart.items.length === 0) {
             return {
@@ -3800,6 +3877,11 @@ async function executeAIOnlyWorkflow(
           const normalizedContactNumber = contactNumber.replace(/\D/g, '')
 
           // Log antes de buscar carrinho
+          console.log(`🛒 [checkout] ========== INICIANDO CHECKOUT ==========`)
+          console.log(`   instanceId: ${instanceId}`)
+          console.log(`   contactNumber original: "${contactNumber}"`)
+          console.log(`   contactNumber normalizado: "${normalizedContactNumber}"`)
+          
           log.debug('Buscando carrinho para checkout', {
             instanceId,
             originalContactNumber: contactNumber,
@@ -3809,6 +3891,16 @@ async function executeAIOnlyWorkflow(
           const cart = await getCart(instanceId, normalizedContactNumber)
 
           // Log do carrinho encontrado
+          console.log(`🛒 [checkout] Carrinho encontrado:`, {
+            itemCount: cart.items.length,
+            items: cart.items.map(i => ({
+              productId: i.productId,
+              productName: i.productName,
+              quantity: i.quantity,
+              unitPrice: i.unitPrice,
+            })),
+          })
+          
           log.debug('Carrinho encontrado no checkout', {
             instanceId,
             normalizedContactNumber,
@@ -3821,6 +3913,26 @@ async function executeAIOnlyWorkflow(
           })
 
           if (cart.items.length === 0) {
+            console.error(`🛒 [checkout] ❌❌❌ CARRINHO VAZIO NO CHECKOUT! ❌❌❌`)
+            console.error(`   Isso não deveria acontecer se o usuário acabou de ver o carrinho com itens!`)
+            console.error(`   Verificando se há carrinho com número diferente...`)
+            
+            // Tenta buscar todos os carrinhos para este contato (debug)
+            try {
+              const allCarts = await prisma.cart.findMany({
+                where: { instanceId },
+                include: { items: true },
+              })
+              console.error(`   Total de carrinhos para esta instância: ${allCarts.length}`)
+              allCarts.forEach((c, i) => {
+                const cNormalized = c.contactNumber.replace(/\D/g, '')
+                const matches = cNormalized === normalizedContactNumber || c.contactNumber === normalizedContactNumber
+                console.error(`   [${i + 1}] contactNumber: "${c.contactNumber}" (normalizado: "${cNormalized}") ${matches ? '✅ CORRESPONDE!' : '❌'} | Itens: ${c.items.length} | Esperado: "${normalizedContactNumber}"`)
+              })
+            } catch (debugError) {
+              console.error(`   Erro ao buscar carrinhos para debug:`, debugError)
+            }
+            
             return {
               success: false,
               error: 'Seu carrinho está vazio. Adicione produtos antes de finalizar o pedido.',
@@ -4316,7 +4428,7 @@ async function executeAIOnlyWorkflow(
         },
         {
           name: 'checkout',
-          description: '⚠️⚠️⚠️ CRÍTICO: Finaliza o pedido e cria a ordem de compra. VOCÊ DEVE CHAMAR ESTA FUNÇÃO quando o cliente disser: "quero finalizar a compra", "finalizar", "fechar pedido", "completar pedido", "concluir compra", "só isso", "por enquanto é só", "tá bom assim", "pode fechar". NUNCA liste produtos novamente quando o cliente quer finalizar - ele já tem itens no carrinho! Esta função mostra automaticamente o que está no carrinho e processa o pedido. Se não souber o tipo de entrega, use "pickup" como padrão.',
+          description: '⚠️⚠️⚠️ CRÍTICO: Finaliza o pedido e cria a ordem de compra. VOCÊ DEVE CHAMAR ESTA FUNÇÃO quando: (1) O cliente disser "quero finalizar a compra", "finalizar", "fechar pedido", "completar pedido", "concluir compra", "confirmar compra", "confirmar pedido", "confirmar", "sim", "ok", "só isso", "por enquanto é só", "tá bom assim", "pode fechar". (2) Você acabou de mostrar o carrinho (via view_cart) e o cliente responde "confirmar", "sim", "ok", "finalizar" - CHAME checkout IMEDIATAMENTE! NUNCA liste produtos novamente quando o cliente quer finalizar - ele já tem itens no carrinho! Esta função mostra automaticamente o que está no carrinho e processa o pedido. Se não souber o tipo de entrega, use "pickup" como padrão.',
           parameters: {
             type: 'object',
             properties: {

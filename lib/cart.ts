@@ -82,24 +82,62 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
   })
   
   if (!cartRecord) {
-    console.log(`🛒 [getCart] Carrinho NÃO encontrado, criando novo...`)
-    // Cria novo carrinho
-    cartRecord = await prisma.cart.create({
-      data: {
-        userId: instance.userId,
+    console.log(`🛒 [getCart] Carrinho NÃO encontrado com número exato, verificando variações...`)
+    
+    // Tenta encontrar carrinho com variações do número (pode ter sido salvo com formato diferente)
+    // Remove código do país (55) se presente
+    const withoutCountryCode = normalizedContact.startsWith('55') && normalizedContact.length > 10 
+      ? normalizedContact.substring(2) 
+      : normalizedContact
+    const withCountryCode = normalizedContact.startsWith('55') 
+      ? normalizedContact 
+      : `55${normalizedContact}`
+    
+    // Busca carrinho com variações
+    const alternativeCart = await prisma.cart.findFirst({
+      where: {
         instanceId,
+        OR: [
+          { contactNumber: withoutCountryCode },
+          { contactNumber: withCountryCode },
+        ],
+      },
+      include: { items: true },
+    })
+    
+    if (alternativeCart) {
+      console.log(`🛒 [getCart] ⚠️ Carrinho encontrado com número diferente!`)
+      console.log(`   Número esperado: "${normalizedContact}"`)
+      console.log(`   Número encontrado: "${alternativeCart.contactNumber}"`)
+      console.log(`   Itens no carrinho encontrado: ${alternativeCart.items.length}`)
+      
+      // Atualiza o número do carrinho para o formato normalizado atual
+      cartRecord = await prisma.cart.update({
+        where: { id: alternativeCart.id },
+        data: { contactNumber: normalizedContact },
+        include: { items: true },
+      })
+      console.log(`🛒 [getCart] ✅ Número do carrinho atualizado para formato normalizado`)
+    } else {
+      console.log(`🛒 [getCart] Nenhum carrinho encontrado, criando novo...`)
+      // Cria novo carrinho
+      cartRecord = await prisma.cart.create({
+        data: {
+          userId: instance.userId,
+          instanceId,
+          contactNumber: normalizedContact,
+        },
+        include: {
+          items: true,
+        },
+      })
+      console.log(`🛒 [getCart] ✅ Carrinho criado no banco: ID=${cartRecord.id}`)
+      log.debug('Carrinho criado no banco', { 
+        instanceId, 
         contactNumber: normalizedContact,
-      },
-      include: {
-        items: true,
-      },
-    })
-    console.log(`🛒 [getCart] ✅ Carrinho criado no banco: ID=${cartRecord.id}`)
-    log.debug('Carrinho criado no banco', { 
-      instanceId, 
-      contactNumber: normalizedContact,
-      cartId: cartRecord.id,
-    })
+        cartId: cartRecord.id,
+      })
+    }
   } else {
     console.log(`🛒 [getCart] ✅ Carrinho encontrado no banco: ID=${cartRecord.id}, Itens: ${cartRecord.items.length}`)
     log.debug('Carrinho encontrado no banco', { 
@@ -111,12 +149,13 @@ export async function getCart(instanceId: string, contactNumber: string): Promis
   }
   
   // Converte itens do banco para formato da interface
+  // CRÍTICO: Converte Decimal para Number se necessário
   const items: CartItem[] = cartRecord.items.map(item => ({
     productId: item.productId,
     productType: item.productType as 'service' | 'catalog',
     productName: item.productName,
     quantity: item.quantity,
-    unitPrice: item.unitPrice,
+    unitPrice: typeof item.unitPrice === 'number' ? item.unitPrice : Number(item.unitPrice),
     notes: item.notes || undefined,
   }))
   
@@ -201,14 +240,47 @@ export async function addToCart(
   })
   
   if (!cartRecord) {
-    cartRecord = await prisma.cart.create({
-      data: {
-        userId: instance.userId,
+    console.log(`🛒 [addToCart] Carrinho NÃO encontrado com número exato, verificando variações...`)
+    
+    // Tenta encontrar carrinho com variações do número
+    const withoutCountryCode = normalizedContact.startsWith('55') && normalizedContact.length > 10 
+      ? normalizedContact.substring(2) 
+      : normalizedContact
+    const withCountryCode = normalizedContact.startsWith('55') 
+      ? normalizedContact 
+      : `55${normalizedContact}`
+    
+    const alternativeCart = await prisma.cart.findFirst({
+      where: {
         instanceId,
-        contactNumber: normalizedContact,
+        OR: [
+          { contactNumber: withoutCountryCode },
+          { contactNumber: withCountryCode },
+        ],
       },
     })
-    console.log(`🛒 [addToCart] ✅ Carrinho criado: ID=${cartRecord.id}`)
+    
+    if (alternativeCart) {
+      console.log(`🛒 [addToCart] ⚠️ Carrinho encontrado com número diferente!`)
+      console.log(`   Número esperado: "${normalizedContact}"`)
+      console.log(`   Número encontrado: "${alternativeCart.contactNumber}"`)
+      
+      // Atualiza o número do carrinho para o formato normalizado atual
+      cartRecord = await prisma.cart.update({
+        where: { id: alternativeCart.id },
+        data: { contactNumber: normalizedContact },
+      })
+      console.log(`🛒 [addToCart] ✅ Número do carrinho atualizado para formato normalizado`)
+    } else {
+      cartRecord = await prisma.cart.create({
+        data: {
+          userId: instance.userId,
+          instanceId,
+          contactNumber: normalizedContact,
+        },
+      })
+      console.log(`🛒 [addToCart] ✅ Carrinho criado: ID=${cartRecord.id}`)
+    }
   }
   
   // Usa upsert para adicionar ou atualizar item
