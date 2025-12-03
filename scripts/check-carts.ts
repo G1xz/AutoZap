@@ -1,30 +1,24 @@
 /**
- * Script para verificar carrinhos no banco de dados
- * Mostra todos os carrinhos e seus itens
+ * Script para verificar carrinhos e itens no banco de dados
+ * Execute com: npx tsx scripts/check-carts.ts
  */
 
-import { prisma } from '../lib/prisma'
+import { PrismaClient } from '@prisma/client'
+
+const prisma = new PrismaClient()
 
 async function checkCarts() {
-  try {
-    console.log('🔍 Verificando carrinhos no banco de dados...\n')
+  console.log('🔍 Verificando carrinhos no banco de dados...\n')
 
-    // Busca todos os carrinhos com seus itens
-    const carts = await prisma.cart.findMany({
+  try {
+    // Busca todos os carrinhos
+    const allCarts = await prisma.cart.findMany({
       include: {
         items: true,
         instance: {
           select: {
             id: true,
             name: true,
-            phone: true,
-          },
-        },
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
           },
         },
       },
@@ -33,107 +27,84 @@ async function checkCarts() {
       },
     })
 
-    console.log(`📊 Total de carrinhos encontrados: ${carts.length}\n`)
+    console.log(`📊 Total de carrinhos no banco: ${allCarts.length}\n`)
 
-    if (carts.length === 0) {
-      console.log('✅ Nenhum carrinho encontrado no banco de dados.')
+    if (allCarts.length === 0) {
+      console.log('⚠️ Nenhum carrinho encontrado no banco de dados.')
       return
     }
 
-    // Agrupa por status (com itens vs vazios)
-    const cartsWithItems = carts.filter(c => c.items.length > 0)
-    const emptyCarts = carts.filter(c => c.items.length === 0)
+    // Mostra cada carrinho
+    allCarts.forEach((cart, index) => {
+      console.log(`\n🛒 Carrinho ${index + 1}:`)
+      console.log(`   ID: ${cart.id}`)
+      console.log(`   Instance ID: ${cart.instanceId}`)
+      console.log(`   Instance Name: ${cart.instance?.name || 'N/A'}`)
+      console.log(`   Contact Number: "${cart.contactNumber}"`)
+      console.log(`   Total de itens: ${cart.items.length}`)
+      console.log(`   Criado em: ${cart.createdAt.toISOString()}`)
+      console.log(`   Atualizado em: ${cart.updatedAt.toISOString()}`)
 
-    console.log(`🛒 Carrinhos COM itens: ${cartsWithItems.length}`)
-    console.log(`📦 Carrinhos VAZIOS: ${emptyCarts.length}\n`)
-
-    // Mostra carrinhos com itens
-    if (cartsWithItems.length > 0) {
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      console.log('🛒 CARRINHOS COM ITENS:')
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
-
-      cartsWithItems.forEach((cart, index) => {
-        console.log(`[${index + 1}] Carrinho ID: ${cart.id}`)
-        console.log(`   Instância: ${cart.instance.name} (${cart.instanceId})`)
-        console.log(`   Contato: ${cart.contactNumber}`)
-        console.log(`   Usuário: ${cart.user.name} (${cart.user.email})`)
-        console.log(`   Criado em: ${cart.createdAt.toLocaleString('pt-BR')}`)
-        console.log(`   Atualizado em: ${cart.updatedAt.toLocaleString('pt-BR')}`)
-        console.log(`   Total de itens: ${cart.items.length}`)
-        console.log(`\n   📦 ITENS:`)
-        
-        let total = 0
+      if (cart.items.length > 0) {
+        console.log(`   📦 Itens:`)
         cart.items.forEach((item, itemIndex) => {
-          const itemTotal = item.quantity * Number(item.unitPrice)
-          total += itemTotal
-          console.log(`      ${itemIndex + 1}. ${item.productName}`)
-          console.log(`         Tipo: ${item.productType}`)
-          console.log(`         Quantidade: ${item.quantity}x`)
-          console.log(`         Preço unitário: R$ ${Number(item.unitPrice).toFixed(2).replace('.', ',')}`)
-          console.log(`         Subtotal: R$ ${itemTotal.toFixed(2).replace('.', ',')}`)
-          if (item.notes) {
-            console.log(`         Observação: ${item.notes}`)
-          }
-          console.log('')
+          console.log(`      [${itemIndex + 1}] ${item.productName}`)
+          console.log(`          ID: ${item.id}`)
+          console.log(`          Product ID: ${item.productId}`)
+          console.log(`          Product Type: ${item.productType}`)
+          console.log(`          Quantidade: ${item.quantity}`)
+          console.log(`          Preço Unitário: R$ ${item.unitPrice}`)
+          console.log(`          Total: R$ ${item.quantity * item.unitPrice}`)
+          console.log(`          Criado em: ${item.createdAt.toISOString()}`)
         })
-        
-        console.log(`   💰 TOTAL DO CARRINHO: R$ ${total.toFixed(2).replace('.', ',')}`)
-        console.log('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
-      })
+      } else {
+        console.log(`   ⚠️ Carrinho VAZIO (sem itens)`)
+      }
+    })
+
+    // Estatísticas gerais
+    console.log(`\n📈 Estatísticas:`)
+    const totalItems = allCarts.reduce((sum, cart) => sum + cart.items.length, 0)
+    const cartsWithItems = allCarts.filter(cart => cart.items.length > 0).length
+    const emptyCarts = allCarts.filter(cart => cart.items.length === 0).length
+
+    console.log(`   Total de itens em todos os carrinhos: ${totalItems}`)
+    console.log(`   Carrinhos com itens: ${cartsWithItems}`)
+    console.log(`   Carrinhos vazios: ${emptyCarts}`)
+
+    // Verifica CartItems órfãos (sem carrinho)
+    const orphanItems = await prisma.cartItem.findMany({
+      where: {
+        cart: null,
+      },
+    })
+
+    if (orphanItems.length > 0) {
+      console.log(`\n⚠️ ATENÇÃO: ${orphanItems.length} CartItems órfãos encontrados (sem carrinho associado)!`)
     }
 
-    // Mostra carrinhos vazios (se houver)
-    if (emptyCarts.length > 0) {
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-      console.log('📦 CARRINHOS VAZIOS:')
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n')
+    // Verifica por instância
+    const cartsByInstance = await prisma.cart.groupBy({
+      by: ['instanceId'],
+      _count: {
+        id: true,
+      },
+    })
 
-      emptyCarts.forEach((cart, index) => {
-        console.log(`[${index + 1}] Carrinho ID: ${cart.id}`)
-        console.log(`   Instância: ${cart.instance.name} (${cart.instanceId})`)
-        console.log(`   Contato: ${cart.contactNumber}`)
-        console.log(`   Criado em: ${cart.createdAt.toLocaleString('pt-BR')}`)
-        console.log(`   Atualizado em: ${cart.updatedAt.toLocaleString('pt-BR')}`)
-        console.log('')
+    console.log(`\n📊 Carrinhos por instância:`)
+    for (const group of cartsByInstance) {
+      const instance = await prisma.whatsAppInstance.findUnique({
+        where: { id: group.instanceId },
+        select: { name: true },
       })
+      console.log(`   ${instance?.name || group.instanceId}: ${group._count.id} carrinho(s)`)
     }
-
-    // Estatísticas
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log('📊 ESTATÍSTICAS:')
-    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━')
-    console.log(`Total de carrinhos: ${carts.length}`)
-    console.log(`Carrinhos com itens: ${cartsWithItems.length}`)
-    console.log(`Carrinhos vazios: ${emptyCarts.length}`)
-    
-    const totalItems = carts.reduce((sum, cart) => sum + cart.items.length, 0)
-    console.log(`Total de itens em todos os carrinhos: ${totalItems}`)
-    
-    const totalValue = carts.reduce((sum, cart) => {
-      const cartTotal = cart.items.reduce((itemSum, item) => {
-        return itemSum + (item.quantity * Number(item.unitPrice))
-      }, 0)
-      return sum + cartTotal
-    }, 0)
-    console.log(`Valor total em todos os carrinhos: R$ ${totalValue.toFixed(2).replace('.', ',')}`)
 
   } catch (error) {
     console.error('❌ Erro ao verificar carrinhos:', error)
-    throw error
   } finally {
     await prisma.$disconnect()
   }
 }
 
-// Executa o script
 checkCarts()
-  .then(() => {
-    console.log('\n✅ Verificação concluída!')
-    process.exit(0)
-  })
-  .catch((error) => {
-    console.error('❌ Erro ao executar script:', error)
-    process.exit(1)
-  })
-

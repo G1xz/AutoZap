@@ -332,23 +332,75 @@ export async function addToCart(
     })
   } else {
     // Adiciona novo item
-    await prisma.cartItem.create({
-      data: {
-        cartId: cartRecord.id,
-        productId: item.productId,
-        productType: item.productType,
-        productName: item.productName,
-        quantity: item.quantity,
-        unitPrice: item.unitPrice,
-        notes: item.notes,
-      },
-    })
-    console.log(`🛒 [addToCart] ✅ Item adicionado: ${item.productName} x${item.quantity}`)
-    log.debug('Novo item adicionado ao carrinho', {
+    console.log(`🛒 [addToCart] 📝 Tentando criar CartItem com:`, {
+      cartId: cartRecord.id,
       productId: item.productId,
+      productType: item.productType,
       productName: item.productName,
       quantity: item.quantity,
+      unitPrice: item.unitPrice,
     })
+    
+    try {
+      const createdItem = await prisma.cartItem.create({
+        data: {
+          cartId: cartRecord.id,
+          productId: item.productId,
+          productType: item.productType,
+          productName: item.productName,
+          quantity: item.quantity,
+          unitPrice: item.unitPrice,
+          notes: item.notes,
+        },
+      })
+      console.log(`🛒 [addToCart] ✅ Item criado no banco com sucesso! ID: ${createdItem.id}`)
+      console.log(`   CartItem ID: ${createdItem.id}`)
+      console.log(`   Cart ID: ${createdItem.cartId}`)
+      console.log(`   Product ID: ${createdItem.productId}`)
+      console.log(`   Product Type: ${createdItem.productType}`)
+      console.log(`   Quantity: ${createdItem.quantity}`)
+      console.log(`   Unit Price: ${createdItem.unitPrice}`)
+      
+      log.debug('Novo item adicionado ao carrinho', {
+        cartItemId: createdItem.id,
+        cartId: cartRecord.id,
+        productId: item.productId,
+        productName: item.productName,
+        quantity: item.quantity,
+      })
+    } catch (createError: any) {
+      console.error(`🛒 [addToCart] ❌ ERRO ao criar CartItem:`, createError)
+      console.error(`   Código do erro: ${createError.code}`)
+      console.error(`   Mensagem: ${createError.message}`)
+      console.error(`   Meta:`, createError.meta)
+      
+      // Se for erro de constraint única, tenta atualizar
+      if (createError.code === 'P2002') {
+        console.log(`🛒 [addToCart] ⚠️ Item já existe (constraint única), tentando atualizar...`)
+        const existingItem = await prisma.cartItem.findUnique({
+          where: {
+            cartId_productId_productType: {
+              cartId: cartRecord.id,
+              productId: item.productId,
+              productType: item.productType,
+            },
+          },
+        })
+        
+        if (existingItem) {
+          await prisma.cartItem.update({
+            where: { id: existingItem.id },
+            data: {
+              quantity: existingItem.quantity + item.quantity,
+              notes: item.notes || existingItem.notes,
+            },
+          })
+          console.log(`🛒 [addToCart] ✅ Item atualizado (já existia): ${item.productName}`)
+        }
+      } else {
+        throw createError
+      }
+    }
   }
   
   // Atualiza updatedAt do carrinho
@@ -358,20 +410,51 @@ export async function addToCart(
   })
   
   // DEBUG: Verifica se o item foi realmente salvo
+  console.log(`🛒 [addToCart] 🔍 VERIFICAÇÃO IMEDIATA: Buscando carrinho do banco...`)
   const verifyCart = await prisma.cart.findUnique({
     where: { id: cartRecord.id },
     include: { items: true },
   })
+  
+  if (!verifyCart) {
+    console.error(`🛒 [addToCart] ❌ ERRO CRÍTICO: Carrinho não encontrado após adicionar item!`)
+    console.error(`   Cart ID procurado: ${cartRecord.id}`)
+    throw new Error(`Carrinho não encontrado após adicionar item`)
+  }
+  
   console.log(`🛒 [addToCart] 🔍 VERIFICAÇÃO: Carrinho após adicionar item:`)
-  console.log(`   Cart ID: ${verifyCart?.id}`)
-  console.log(`   ContactNumber: "${verifyCart?.contactNumber}"`)
-  console.log(`   Total de itens: ${verifyCart?.items.length}`)
-  verifyCart?.items.forEach((item, i) => {
+  console.log(`   Cart ID: ${verifyCart.id}`)
+  console.log(`   ContactNumber: "${verifyCart.contactNumber}"`)
+  console.log(`   Total de itens: ${verifyCart.items.length}`)
+  
+  if (verifyCart.items.length === 0) {
+    console.error(`🛒 [addToCart] ❌ ERRO CRÍTICO: Carrinho encontrado mas SEM ITENS!`)
+    console.error(`   Isso indica que o CartItem NÃO foi salvo no banco!`)
+    
+    // Tenta buscar diretamente o CartItem
+    const directItemCheck = await prisma.cartItem.findMany({
+      where: { cartId: cartRecord.id },
+    })
+    console.error(`   CartItems encontrados diretamente: ${directItemCheck.length}`)
+    
+    throw new Error(`Item não foi salvo no banco de dados`)
+  }
+  
+  verifyCart.items.forEach((item, i) => {
+    console.log(`   [${i + 1}] ${item.productName} x${item.quantity} - R$ ${item.unitPrice} (ID: ${item.id})`)
+  })
+  
+  console.log(`🛒 [addToCart] ✅ Verificação concluída - Item confirmado no banco!`)
+  
+  // Retorna carrinho atualizado
+  const finalCart = await getCart(instanceId, normalizedContact)
+  console.log(`🛒 [addToCart] 🔍 VERIFICAÇÃO FINAL: Carrinho retornado por getCart:`)
+  console.log(`   Total de itens: ${finalCart.items.length}`)
+  finalCart.items.forEach((item, i) => {
     console.log(`   [${i + 1}] ${item.productName} x${item.quantity} - R$ ${item.unitPrice}`)
   })
   
-  // Retorna carrinho atualizado
-  return getCart(instanceId, normalizedContact)
+  return finalCart
 }
 
 /**

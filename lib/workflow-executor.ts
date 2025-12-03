@@ -1605,30 +1605,30 @@ async function executeAIOnlyWorkflow(
         console.log(`   Itens no carrinho: ${cart.items.length}`)
         // Não processa agendamento, deixa a IA processar o checkout
       } else {
-        // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
-        // Se processou algo, retorna imediatamente SEM chamar a IA
-        console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
-        console.log(`   Mensagem do usuário: "${userMessage}"`)
+    // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
+    // Se processou algo, retorna imediatamente SEM chamar a IA
+    console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
+    console.log(`   Mensagem do usuário: "${userMessage}"`)
 
-        const processedAppointment = await processAppointmentConfirmation(
-          instanceId,
-          contactNumber,
-          userMessage,
-          userId,
-          contactNameFinal
-        )
+    const processedAppointment = await processAppointmentConfirmation(
+      instanceId,
+      contactNumber,
+      userMessage,
+      userId,
+      contactNameFinal
+    )
 
-        console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
+    console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
 
-        if (processedAppointment) {
-          console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
-          console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
+    if (processedAppointment) {
+      console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
+      console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
 
-          // CRÍTICO: Limpa a execução do workflow após processar agendamento
-          // Isso permite que novas mensagens iniciem um novo fluxo limpo
-          const executionKeyAI = `${instanceId}-${contactNumber}`
-          if (workflowExecutions.has(executionKeyAI)) {
-            console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após processar agendamento`)
+      // CRÍTICO: Limpa a execução do workflow após processar agendamento
+      // Isso permite que novas mensagens iniciem um novo fluxo limpo
+      const executionKeyAI = `${instanceId}-${contactNumber}`
+      if (workflowExecutions.has(executionKeyAI)) {
+        console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após processar agendamento`)
             workflowExecutions.delete(executionKeyAI)
           }
           
@@ -1649,10 +1649,10 @@ async function executeAIOnlyWorkflow(
       if (processedAppointment) {
         const executionKeyAI = `${instanceId}-${contactNumber}`
         if (workflowExecutions.has(executionKeyAI)) {
-          workflowExecutions.delete(executionKeyAI)
-        }
+        workflowExecutions.delete(executionKeyAI)
+      }
 
-        return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO CHAMA IA
+      return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO CHAMA IA
       }
     }
 
@@ -3615,13 +3615,13 @@ async function executeAIOnlyWorkflow(
           let cart
           try {
             cart = await addToCart(instanceId, normalizedContactNumber, {
-              productId: args.product_id,
-              productType: args.product_type as 'service' | 'catalog',
-              productName: args.product_name,
-              quantity,
-              unitPrice,
-              notes: args.notes,
-            })
+            productId: args.product_id,
+            productType: args.product_type as 'service' | 'catalog',
+            productName: args.product_name,
+            quantity,
+            unitPrice,
+            notes: args.notes,
+          })
             
             console.log(`🛒 [add_to_cart] ✅ Item adicionado com sucesso!`)
             console.log(`   Carrinho agora tem ${cart.items.length} itens`)
