@@ -3523,13 +3523,24 @@ async function executeAIOnlyWorkflow(
 
       // Função para adicionar ao carrinho
       if (functionName === 'add_to_cart' && userId) {
+        console.log(`🛒 [add_to_cart] ========== FUNÇÃO CHAMADA ==========`)
+        console.log(`   functionName: ${functionName}`)
+        console.log(`   userId: ${userId}`)
+        console.log(`   args:`, JSON.stringify(args, null, 2))
+        
         try {
           const { addToCart, getCart } = await import('./cart')
 
           // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
           const normalizedContactNumber = contactNumber.replace(/\D/g, '')
+          
+          console.log(`🛒 [add_to_cart] Validação de parâmetros:`)
+          console.log(`   product_id: ${args.product_id}`)
+          console.log(`   product_type: ${args.product_type}`)
+          console.log(`   product_name: ${args.product_name}`)
 
           if (!args.product_id || !args.product_type || !args.product_name) {
+            console.error(`🛒 [add_to_cart] ❌ Parâmetros inválidos!`)
             return {
               success: false,
               error: 'ID, tipo e nome do produto são obrigatórios.',

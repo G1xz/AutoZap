@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
-import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings, ShoppingBag } from 'lucide-react'
+import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings, ShoppingBag, Bug } from 'lucide-react'
 import StaggeredMenu, { StaggeredMenuSocialItem } from './StaggeredMenu'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -22,6 +22,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (pathname?.startsWith('/dashboard/fluxos')) return 'Fluxos'
     if (pathname?.startsWith('/dashboard/relatorios')) return 'Relatórios'
     if (pathname?.startsWith('/dashboard/configuracoes')) return 'Configurações'
+    if (pathname?.startsWith('/dashboard/debug')) return 'Debug'
     return undefined
   }
 
@@ -73,6 +74,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       ariaLabel: 'Configurações do sistema',
       link: '/dashboard/configuracoes',
       icon: <Settings size={28} strokeWidth={2} />
+    },
+    { 
+      label: 'Debug', 
+      ariaLabel: 'Logs e debug do sistema',
+      link: '/dashboard/debug',
+      icon: <Bug size={28} strokeWidth={2} />
     },
   ]
 
