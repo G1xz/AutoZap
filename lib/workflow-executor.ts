@@ -1160,6 +1160,25 @@ export async function processAppointmentConfirmation(
           console.error(`❌ Erro ao verificar agendamento recente:`, error)
         }
 
+        // CRÍTICO: Se não há agendamento pendente e a mensagem é apenas "sim"/"ok",
+        // pode ser sobre adicionar produto ao carrinho, não sobre agendamento
+        // Só retorna true se a mensagem for explicitamente sobre agendamento
+        const isExplicitlyAboutAppointment = 
+          userMessageLower.includes('agendamento') ||
+          userMessageLower.includes('agendar') ||
+          userMessageLower.includes('horário') ||
+          userMessageLower.includes('horario') ||
+          userMessageLower.includes('marcar') ||
+          userMessageLower.includes('consulta') ||
+          userMessageLower.includes('serviço') ||
+          userMessageLower.includes('servico')
+
+        if (!isExplicitlyAboutAppointment) {
+          console.log(`   Mensagem "sim"/"ok" sem contexto de agendamento - pode ser sobre carrinho/produto`)
+          console.log(`   RETORNANDO FALSE para permitir que IA processe (pode ser adicionar ao carrinho)`)
+          return false // Deixa a IA processar - pode ser sobre adicionar produto ao carrinho
+        }
+
         console.log(`   Isso pode indicar que o agendamento foi confirmado ou cancelado anteriormente.`)
         console.log(`   Enviando mensagem informativa e RETORNANDO TRUE para evitar loop.`)
 
@@ -1609,60 +1628,64 @@ async function executeAIOnlyWorkflow(
       })
       
       // Se há itens no carrinho e mensagem é sobre confirmar/finalizar, NÃO processa agendamento
-      // CRÍTICO: "sim" só é agendamento se houver agendamento pendente, caso contrário é sobre carrinho
+      // CRÍTICO: "sim" só é agendamento se houver agendamento pendente, caso contrário é sobre carrinho/produto
       const userMessageLower = userMessage.toLowerCase().trim()
       const isSimpleYes = userMessageLower === 'sim' || userMessageLower === 'ok' || userMessageLower === 's'
       
-      const isCartContext = hasCartItems && (
-        isDeliveryTypeResponse ||
-        userMessageLower.includes('confirmar') ||
-        userMessageLower.includes('finalizar') ||
-        userMessageLower.includes('fechar pedido') ||
-        userMessageLower.includes('completar pedido') ||
-        userMessageLower.includes('concluir compra') ||
-        // CRÍTICO: "sim" só é sobre agendamento se houver agendamento pendente
-        (isSimpleYes && !hasPendingAppointment)
-      )
-      
-      if (isCartContext) {
-        console.log(`🛒 [executeAIOnlyWorkflow] ⚠️ Contexto é de CARRINHO, pulando verificação de agendamento`)
-        console.log(`   Mensagem: "${userMessage}"`)
-        console.log(`   Itens no carrinho: ${cart.items.length}`)
-        console.log(`   Tem agendamento pendente? ${!!hasPendingAppointment}`)
-        console.log(`   É "sim" simples? ${isSimpleYes}`)
-        // Não processa agendamento, deixa a IA processar o checkout ou adicionar ao carrinho
-      } else if (hasPendingAppointment) {
-        // Só processa agendamento se houver agendamento pendente
-        console.log(`🔍 [executeAIOnlyWorkflow] Há agendamento pendente, verificando confirmação...`)
+      // CRÍTICO: Se não há agendamento pendente e a mensagem é apenas "sim"/"ok",
+      // NÃO processa como agendamento - deixa a IA processar (pode ser adicionar produto)
+      if (isSimpleYes && !hasPendingAppointment) {
+        console.log(`🛒 [executeAIOnlyWorkflow] "Sim" sem agendamento pendente - deixando IA processar (pode ser adicionar produto)`)
+        // Não processa agendamento, deixa a IA processar normalmente
       } else {
-    // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
-    // Se processou algo, retorna imediatamente SEM chamar a IA
-    console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
-    console.log(`   Mensagem do usuário: "${userMessage}"`)
-
-    const processedAppointment = await processAppointmentConfirmation(
-      instanceId,
-      contactNumber,
-      userMessage,
-      userId,
-      contactNameFinal
-    )
-
-    console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
-
-    if (processedAppointment) {
-      console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
-      console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
-
-      // CRÍTICO: Limpa a execução do workflow após processar agendamento
-      // Isso permite que novas mensagens iniciem um novo fluxo limpo
-      const executionKeyAI = `${instanceId}-${contactNumber}`
-      if (workflowExecutions.has(executionKeyAI)) {
-        console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após processar agendamento`)
-            workflowExecutions.delete(executionKeyAI)
-          }
+        // Só verifica agendamento se houver agendamento pendente ou se a mensagem não for apenas "sim"
+        const isCartContext = hasCartItems && (
+          isDeliveryTypeResponse ||
+          userMessageLower.includes('confirmar') ||
+          userMessageLower.includes('finalizar') ||
+          userMessageLower.includes('fechar pedido') ||
+          userMessageLower.includes('completar pedido') ||
+          userMessageLower.includes('concluir compra')
+        )
+        
+        if (isCartContext) {
+          console.log(`🛒 [executeAIOnlyWorkflow] ⚠️ Contexto é de CARRINHO, pulando verificação de agendamento`)
+          console.log(`   Mensagem: "${userMessage}"`)
+          console.log(`   Itens no carrinho: ${cart.items.length}`)
+          // Não processa agendamento, deixa a IA processar o checkout ou adicionar ao carrinho
+        } else if (hasPendingAppointment) {
+          // Só processa agendamento se houver agendamento pendente
+          console.log(`🔍 [executeAIOnlyWorkflow] Há agendamento pendente, verificando confirmação...`)
           
-          return // Retorna sem chamar IA
+          // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
+          // Se processou algo, retorna imediatamente SEM chamar a IA
+          console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
+          console.log(`   Mensagem do usuário: "${userMessage}"`)
+
+          const processedAppointment = await processAppointmentConfirmation(
+            instanceId,
+            contactNumber,
+            userMessage,
+            userId,
+            contactNameFinal
+          )
+
+          console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
+
+          if (processedAppointment) {
+            console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
+            console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
+
+            // CRÍTICO: Limpa a execução do workflow após processar agendamento
+            // Isso permite que novas mensagens iniciem um novo fluxo limpo
+            const executionKeyAI = `${instanceId}-${contactNumber}`
+            if (workflowExecutions.has(executionKeyAI)) {
+              console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após processar agendamento`)
+              workflowExecutions.delete(executionKeyAI)
+            }
+            
+            return // Retorna sem chamar IA
+          }
         }
       }
     } catch (cartError) {
