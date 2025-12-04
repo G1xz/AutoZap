@@ -1570,6 +1570,8 @@ async function executeAIOnlyWorkflow(
     console.log(`   contactNumber recebido: "${contactNumber}"`)
     console.log(`   contactNumber normalizado: "${contactNumber.replace(/\D/g, '')}"`)
     console.log(`   userMessage: "${userMessage}"`)
+    console.log(`   ⏰ Timestamp: ${new Date().toISOString()}`)
+    console.log(`   📍 Este log confirma que o sistema está processando mensagens!`)
     
     // Busca informações do contato
     let contactNameFinal = contactName || undefined
@@ -2335,8 +2337,23 @@ async function executeAIOnlyWorkflow(
     // Handler para quando a IA chamar a função de agendamento
     // Agora recebe data e hora separadamente para processamento mais simples e confiável
     const handleFunctionCall = async (functionName: string, args: any) => {
-      console.log(`🔧 handleFunctionCall chamado: functionName="${functionName}", userId=${userId}, instanceId=${instanceId}`)
-
+      console.log(`🔧 [handleFunctionCall] ========== FUNÇÃO CHAMADA PELA IA ==========`)
+      console.log(`   functionName: "${functionName}"`)
+      console.log(`   args:`, JSON.stringify(args, null, 2))
+      console.log(`   userId: ${userId}`)
+      console.log(`   instanceId: ${instanceId}`)
+      console.log(`   contactNumber: "${contactNumber}"`)
+      
+      // CRÍTICO: Verifica se a função add_to_cart está sendo chamada
+      if (functionName === 'add_to_cart') {
+        console.log(`🛒🛒🛒 [handleFunctionCall] ⚠️⚠️⚠️ ADD_TO_CART FOI CHAMADO PELA IA! ⚠️⚠️⚠️`)
+        console.log(`   Parâmetros recebidos:`)
+        console.log(`     product_id: ${args?.product_id}`)
+        console.log(`     product_type: ${args?.product_type}`)
+        console.log(`     product_name: ${args?.product_name}`)
+        console.log(`     quantity: ${args?.quantity || 1}`)
+      }
+      
       // CRÍTICO: Normaliza o número ANTES de qualquer processamento
       const normalizedContactNumber = contactNumber.replace(/\D/g, '')
       console.log(`🔧 handleFunctionCall - contactNumber original: "${contactNumber}"`)
@@ -3773,19 +3790,33 @@ async function executeAIOnlyWorkflow(
           message += `💰 *Total: R$ ${cartTotal.toFixed(2).replace('.', ',')}*\n\n`
           message += `Deseja adicionar mais algo ou finalizar o pedido?`
 
-          return {
+          const result = {
             success: true,
             message,
             cartItems: itemCount,
             cartTotal,
           }
+          
+          console.log(`🛒 [add_to_cart] ✅✅✅ SUCESSO! Retornando resultado:`)
+          console.log(`   success: ${result.success}`)
+          console.log(`   cartItems: ${result.cartItems}`)
+          console.log(`   cartTotal: ${result.cartTotal}`)
+          console.log(`   message (primeiros 200 chars): ${result.message.substring(0, 200)}...`)
+          
+          return result
         } catch (error) {
           log.error('Erro ao adicionar ao carrinho', error)
-          console.error('Erro detalhado ao adicionar ao carrinho:', error)
-          return {
+          console.error(`🛒 [add_to_cart] ❌❌❌ ERRO CAPTURADO:`)
+          console.error(`   Erro:`, error)
+          console.error(`   Stack:`, error instanceof Error ? error.stack : 'N/A')
+          
+          const errorResult = {
             success: false,
             error: `Erro ao adicionar produto ao carrinho: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
           }
+          
+          console.error(`🛒 [add_to_cart] Retornando erro:`, errorResult)
+          return errorResult
         }
       }
 
@@ -4281,8 +4312,22 @@ async function executeAIOnlyWorkflow(
     let pendingAppointmentMedia: MediaAttachment | null = null
 
     const interceptedFunctionCall = async (functionName: string, args: any) => {
-      console.log(`🔧 [interceptedFunctionCall] Interceptando chamada de função: ${functionName}`)
-      console.log(`🔧 [interceptedFunctionCall] Argumentos:`, JSON.stringify(args, null, 2))
+      console.log(`🔧🔧🔧 [interceptedFunctionCall] ========== INTERCEPTANDO CHAMADA DE FUNÇÃO ==========`)
+      console.log(`   functionName: "${functionName}"`)
+      console.log(`   args:`, JSON.stringify(args, null, 2))
+      console.log(`   userId: ${userId}`)
+      console.log(`   instanceId: ${instanceId}`)
+      console.log(`   contactNumber: "${contactNumber}"`)
+      
+      // CRÍTICO: Log especial para add_to_cart
+      if (functionName === 'add_to_cart') {
+        console.log(`🛒🛒🛒 [interceptedFunctionCall] ⚠️⚠️⚠️ ADD_TO_CART INTERCEPTADO! ⚠️⚠️⚠️`)
+        console.log(`   Parâmetros:`)
+        console.log(`     product_id: ${args?.product_id}`)
+        console.log(`     product_type: ${args?.product_type}`)
+        console.log(`     product_name: ${args?.product_name}`)
+        console.log(`     quantity: ${args?.quantity || 1}`)
+      }
 
       // GUARD RAIL: Impede que a IA encerre o chat se o usuário quiser finalizar o pedido
       if (functionName === 'close_chat') {
