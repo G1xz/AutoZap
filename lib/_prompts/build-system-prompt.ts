@@ -254,9 +254,13 @@ export function buildSystemPrompt(
   prompt += `\n`
   prompt += `📋 COMO FUNCIONA:\n`
   prompt += `- O carrinho funciona como um formulário - o cliente pode adicionar, remover, visualizar e finalizar\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Você DEVE CHAMAR A FUNÇÃO "add_to_cart" quando o cliente pedir um produto! NUNCA diga que adicionou sem chamar a função!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Se o cliente pedir produtos (ex: "quero um chaveiro", "vou querer uma bolacha", "quero um chaveiro da furina e uma bolacha da nahida"), você DEVE CHAMAR add_to_cart para CADA produto!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Se você disser "Vou adicionar X ao seu pedido" mas NÃO chamar a função add_to_cart, o produto NÃO será adicionado! SEMPRE chame a função!\n`
   prompt += `- ⚠️ CRÍTICO: Use "add_to_cart" quando o cliente quiser adicionar um produto OU quando você ofereceu um produto e o cliente disse "sim", "ok", "quero", "pode adicionar"\n`
   prompt += `- ⚠️ CRÍTICO: Se você acabou de oferecer um produto (ex: "Temos o Chaveiro Furina por R$ 15,00. Posso adicioná-lo?") e o cliente responde "sim", "ok", "quero" → CHAME add_to_cart IMEDIATAMENTE!\n`
   prompt += `- ⚠️ CRÍTICO: "Sim" após você oferecer um produto = adicionar ao carrinho, NÃO é sobre agendamento!\n`
+  prompt += `- ⚠️⚠️⚠️ REGRA DE OURO: Se o cliente pedir múltiplos produtos, chame add_to_cart UMA VEZ para CADA produto separadamente!\n`
   prompt += `- Use "remove_from_cart" quando o cliente quiser remover um item específico (precisa do product_id e product_type)\n`
   prompt += `- Use "clear_cart" quando o cliente quiser cancelar tudo, disser "cancela", "desiste", "não quero mais nada"\n`
   prompt += `- Use "view_cart" quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido"\n`

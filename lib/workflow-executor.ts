@@ -4509,7 +4509,7 @@ async function executeAIOnlyWorkflow(
         },
         {
           name: 'add_to_cart',
-          description: 'Adiciona um produto ou serviço ao carrinho de compras. Use quando o cliente quiser adicionar algo ao carrinho. APÓS adicionar, a IA deve perguntar: "Deseja adicionar mais algo ou finalizar o pedido?". Se o cliente responder "não", "só isso" ou "finalizar", a IA deve chamar a função CHECKOUT.',
+          description: '⚠️⚠️⚠️ CRÍTICO: Adiciona um produto ou serviço ao carrinho de compras. Você DEVE CHAMAR ESTA FUNÇÃO quando: (1) O cliente pedir um produto (ex: "quero um chaveiro", "vou querer uma bolacha"), (2) Você ofereceu um produto e o cliente disse "sim", "ok", "quero", "pode adicionar", (3) O cliente mencionar produtos que quer comprar. NUNCA diga que adicionou sem chamar esta função! Se você não chamar esta função, o produto NÃO será adicionado ao carrinho. APÓS adicionar, a IA deve perguntar: "Deseja adicionar mais algo ou finalizar o pedido?". Se o cliente responder "não", "só isso" ou "finalizar", a IA deve chamar a função CHECKOUT.',
           parameters: {
             type: 'object',
             properties: {
