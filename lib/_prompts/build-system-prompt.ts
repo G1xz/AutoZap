@@ -254,7 +254,9 @@ export function buildSystemPrompt(
   prompt += `\n`
   prompt += `📋 COMO FUNCIONA:\n`
   prompt += `- O carrinho funciona como um formulário - o cliente pode adicionar, remover, visualizar e finalizar\n`
-  prompt += `- Use "add_to_cart" quando o cliente quiser adicionar um produto\n`
+  prompt += `- ⚠️ CRÍTICO: Use "add_to_cart" quando o cliente quiser adicionar um produto OU quando você ofereceu um produto e o cliente disse "sim", "ok", "quero", "pode adicionar"\n`
+  prompt += `- ⚠️ CRÍTICO: Se você acabou de oferecer um produto (ex: "Temos o Chaveiro Furina por R$ 15,00. Posso adicioná-lo?") e o cliente responde "sim", "ok", "quero" → CHAME add_to_cart IMEDIATAMENTE!\n`
+  prompt += `- ⚠️ CRÍTICO: "Sim" após você oferecer um produto = adicionar ao carrinho, NÃO é sobre agendamento!\n`
   prompt += `- Use "remove_from_cart" quando o cliente quiser remover um item específico (precisa do product_id e product_type)\n`
   prompt += `- Use "clear_cart" quando o cliente quiser cancelar tudo, disser "cancela", "desiste", "não quero mais nada"\n`
   prompt += `- Use "view_cart" quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido"\n`

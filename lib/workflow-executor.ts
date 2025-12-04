@@ -1600,21 +1600,40 @@ async function executeAIOnlyWorkflow(
         userMessage.toLowerCase().includes('pickup')
       )
       
+      // Verifica se há agendamento pendente ANTES de decidir o contexto
+      const hasPendingAppointment = await prisma.pendingAppointment.findFirst({
+        where: {
+          instanceId,
+          contactNumber: normalizedContactForCart,
+        },
+      })
+      
       // Se há itens no carrinho e mensagem é sobre confirmar/finalizar, NÃO processa agendamento
+      // CRÍTICO: "sim" só é agendamento se houver agendamento pendente, caso contrário é sobre carrinho
+      const userMessageLower = userMessage.toLowerCase().trim()
+      const isSimpleYes = userMessageLower === 'sim' || userMessageLower === 'ok' || userMessageLower === 's'
+      
       const isCartContext = hasCartItems && (
         isDeliveryTypeResponse ||
-        userMessage.toLowerCase().includes('confirmar') ||
-        userMessage.toLowerCase().includes('finalizar') ||
-        userMessage.toLowerCase().includes('fechar pedido') ||
-        userMessage.toLowerCase().includes('completar pedido') ||
-        userMessage.toLowerCase().includes('concluir compra')
+        userMessageLower.includes('confirmar') ||
+        userMessageLower.includes('finalizar') ||
+        userMessageLower.includes('fechar pedido') ||
+        userMessageLower.includes('completar pedido') ||
+        userMessageLower.includes('concluir compra') ||
+        // CRÍTICO: "sim" só é sobre agendamento se houver agendamento pendente
+        (isSimpleYes && !hasPendingAppointment)
       )
       
       if (isCartContext) {
         console.log(`🛒 [executeAIOnlyWorkflow] ⚠️ Contexto é de CARRINHO, pulando verificação de agendamento`)
         console.log(`   Mensagem: "${userMessage}"`)
         console.log(`   Itens no carrinho: ${cart.items.length}`)
-        // Não processa agendamento, deixa a IA processar o checkout
+        console.log(`   Tem agendamento pendente? ${!!hasPendingAppointment}`)
+        console.log(`   É "sim" simples? ${isSimpleYes}`)
+        // Não processa agendamento, deixa a IA processar o checkout ou adicionar ao carrinho
+      } else if (hasPendingAppointment) {
+        // Só processa agendamento se houver agendamento pendente
+        console.log(`🔍 [executeAIOnlyWorkflow] Há agendamento pendente, verificando confirmação...`)
       } else {
     // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
     // Se processou algo, retorna imediatamente SEM chamar a IA
