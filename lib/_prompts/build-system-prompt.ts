@@ -246,24 +246,75 @@ export function buildSystemPrompt(
   prompt += `\n\n🛒 SISTEMA DE CARRINHO DE COMPRAS (FORMULÁRIO ESTRUTURADO):\n`
   prompt += `\n`
   prompt += `📝 FUNÇÕES DISPONÍVEIS:\n`
-  prompt += `1. "add_to_cart" - Adiciona produto ao carrinho\n`
-  prompt += `2. "view_cart" - Visualiza o carrinho atual\n`
+  prompt += `1. "add_to_cart" - Adiciona produto ao carrinho ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: SEMPRE chame esta função quando o cliente pedir um produto! NUNCA diga que adicionou sem chamar a função! Se você não chamar add_to_cart, o produto NÃO será adicionado ao carrinho!\n`
+  prompt += `2. "view_cart" - Visualiza o carrinho atual ⚠️ CRÍTICO: SEMPRE chame esta função quando o cliente pedir para ver o carrinho! NUNCA responda sobre o carrinho sem chamar view_cart!\n`
   prompt += `3. "remove_from_cart" - Remove um item específico do carrinho\n`
   prompt += `4. "clear_cart" - Limpa/cancela todo o carrinho\n`
   prompt += `5. "checkout" - Finaliza o pedido e cria a ordem\n`
   prompt += `\n`
+  prompt += `⚠️⚠️⚠️ CRÍTICO - MENSAGENS DE ERRO FORMATADAS:\n`
+  prompt += `- Quando uma função retornar um erro com uma mensagem formatada (ex: lista de opções com emojis e formatação), você DEVE usar EXATAMENTE essa mensagem sem reformular, sem adicionar texto, sem mudar o formato!\n`
+  prompt += `- Se a função retornar uma mensagem que começa com "📦 *Opções Disponíveis:*", use EXATAMENTE essa mensagem como está!\n`
+  prompt += `- NUNCA reformule mensagens formatadas - elas já estão prontas para o cliente!\n`
+  prompt += `\n`
+  prompt += `⚠️⚠️⚠️ CRÍTICO - ESCOLHA DE OPÇÕES:\n`
+  prompt += `- Se você mostrou opções ao cliente (ex: "📦 *Opções Disponíveis:*") e o cliente escolhe uma opção (ex: "mavuika", "furina", "nahida", "columbina", "1", "2", "a primeira", "a segunda"), você DEVE CHAMAR add_to_cart IMEDIATAMENTE com o produto escolhido!\n`
+  prompt += `- EXEMPLO: Você mostrou "1. Chaveiro furina R$ 15,00" e "2. Chaveiro Mavuika R$ 10,00". Cliente diz "mavuika" ou "2" → CHAME add_to_cart(product_name: "Chaveiro Mavuika", quantity: X) onde X é a quantidade que o cliente pediu originalmente!\n`
+  prompt += `- ⚠️ CRÍTICO: Se o cliente pediu quantidade antes (ex: "quero 4 chaveiros"), quando ele escolher a opção, você DEVE usar a quantidade original (4) no add_to_cart!\n`
+  prompt += `- NUNCA diga que adicionou sem chamar add_to_cart! SEMPRE chame a função quando o cliente escolher uma opção!\n`
+  prompt += `\n`
   prompt += `📋 COMO FUNCIONA:\n`
   prompt += `- O carrinho funciona como um formulário - o cliente pode adicionar, remover, visualizar e finalizar\n`
   prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Você DEVE CHAMAR A FUNÇÃO "add_to_cart" quando o cliente pedir um produto! NUNCA diga que adicionou sem chamar a função!\n`
-  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Se o cliente pedir produtos (ex: "quero um chaveiro", "vou querer uma bolacha", "quero um chaveiro da furina e uma bolacha da nahida"), você DEVE CHAMAR add_to_cart para CADA produto!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Se você disser "Adicionei X ao carrinho" mas NÃO chamou a função add_to_cart, você está MENTINDO! O produto NÃO foi adicionado! SEMPRE chame a função ANTES de dizer que adicionou!\n`
+  prompt += `- ⚠️⚠️⚠️ FLUXO CORRETO: Cliente pede produto → Você CHAMA add_to_cart → Função retorna sucesso → Você informa ao cliente que foi adicionado\n`
+  prompt += `- ⚠️⚠️⚠️ FLUXO ERRADO (NÃO FAÇA ISSO): Cliente pede produto → Você diz "adicionei" SEM chamar add_to_cart → Produto NÃO é adicionado → Cliente fica confuso\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Se o cliente pedir um produto genérico (ex: "quero 9 figures", "quero um chaveiro"), você DEVE CHAMAR add_to_cart mesmo assim! A função vai detectar se há múltiplas opções e retornar uma mensagem formatada com as opções - use EXATAMENTE essa mensagem!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: NUNCA responda sobre produtos sem chamar add_to_cart primeiro! SEMPRE chame a função, mesmo que o produto seja genérico!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Se o cliente pedir produtos (ex: "quero um chaveiro", "vou querer uma bolacha", "quero 9 figures da furina", "quero um chaveiro da furina e uma bolacha da nahida"), você DEVE CHAMAR add_to_cart para CADA produto!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Se o cliente pedir um produto ESPECÍFICO (ex: "quero 9 figures da furina", "quero uma bolacha da nahida"), você DEVE CHAMAR add_to_cart IMEDIATAMENTE com o nome completo do produto e a quantidade!\n`
   prompt += `- ⚠️⚠️⚠️ CRÍTICO: Se você disser "Vou adicionar X ao seu pedido" mas NÃO chamar a função add_to_cart, o produto NÃO será adicionado! SEMPRE chame a função!\n`
+  prompt += `- ⚠️⚠️⚠️ REGRA DE OURO: Se o cliente diz "quero X", "vou querer X", "adiciona X", "coloca X" → CHAME add_to_cart IMEDIATAMENTE! NÃO pergunte, NÃO confirme, apenas CHAME a função!\n`
   prompt += `- ⚠️ CRÍTICO: Use "add_to_cart" quando o cliente quiser adicionar um produto OU quando você ofereceu um produto e o cliente disse "sim", "ok", "quero", "pode adicionar"\n`
   prompt += `- ⚠️ CRÍTICO: Se você acabou de oferecer um produto (ex: "Temos o Chaveiro Furina por R$ 15,00. Posso adicioná-lo?") e o cliente responde "sim", "ok", "quero" → CHAME add_to_cart IMEDIATAMENTE!\n`
   prompt += `- ⚠️ CRÍTICO: "Sim" após você oferecer um produto = adicionar ao carrinho, NÃO é sobre agendamento!\n`
-  prompt += `- ⚠️⚠️⚠️ REGRA DE OURO: Se o cliente pedir múltiplos produtos, chame add_to_cart UMA VEZ para CADA produto separadamente!\n`
-  prompt += `- Use "remove_from_cart" quando o cliente quiser remover um item específico (precisa do product_id e product_type)\n`
+  prompt += `\n`
+  prompt += `⚠️⚠️⚠️ REGRA CRÍTICA - MÚLTIPLOS PRODUTOS (LEIA COM MUITA ATENÇÃO):\n`
+  prompt += `- ⚠️⚠️⚠️ SE O CLIENTE PEDIR MÚLTIPLOS PRODUTOS NA MESMA MENSAGEM, VOCÊ DEVE CHAMAR add_to_cart UMA VEZ PARA CADA PRODUTO!\n`
+  prompt += `- ⚠️⚠️⚠️ EXEMPLO 1: Cliente diz "quero uma bolacha e um chaveiro"\n`
+  prompt += `  → Você DEVE chamar add_to_cart DUAS VEZES:\n`
+  prompt += `    1. add_to_cart(product_name: "bolacha da nahida", ...)\n`
+  prompt += `    2. add_to_cart(product_name: "chaveiro furina", ...)\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO - PRODUTOS AMBÍGUOS: Se o cliente pedir um produto genérico que existe em múltiplas variações (ex: "quero 6 chaveiros" quando há "Chaveiro Furina" e "Chaveiro Mavuika"), você DEVE PERGUNTAR qual tipo específico o cliente quer ANTES de adicionar ao carrinho! NUNCA escolha aleatoriamente um tipo quando há múltiplas opções!\n`
+  prompt += `- ⚠️⚠️⚠️ EXEMPLO: Cliente diz "quero 6 chaveiros" e há "Chaveiro Furina" e "Chaveiro Mavuika" disponíveis\n`
+  prompt += `  → Você DEVE perguntar: "Qual tipo de chaveiro você prefere? Temos o Chaveiro Furina (R$ 15,00) e o Chaveiro Mavuika (R$ 10,00)."\n`
+  prompt += `  → NÃO adicione nenhum ao carrinho até o cliente especificar qual tipo quer!\n`
+  prompt += `- ⚠️⚠️⚠️ EXEMPLO 2: Cliente diz "quero uma figure uma bolacha e uma nahida"\n`
+  prompt += `  → Você DEVE chamar add_to_cart TRÊS VEZES:\n`
+  prompt += `    1. add_to_cart(product_name: "figure da columbina", ...)\n`
+  prompt += `    2. add_to_cart(product_name: "bolacha da nahida", ...)\n`
+  prompt += `    3. add_to_cart(product_name: "bolacha da nahida", ...) [se "nahida" se refere a outro produto]\n`
+  prompt += `- ⚠️⚠️⚠️ EXEMPLO 3: Cliente diz "vou querer 2 bolachas e 1 chaveiro"\n`
+  prompt += `  → Você DEVE chamar add_to_cart DUAS VEZES:\n`
+  prompt += `    1. add_to_cart(product_name: "bolacha da nahida", quantity: 2, ...)\n`
+  prompt += `    2. add_to_cart(product_name: "chaveiro furina", quantity: 1, ...)\n`
+  prompt += `- ⚠️⚠️⚠️ NUNCA adicione apenas o primeiro produto e ignore os outros!\n`
+  prompt += `- ⚠️⚠️⚠️ NUNCA adicione apenas o último produto mencionado!\n`
+  prompt += `- ⚠️⚠️⚠️ SEMPRE adicione TODOS os produtos que o cliente mencionou!\n`
+  prompt += `- ⚠️⚠️⚠️ Se o cliente mencionar 3 produtos, você DEVE chamar add_to_cart 3 VEZES!\n`
+  prompt += `\n`
+  prompt += `- Use "remove_from_cart" quando o cliente quiser remover TODAS as unidades de um produto completamente (ex: "remove a figure", "tira a bolacha", "não quero mais esse produto")\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Use "update_cart_item_quantity" quando o cliente quiser AJUSTAR/REDUZIR a quantidade (ex: "quero apenas uma figure, não duas", "remove uma columbina", "tira uma unidade", "reduz para 2"). ⚠️ REGRA DE OURO: Se o cliente diz "remove uma X" ou "tira uma X", ele quer REDUZIR quantidade, não remover completamente - use update_cart_item_quantity com quantity = (quantidade atual - 1)! NUNCA diga que ajustou sem chamar esta função!\n`
   prompt += `- Use "clear_cart" quando o cliente quiser cancelar tudo, disser "cancela", "desiste", "não quero mais nada"\n`
-  prompt += `- Use "view_cart" quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido"\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Use "view_cart" quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido", "ver carrinho", "mostrar carrinho", "carrinho", "pedido". ⚠️ REGRA DE OURO: NUNCA responda sobre o carrinho sem chamar a função view_cart primeiro! NUNCA liste itens do carrinho sem chamar view_cart! SEMPRE chame view_cart quando o cliente quiser ver o carrinho!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO SOBRE view_cart: Se o cliente pedir para ver o carrinho (ex: "ver carrinho", "meu carrinho", "o que tem no carrinho"), você DEVE CHAMAR A FUNÇÃO view_cart! NUNCA responda diretamente sobre o carrinho sem chamar a função! A função view_cart retorna os itens formatados corretamente COM QUANTIDADES - use EXATAMENTE a mensagem retornada pela função, SEM reformular, SEM remover quantidades, SEM simplificar!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Quando view_cart retornar uma mensagem formatada, você DEVE usar EXATAMENTE essa mensagem! NUNCA reformule, NUNCA remova as quantidades (ex: "5x"), NUNCA simplifique para apenas o nome do produto! A mensagem já está formatada corretamente com todas as informações necessárias!\n`
+  prompt += `\n`
+  prompt += `⚠️⚠️⚠️ CRÍTICO - PRODUTOS GENÉRICOS:\n`
+  prompt += `- Se o cliente pedir um produto genérico (ex: "quero 9 figures", "quero um chaveiro", "quero uma bolacha") e a função add_to_cart retornar um erro com múltiplas opções formatadas, você DEVE mostrar EXATAMENTE a mensagem de erro formatada ao cliente!\n`
+  prompt += `- NÃO responda sobre o produto sem chamar add_to_cart primeiro!\n`
+  prompt += `- SEMPRE chame add_to_cart quando o cliente pedir um produto, mesmo que seja genérico!\n`
+  prompt += `- Se add_to_cart retornar erro com opções formatadas, use EXATAMENTE essa mensagem sem reformular!\n`
   prompt += `\n`
   prompt += `⚠️⚠️⚠️ CRÍTICO - FINALIZAÇÃO DE PEDIDO:\n`
   prompt += `- Quando o cliente disser "quero finalizar a compra", "finalizar", "fechar pedido", "completar pedido", "concluir compra" → VOCÊ DEVE CHAMAR A FUNÇÃO "checkout"\n`
@@ -273,13 +324,25 @@ export function buildSystemPrompt(
   prompt += `- ⚠️ CRÍTICO: Se o cliente responder "retirada" ou "entrega" após você perguntar, você DEVE CHAMAR checkout IMEDIATAMENTE com o delivery_type correspondente\n`
   prompt += `- ⚠️ CRÍTICO: Se o cliente disser "retirada", use delivery_type="pickup" na função checkout\n`
   prompt += `- ⚠️ CRÍTICO: Se o cliente disser "entrega", use delivery_type="delivery" na função checkout (e peça o endereço se necessário)\n`
-  prompt += `- A função checkout pode retornar um erro pedindo endereço - nesse caso, pergunte o endereço e chame checkout novamente com delivery_address preenchido\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Se a função checkout retornar um erro pedindo endereço, você DEVE perguntar o endereço ao cliente. Quando o cliente fornecer o endereço, você DEVE CHAMAR checkout IMEDIATAMENTE com delivery_type="delivery" E delivery_address preenchido com o endereço fornecido pelo cliente. NÃO apenas confirme o endereço - CHAME checkout!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Quando o cliente informar um endereço após você pedir (ex: "Rua X, 123, Bairro Y, Cidade - Estado, CEP"), você DEVE chamar checkout IMEDIATAMENTE com delivery_type="delivery" e delivery_address="[endereço fornecido pelo cliente]". NÃO pergunte se está correto, NÃO confirme apenas - CHAME checkout AGORA!\n`
+  prompt += `- ⚠️⚠️⚠️ SOBRE ENDEREÇOS DE CONVERSAS ANTERIORES:\n`
+  prompt += `  - Se a função checkout retornar um erro com "previousAddress" ou mencionar um endereço anterior, você DEVE mostrar esse endereço ao cliente e perguntar se ele quer usar aquele endereço ou fornecer um novo\n`
+  prompt += `  - Se o cliente disser "usar este", "usar esse", "mesmo endereço", "pode usar", "usa esse" ou similar, você DEVE chamar checkout novamente com delivery_type="delivery" e delivery_address="[endereço anterior mencionado no erro]"\n`
+  prompt += `  - Se o cliente fornecer um novo endereço, você DEVE chamar checkout com o novo endereço\n`
+  prompt += `  - NUNCA use endereços de conversas anteriores SEM perguntar ao cliente primeiro!\n`
+  prompt += `- ⚠️ IMPORTANTE: Quando o cliente escolher entrega e informar o endereço, o sistema calculará automaticamente o frete baseado na distância. O valor do frete será adicionado ao total do pedido e mostrado separadamente no resumo.\n`
   prompt += `- GATILHOS QUE EXIGEM CHAMAR CHECKOUT: "finalizar", "fechar pedido", "quero finalizar a compra", "completar pedido", "concluir compra", "finalizar compra", "só isso", "por enquanto é só", "tá bom assim", "pode fechar"\n`
   prompt += `\n`
   prompt += `🚚 SOBRE ENTREGA/RETIRADA:\n`
   prompt += `- A função checkout vai verificar automaticamente quais opções estão disponíveis baseado nos produtos\n`
   prompt += `- Se ambos estiverem disponíveis, a função pode pedir para você perguntar ao cliente\n`
-  prompt += `- Se o cliente escolher entrega, você DEVE coletar o endereço completo antes de chamar checkout novamente\n`
+  prompt += `- ⚠️ FLUXO DE ENTREGA (SEGUIR EXATAMENTE):\n`
+  prompt += `  1. Cliente escolhe "entrega" → Você chama checkout com delivery_type="delivery"\n`
+  prompt += `  2. Se checkout pedir endereço → Você pergunta o endereço ao cliente\n`
+  prompt += `  3. Cliente fornece endereço → Você CHAMA checkout IMEDIATAMENTE com delivery_type="delivery" E delivery_address="[endereço do cliente]"\n`
+  prompt += `  4. O sistema calculará o frete automaticamente e mostrará no resumo do pedido\n`
+  prompt += `- ⚠️ NUNCA apenas confirme o endereço sem chamar checkout! Sempre chame checkout quando o cliente fornecer o endereço!\n`
   prompt += `- Se não souber o tipo de entrega e ambos estiverem disponíveis, pergunte ao cliente antes de chamar checkout\n`
   prompt += `- Se apenas uma opção estiver disponível, a função vai usar automaticamente\n`
   prompt += `\n`

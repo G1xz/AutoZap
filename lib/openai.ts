@@ -229,88 +229,8 @@ export async function generateAIResponse(
     tokens: response.usage?.totalTokens,
   })
 
-  // Se a IA quer chamar uma função, executa e continua a conversa
-  if (response.functionCall && context?.onFunctionCall) {
-    const { log } = await import('./logger')
-    log.debug('Executando função da IA', {
-      functionName: response.functionCall.name,
-      arguments: response.functionCall.arguments,
-    })
-    
-    try {
-      const functionResult = await context.onFunctionCall(
-        response.functionCall.name,
-        response.functionCall.arguments
-      )
-      
-      log.debug('Função executada com sucesso', {
-        functionName: response.functionCall.name,
-      })
-
-      // Adiciona a resposta da função e pede para a IA continuar
-      messages.push({
-        role: 'assistant',
-        content: '',
-        function_call: {
-          name: response.functionCall.name,
-          arguments: JSON.stringify(response.functionCall.arguments),
-        },
-      })
-
-      messages.push({
-        role: 'function',
-        name: response.functionCall.name,
-        content: JSON.stringify(functionResult),
-      })
-
-      // Chama novamente para obter a resposta final
-      const finalResponse = await callChatGPT(messages, {
-        temperature: context?.temperature,
-        maxTokens: context?.maxTokens,
-        functions: context?.functions,
-      })
-
-      // Registra métricas e armazena no cache
-      const duration = Date.now() - startTime
-      const { recordAIMetric } = await import('./ai-metrics')
-      const { setCachedResponse, cacheConfig } = await import('./ai-cache')
-      
-      recordAIMetric({
-        userId: context?.userId,
-        instanceId: context?.instanceId,
-        model: 'gpt-3.5-turbo',
-        promptTokens: (finalResponse.usage?.promptTokens || 0) + (response.usage?.promptTokens || 0),
-        completionTokens: (finalResponse.usage?.completionTokens || 0) + (response.usage?.completionTokens || 0),
-        totalTokens: (finalResponse.usage?.totalTokens || 0) + (response.usage?.totalTokens || 0),
-        duration,
-        cached: false,
-      })
-
-      // Armazena no cache se não for função calling
-      if (context?.useCache !== false && !response.functionCall) {
-        setCachedResponse(
-          userMessage,
-          finalResponse.content,
-          context?.systemPrompt,
-          context?.variables,
-          cacheConfig.general
-        )
-      }
-      
-      return finalResponse.content
-    } catch (error) {
-      const { log } = await import('./logger')
-      log.error('Erro ao executar função da IA', error, {
-        functionName: response.functionCall.name,
-        arguments: response.functionCall.arguments,
-      })
-      
-      // Retorna mensagem de erro mais específica
-      const errorMessage = error instanceof Error ? error.message : String(error)
-      return `Desculpe, ocorreu um erro ao processar sua solicitação: ${errorMessage}. Por favor, tente novamente.`
-    }
-  }
-
+  // Se não há function call, trata como resposta simples
+  if (!response.functionCall || !context?.onFunctionCall) {
   // Registra métricas e armazena no cache para resposta simples
   const duration = Date.now() - startTime
   const { recordAIMetric } = await import('./ai-metrics')
@@ -339,6 +259,116 @@ export async function generateAIResponse(
   }
 
   return response.content
+  }
+
+  // Se a IA quer chamar uma função, executa e continua a conversa (com loop para múltiplas chamadas)
+  let currentResponse = response
+  let totalPromptTokens = response.usage?.promptTokens || 0
+  let totalCompletionTokens = response.usage?.completionTokens || 0
+  let totalTokens = response.usage?.totalTokens || 0
+  const maxFunctionCalls = 10 // Limite de segurança para evitar loops infinitos
+  
+  for (let callCount = 0; callCount < maxFunctionCalls && currentResponse.functionCall && context?.onFunctionCall; callCount++) {
+    const { log } = await import('./logger')
+    log.debug('Executando função da IA', {
+      functionName: currentResponse.functionCall.name,
+      arguments: currentResponse.functionCall.arguments,
+      callNumber: callCount + 1,
+    })
+    
+    try {
+      const functionResult = await context.onFunctionCall(
+        currentResponse.functionCall.name,
+        currentResponse.functionCall.arguments
+      )
+      
+      log.debug('Função executada com sucesso', {
+        functionName: currentResponse.functionCall.name,
+        callNumber: callCount + 1,
+      })
+
+      // Adiciona a resposta da função e pede para a IA continuar
+      messages.push({
+        role: 'assistant',
+        content: '',
+        function_call: {
+          name: currentResponse.functionCall.name,
+          arguments: JSON.stringify(currentResponse.functionCall.arguments),
+        },
+      })
+
+      messages.push({
+        role: 'function',
+        name: currentResponse.functionCall.name,
+        content: JSON.stringify(functionResult),
+      })
+
+      // Chama novamente - a IA pode querer chamar outra função ou dar a resposta final
+      currentResponse = await callChatGPT(messages, {
+        temperature: context?.temperature,
+        maxTokens: context?.maxTokens,
+        functions: context?.functions,
+      })
+
+      // Acumula tokens
+      totalPromptTokens += currentResponse.usage?.promptTokens || 0
+      totalCompletionTokens += currentResponse.usage?.completionTokens || 0
+      totalTokens += currentResponse.usage?.totalTokens || 0
+
+      // Se a IA não quer mais chamar funções, sai do loop
+      if (!currentResponse.functionCall) {
+        break
+      }
+    } catch (error) {
+      const { log } = await import('./logger')
+      log.error('Erro ao executar função da IA', error, {
+        functionName: currentResponse.functionCall?.name || 'unknown',
+        arguments: currentResponse.functionCall?.arguments || '{}',
+      })
+      
+      // Retorna mensagem de erro mais específica
+      const errorMessage = error instanceof Error ? error.message : String(error)
+      return `Desculpe, ocorreu um erro ao processar sua solicitação: ${errorMessage}. Por favor, tente novamente.`
+    }
+  }
+
+  // Se saiu do loop porque ainda há function call (limite atingido), usa a última resposta
+  if (currentResponse.functionCall) {
+    const { log } = await import('./logger')
+    log.warn('Limite de chamadas de função atingido', {
+      functionName: currentResponse.functionCall.name,
+      maxCalls: maxFunctionCalls,
+    })
+  }
+
+  // Registra métricas e armazena no cache
+  const duration = Date.now() - startTime
+  const { recordAIMetric } = await import('./ai-metrics')
+  const { setCachedResponse, cacheConfig } = await import('./ai-cache')
+  
+  recordAIMetric({
+    userId: context?.userId,
+    instanceId: context?.instanceId,
+    model: 'gpt-3.5-turbo',
+    promptTokens: totalPromptTokens,
+    completionTokens: totalCompletionTokens,
+    totalTokens: totalTokens,
+    duration,
+    cached: false,
+  })
+
+  // Armazena no cache se não for função calling
+  if (context?.useCache !== false && !currentResponse.functionCall) {
+    setCachedResponse(
+      userMessage,
+      currentResponse.content,
+      context?.systemPrompt,
+      context?.variables,
+      cacheConfig.general
+    )
+  }
+
+  return currentResponse.content
 }
 
 /**

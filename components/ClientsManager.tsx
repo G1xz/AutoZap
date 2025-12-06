@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useSession } from 'next-auth/react'
+import { Package } from 'lucide-react'
 
 interface Client {
   contactNumber: string
@@ -46,6 +47,7 @@ export default function ClientsManager() {
   const [selectedClient, setSelectedClient] = useState<Client | null>(null)
   const [cartData, setCartData] = useState<{ cart: Cart; orders: Order[]; hasActiveCart: boolean; hasOrders: boolean } | null>(null)
   const [loadingCart, setLoadingCart] = useState(false)
+  const [productImages, setProductImages] = useState<Record<string, string>>({})
 
   useEffect(() => {
     fetchClients()
@@ -77,6 +79,48 @@ export default function ClientsManager() {
     return phone
   }
 
+  const fetchProductImages = async (items: CartItem[]) => {
+    const imageMap: Record<string, string> = {}
+    
+    // Agrupa itens por productId e productType para evitar buscas duplicadas
+    const uniqueProducts = new Map<string, CartItem>()
+    items.forEach(item => {
+      const key = `${item.productType}-${item.productId}`
+      if (!uniqueProducts.has(key)) {
+        uniqueProducts.set(key, item)
+      }
+    })
+    
+    // Busca imagens para cada produto único
+    for (const [key, item] of Array.from(uniqueProducts.entries())) {
+      try {
+        if (item.productType === 'catalog') {
+          // Busca imagem do catálogo
+          const response = await fetch(`/api/catalogs/node/${item.productId}`)
+          if (response.ok) {
+            const nodeData = await response.json()
+            if (nodeData.imageUrl) {
+              imageMap[key] = nodeData.imageUrl
+            }
+          }
+        } else if (item.productType === 'service') {
+          // Busca imagem do serviço
+          const response = await fetch(`/api/services/${item.productId}`)
+          if (response.ok) {
+            const serviceData = await response.json()
+            if (serviceData.imageUrl) {
+              imageMap[key] = serviceData.imageUrl
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Erro ao buscar imagem do produto ${item.productId}:`, error)
+      }
+    }
+    
+    setProductImages(imageMap)
+  }
+
   const handleViewCart = async (client: Client) => {
     setSelectedClient(client)
     setLoadingCart(true)
@@ -86,6 +130,13 @@ export default function ClientsManager() {
       if (response.ok) {
         const data = await response.json()
         setCartData(data)
+        
+        // Busca imagens de todos os produtos (carrinho ativo + pedidos)
+        const allItems = [
+          ...(data.cart?.items || []),
+          ...(data.orders?.flatMap((order: Order) => order.items) || [])
+        ]
+        await fetchProductImages(allItems)
       } else {
         console.error('Erro ao buscar carrinho')
         setCartData(null)
@@ -218,22 +269,40 @@ export default function ClientsManager() {
                           <p className="text-gray-500 text-sm">Carrinho vazio</p>
                         ) : (
                           <div className="space-y-3">
-                            {cartData.cart.items.map((item, index) => (
-                              <div key={index} className="flex justify-between items-start pb-3 border-b border-gray-100 last:border-0">
-                                <div className="flex-1">
-                                  <p className="font-medium text-gray-900">{item.productName}</p>
-                                  <p className="text-sm text-gray-600">
-                                    {item.quantity}x R$ {item.unitPrice.toFixed(2).replace('.', ',')}
-                                  </p>
-                                  {item.notes && (
-                                    <p className="text-xs text-gray-500 mt-1">Obs: {item.notes}</p>
+                            {cartData.cart.items.map((item, index) => {
+                              const imageKey = `${item.productType}-${item.productId}`
+                              const imageUrl = productImages[imageKey]
+                              
+                              return (
+                                <div key={index} className="flex items-start gap-3 pb-3 border-b border-gray-100 last:border-0">
+                                  {imageUrl ? (
+                                    <div className="flex-shrink-0 w-12 h-12 rounded-md overflow-hidden bg-gray-100">
+                                      <img 
+                                        src={imageUrl} 
+                                        alt={item.productName}
+                                        className="w-full h-full object-cover"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="flex-shrink-0 w-12 h-12 rounded-md bg-gray-100 flex items-center justify-center">
+                                      <Package size={20} className="text-gray-400" />
+                                    </div>
                                   )}
+                                  <div className="flex-1 min-w-0">
+                                    <p className="font-medium text-gray-900">{item.productName}</p>
+                                    <p className="text-sm text-gray-600">
+                                      {item.quantity}x R$ {item.unitPrice.toFixed(2).replace('.', ',')}
+                                    </p>
+                                    {item.notes && (
+                                      <p className="text-xs text-gray-500 mt-1">Obs: {item.notes}</p>
+                                    )}
+                                  </div>
+                                  <p className="font-semibold text-gray-900 flex-shrink-0">
+                                    R$ {(item.quantity * item.unitPrice).toFixed(2).replace('.', ',')}
+                                  </p>
                                 </div>
-                                <p className="font-semibold text-gray-900">
-                                  R$ {(item.quantity * item.unitPrice).toFixed(2).replace('.', ',')}
-                                </p>
-                              </div>
-                            ))}
+                              )
+                            })}
                             <div className="pt-3 border-t border-gray-200">
                               <div className="flex justify-between items-center">
                                 <span className="font-semibold text-gray-900">Total:</span>
@@ -279,12 +348,32 @@ export default function ClientsManager() {
                               </span>
                             </div>
                             <div className="space-y-2 mb-3">
-                              {order.items.map((item, index) => (
-                                <div key={index} className="flex justify-between text-sm">
-                                  <span className="text-gray-700">{item.productName} x{item.quantity}</span>
-                                  <span className="text-gray-900">R$ {(item.quantity * item.unitPrice).toFixed(2).replace('.', ',')}</span>
-                                </div>
-                              ))}
+                              {order.items.map((item, index) => {
+                                const imageKey = `${item.productType}-${item.productId}`
+                                const imageUrl = productImages[imageKey]
+                                
+                                return (
+                                  <div key={index} className="flex items-center gap-3 text-sm">
+                                    {imageUrl ? (
+                                      <div className="flex-shrink-0 w-10 h-10 rounded-md overflow-hidden bg-gray-100">
+                                        <img 
+                                          src={imageUrl} 
+                                          alt={item.productName}
+                                          className="w-full h-full object-cover"
+                                        />
+                                      </div>
+                                    ) : (
+                                      <div className="flex-shrink-0 w-10 h-10 rounded-md bg-gray-100 flex items-center justify-center">
+                                        <Package size={16} className="text-gray-400" />
+                                      </div>
+                                    )}
+                                    <div className="flex-1 min-w-0">
+                                      <span className="text-gray-700">{item.productName} x{item.quantity}</span>
+                                    </div>
+                                    <span className="text-gray-900 flex-shrink-0">R$ {(item.quantity * item.unitPrice).toFixed(2).replace('.', ',')}</span>
+                                  </div>
+                                )
+                              })}
                             </div>
                             <div className="flex justify-between items-center pt-2 border-t border-gray-100">
                               <span className="text-sm text-gray-600">

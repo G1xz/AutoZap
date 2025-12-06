@@ -2,7 +2,7 @@
 
 import { useSession, signOut } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
-import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings, ShoppingBag, Bug } from 'lucide-react'
+import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings, ShoppingBag, Bug, TestTube } from 'lucide-react'
 import StaggeredMenu, { StaggeredMenuSocialItem } from './StaggeredMenu'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -23,6 +23,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (pathname?.startsWith('/dashboard/relatorios')) return 'Relatórios'
     if (pathname?.startsWith('/dashboard/configuracoes')) return 'Configurações'
     if (pathname?.startsWith('/dashboard/debug')) return 'Debug'
+    if (pathname?.startsWith('/dashboard/test-chat')) return 'Test Chat'
     return undefined
   }
 
@@ -80,6 +81,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       ariaLabel: 'Logs e debug do sistema',
       link: '/dashboard/debug',
       icon: <Bug size={28} strokeWidth={2} />
+    },
+    { 
+      label: 'Test Chat', 
+      ariaLabel: 'Chat de teste da IA',
+      link: '/dashboard/test-chat',
+      icon: <TestTube size={28} strokeWidth={2} />
     },
   ]
 

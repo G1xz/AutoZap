@@ -726,7 +726,8 @@ export async function createOrderFromCart(
   contactName: string | undefined,
   deliveryType: 'pickup' | 'delivery',
   deliveryAddress?: string,
-  notes?: string
+  notes?: string,
+  freightAmount?: number | null
 ): Promise<{ orderId: string; paymentLink?: string; paymentPixKey?: string }> {
   // Normaliza número e obtém carrinho
   const normalizedContact = normalizeContactNumber(contactNumber)
@@ -742,7 +743,9 @@ export async function createOrderFromCart(
     throw new Error('Endereço de entrega é obrigatório para entregas.')
   }
   
-  const totalAmount = getCartTotal(cart)
+  const cartTotal = getCartTotal(cart)
+  const freight = freightAmount && freightAmount > 0 ? freightAmount : 0
+  const totalAmount = cartTotal + freight
   
   // Determina método de pagamento baseado nos produtos
   let paymentLink: string | undefined
@@ -808,6 +811,7 @@ export async function createOrderFromCart(
         contactName,
         deliveryType,
         deliveryAddress: deliveryType === 'delivery' ? deliveryAddress : null,
+        freightAmount: deliveryType === 'delivery' && freight > 0 ? freight : null,
         status: 'pending',
         totalAmount,
         paymentMethod,

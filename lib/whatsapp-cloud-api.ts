@@ -5,6 +5,15 @@ import { getAccessToken } from './meta-config'
 
 export type { WhatsAppMessage }
 
+// Flag global para modo de teste (não envia via WhatsApp, apenas salva no banco)
+let testMode = false
+export function setTestMode(enabled: boolean) {
+  testMode = enabled
+}
+export function isTestMode() {
+  return testMode
+}
+
 // WhatsApp Cloud API Base URL
 const WHATSAPP_API_URL = 'https://graph.facebook.com/v18.0'
 
@@ -129,6 +138,30 @@ export async function sendWhatsAppMessage(
   messageType: 'service' | 'utility' | 'marketing' | 'authentication' = 'service'
 ): Promise<boolean> {
   try {
+    // MODO DE TESTE: Apenas salva no banco, não envia via WhatsApp
+    if (testMode) {
+      console.log(`🧪 [TEST MODE] Salvando mensagem no banco (não enviando via WhatsApp)`)
+      const cleanPhoneNumber = to.replace(/\D/g, '')
+      const formattedPhone = cleanPhoneNumber.startsWith('55')
+        ? cleanPhoneNumber
+        : `55${cleanPhoneNumber}`
+      
+      await prisma.message.create({
+        data: {
+          instanceId,
+          from: instanceId,
+          to: formattedPhone,
+          body: message,
+          messageId: `test-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: new Date(),
+          isFromMe: true,
+          isGroup: false,
+          messageType: 'text',
+        },
+      })
+      return true
+    }
+
     const instance = await prisma.whatsAppInstance.findUnique({
       where: { id: instanceId },
     })
@@ -269,6 +302,31 @@ export async function sendWhatsAppImage(
   caption?: string
 ): Promise<boolean> {
   try {
+    // MODO DE TESTE: Apenas salva no banco, não envia via WhatsApp
+    if (testMode) {
+      console.log(`🧪 [TEST MODE] Salvando imagem no banco (não enviando via WhatsApp)`)
+      const cleanPhoneNumber = to.replace(/\D/g, '')
+      const formattedPhone = cleanPhoneNumber.startsWith('55')
+        ? cleanPhoneNumber
+        : `55${cleanPhoneNumber}`
+      
+      await prisma.message.create({
+        data: {
+          instanceId,
+          from: instanceId,
+          to: formattedPhone,
+          body: caption || '[Imagem]',
+          messageId: `test-image-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: new Date(),
+          isFromMe: true,
+          isGroup: false,
+          messageType: 'image',
+          mediaUrl: imageUrl,
+        },
+      })
+      return true
+    }
+
     const instance = await prisma.whatsAppInstance.findUnique({
       where: { id: instanceId },
     })

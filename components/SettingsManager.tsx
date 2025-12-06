@@ -3,6 +3,8 @@
 import WhatsAppInstanceManager from './WhatsAppInstanceManager'
 import PixKeysManager from './PixKeysManager'
 import WorkingHoursManager from './WorkingHoursManager'
+import DeliverySettingsManager from './DeliverySettingsManager'
+import MessageCleanupManager from './MessageCleanupManager'
 
 export default function SettingsManager() {
   return (
@@ -19,6 +21,12 @@ export default function SettingsManager() {
           </div>
           <div className="border-t border-gray-200 pt-6">
             <WorkingHoursManager />
+          </div>
+          <div className="border-t border-gray-200 pt-6">
+            <DeliverySettingsManager />
+          </div>
+          <div className="border-t border-gray-200 pt-6">
+            <MessageCleanupManager />
           </div>
         </div>
       </div>

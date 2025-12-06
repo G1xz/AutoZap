@@ -1556,7 +1556,7 @@ export async function processAppointmentConfirmation(
  * Executa um workflow IA-only de forma autônoma
  * A IA conversa diretamente com o cliente usando os detalhes do negócio
  */
-async function executeAIOnlyWorkflow(
+export async function executeAIOnlyWorkflow(
   workflow: any,
   instanceId: string,
   contactNumber: string,
@@ -1658,31 +1658,31 @@ async function executeAIOnlyWorkflow(
         } else if (hasPendingAppointment) {
           // Só processa agendamento se houver agendamento pendente
           console.log(`🔍 [executeAIOnlyWorkflow] Há agendamento pendente, verificando confirmação...`)
-          
-          // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
-          // Se processou algo, retorna imediatamente SEM chamar a IA
-          console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
-          console.log(`   Mensagem do usuário: "${userMessage}"`)
 
-          const processedAppointment = await processAppointmentConfirmation(
-            instanceId,
-            contactNumber,
-            userMessage,
-            userId,
-            contactNameFinal
-          )
+    // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
+    // Se processou algo, retorna imediatamente SEM chamar a IA
+    console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
+    console.log(`   Mensagem do usuário: "${userMessage}"`)
 
-          console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
+    const processedAppointment = await processAppointmentConfirmation(
+      instanceId,
+      contactNumber,
+      userMessage,
+      userId,
+      contactNameFinal
+    )
 
-          if (processedAppointment) {
-            console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
-            console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
+    console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
 
-            // CRÍTICO: Limpa a execução do workflow após processar agendamento
-            // Isso permite que novas mensagens iniciem um novo fluxo limpo
-            const executionKeyAI = `${instanceId}-${contactNumber}`
-            if (workflowExecutions.has(executionKeyAI)) {
-              console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após processar agendamento`)
+    if (processedAppointment) {
+      console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
+      console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
+
+      // CRÍTICO: Limpa a execução do workflow após processar agendamento
+      // Isso permite que novas mensagens iniciem um novo fluxo limpo
+      const executionKeyAI = `${instanceId}-${contactNumber}`
+      if (workflowExecutions.has(executionKeyAI)) {
+        console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após processar agendamento`)
               workflowExecutions.delete(executionKeyAI)
             }
             
@@ -1789,6 +1789,12 @@ async function executeAIOnlyWorkflow(
       },
       orderBy: { timestamp: 'desc' },
       take: 20, // Últimas 20 mensagens para contexto
+    })
+
+    console.log(`📊 [executeAIOnlyWorkflow] Mensagens recentes encontradas: ${recentMessages.length}`)
+    console.log(`   Mensagens da IA (isFromMe=true): ${recentMessages.filter(m => m.isFromMe).length}`)
+    recentMessages.forEach((msg, i) => {
+      console.log(`   [${i + 1}] ${msg.isFromMe ? 'IA' : 'Usuário'}: ${msg.body.substring(0, 50)}...`)
     })
 
     // Converte mensagens para formato de histórico
@@ -1998,10 +2004,13 @@ async function executeAIOnlyWorkflow(
       appointmentContext
     )
 
-    // Verifica se é a primeira interação (poucas mensagens na conversa ou nenhuma resposta da IA ainda)
-    // Considera primeira interação se há menos de 3 mensagens OU se não há nenhuma mensagem da IA ainda
+    // Verifica se é a primeira interação
+    // CRÍTICO: Considera primeira interação APENAS se NÃO há nenhuma mensagem da IA ainda
+    // Se já houve resposta da IA (mesmo que pré-definida), NÃO é mais primeira interação
     const hasAIResponse = recentMessages.some(msg => msg.isFromMe)
-    const isFirstInteraction = conversationHistory.length <= 2 || !hasAIResponse
+    // CRÍTICO: Não usa length <= 2 porque pode ter mensagem do usuário + resposta pré-definida = 2 mensagens
+    // Se já tem resposta da IA, NÃO é primeira interação
+    const isFirstInteraction = !hasAIResponse
 
     console.log(`🔍 Debug primeira interação:`, {
       conversationHistoryLength: conversationHistory.length,
@@ -2012,11 +2021,10 @@ async function executeAIOnlyWorkflow(
       hasBusinessDetails: !!workflow.aiBusinessDetails
     })
 
-    // SEMPRE usa resposta pré-definida se:
-    // 1. É primeira interação E tem nome do negócio
-    // 2. OU se não há resposta da IA ainda (primeira vez que o workflow responde)
-    // Isso garante que sempre apresente o negócio corretamente, sem depender da IA
-    const shouldUsePredefined = (isFirstInteraction || !hasAIResponse) && businessDetails.businessName
+    // SEMPRE usa resposta pré-definida APENAS se:
+    // 1. É primeira interação (não há resposta da IA ainda) E tem nome do negócio
+    // CRÍTICO: Se já houve resposta da IA, NÃO usa mais pré-definida
+    const shouldUsePredefined = isFirstInteraction && businessDetails.businessName
 
     console.log(`🤖 Decisão de resposta:`, {
       shouldUsePredefined,
@@ -2343,6 +2351,7 @@ async function executeAIOnlyWorkflow(
       console.log(`   userId: ${userId}`)
       console.log(`   instanceId: ${instanceId}`)
       console.log(`   contactNumber: "${contactNumber}"`)
+      console.log(`   userMessage: "${userMessage}"`)
       
       // CRÍTICO: Verifica se a função add_to_cart está sendo chamada
       if (functionName === 'add_to_cart') {
@@ -2353,7 +2362,7 @@ async function executeAIOnlyWorkflow(
         console.log(`     product_name: ${args?.product_name}`)
         console.log(`     quantity: ${args?.quantity || 1}`)
       }
-      
+
       // CRÍTICO: Normaliza o número ANTES de qualquer processamento
       const normalizedContactNumber = contactNumber.replace(/\D/g, '')
       console.log(`🔧 handleFunctionCall - contactNumber original: "${contactNumber}"`)
@@ -3675,10 +3684,25 @@ async function executeAIOnlyWorkflow(
               })
               
               console.warn(`   Total de catálogos encontrados: ${allCatalogs.length}`)
+              
+              // Log detalhado de todos os nodes para debug
+              for (const catalog of allCatalogs) {
+                console.warn(`   📋 Catálogo "${catalog.name}" (ID: ${catalog.id}) tem ${catalog.nodes.length} nodes:`)
+                catalog.nodes.forEach((node, idx) => {
+                  try {
+                    const nodeData = JSON.parse(node.data)
+                    console.warn(`      [${idx + 1}] Node ID: ${node.id}, Nome: ${nodeData.name || nodeData.title || 'N/A'}, Preço: R$ ${nodeData.price || 0}`)
+                  } catch (e) {
+                    console.warn(`      [${idx + 1}] Node ID: ${node.id}, Erro ao parsear data`)
+                  }
+                })
+              }
+              
+              // Tenta buscar por ID exato
               for (const catalog of allCatalogs) {
                 const foundNode = catalog.nodes.find(n => n.id === args.product_id)
                 if (foundNode) {
-                  console.warn(`   ✅ Node encontrado no catálogo "${catalog.name}"`)
+                  console.warn(`   ✅ Node encontrado no catálogo "${catalog.name}" por ID exato`)
                   try {
                     const nodeData = JSON.parse(foundNode.data)
                     unitPrice = typeof nodeData.price === 'number' ? nodeData.price : parseFloat(nodeData.price) || 0
@@ -3687,6 +3711,190 @@ async function executeAIOnlyWorkflow(
                   } catch (e) {
                     console.error(`   Erro ao fazer parse:`, e)
                   }
+                }
+              }
+              
+              // Se ainda não encontrou, tenta buscar por nome (case-insensitive)
+              if (unitPrice === 0 && args.product_name) {
+                console.warn(`   🔍 Tentando buscar por nome: "${args.product_name}"`)
+                const searchName = args.product_name.toLowerCase().trim()
+                
+                // ⚠️ DETECÇÃO DE TERMO GENÉRICO: Verifica se a mensagem original do usuário é genérica
+                // (ex: "chaveiro" quando há "Chaveiro Furina" e "Chaveiro Mavuika")
+                const userMessageLower = userMessage.toLowerCase().trim()
+                
+                // Lista de termos genéricos e seus tipos específicos conhecidos
+                const genericTerms = {
+                  'chaveiro': ['furina', 'mavuika'],
+                  'figure': ['furina', 'columbina', 'emilie'],
+                  'bolacha': ['nahida', 'emilie'],
+                  'figures': ['furina', 'columbina', 'emilie'], // plural
+                }
+                
+                // Verifica se é termo genérico: contém o termo genérico mas NÃO menciona nenhum tipo específico
+                let isGenericTerm = false
+                for (const [genericTerm, specificTypes] of Object.entries(genericTerms)) {
+                  if (userMessageLower.includes(genericTerm)) {
+                    // Verifica se menciona algum tipo específico
+                    const mentionsSpecificType = specificTypes.some(type => userMessageLower.includes(type))
+                    if (!mentionsSpecificType) {
+                      isGenericTerm = true
+                      break
+                    }
+                  }
+                }
+                
+                console.warn(`   🔍 Termo genérico detectado na mensagem do usuário: ${isGenericTerm}`)
+                console.warn(`   Mensagem original: "${userMessage}"`)
+                console.warn(`   Nome passado pela IA: "${args.product_name}"`)
+                
+                // Coleta TODOS os matches (não apenas o melhor)
+                const allMatches: Array<{ node: any; price: number; score: number; name: string }> = []
+                
+                for (const catalog of allCatalogs) {
+                  for (const node of catalog.nodes) {
+                    try {
+                      const nodeData = JSON.parse(node.data)
+                      const nodeName = (nodeData.name || nodeData.title || '').toLowerCase().trim()
+                      const nodePrice = typeof nodeData.price === 'number' ? nodeData.price : parseFloat(nodeData.price) || 0
+                      
+                      // CRÍTICO: Ignora nodes sem nome válido ou com preço zero (provavelmente são categorias)
+                      if (!nodeName || nodeName === 'n/a' || nodeName === '' || nodePrice === 0) {
+                        continue
+                      }
+                      
+                      // Calcula score de match
+                      let score = 0
+                      if (nodeName === searchName) {
+                        score = 100 // Match exato - maior prioridade
+                      } else if (nodeName.includes(searchName)) {
+                        score = 80 // Nome contém o termo de busca
+                      } else if (searchName.includes(nodeName)) {
+                        score = 60 // Termo de busca contém o nome
+                      } else {
+                        // Match parcial (palavras em comum)
+                        const nodeWords = nodeName.split(/\s+/)
+                        const searchWords = searchName.split(/\s+/)
+                        const commonWords = nodeWords.filter((w: string) => searchWords.includes(w))
+                        if (commonWords.length > 0) {
+                          score = 40 + (commonWords.length * 10)
+                        }
+                      }
+                      
+                      // Adiciona à lista de matches se tiver score > 0 e preço > 0
+                      if (score > 0 && nodePrice > 0) {
+                        allMatches.push({ 
+                          node, 
+                          price: nodePrice, 
+                          score,
+                          name: nodeData.name || nodeData.title || ''
+                        })
+                        console.warn(`   🎯 Match encontrado: "${nodeData.name || nodeData.title}" (ID: ${node.id}, score: ${score}, preço: R$ ${nodePrice})`)
+                      }
+                    } catch (e) {
+                      // Ignora erros de parse
+                    }
+                  }
+                }
+                
+                // Ordena matches por score (maior primeiro)
+                allMatches.sort((a, b) => b.score - a.score)
+                
+                // ⚠️ DETECÇÃO DE AMBIGUIDADE: Extrai palavras-chave importantes da busca
+                // Remove artigos comuns (da, de, do, a, o, e, etc) para focar nas palavras-chave importantes
+                const articles = new Set(['da', 'de', 'do', 'das', 'dos', 'a', 'o', 'as', 'os', 'e', 'em', 'na', 'no', 'nas', 'nos'])
+                const searchWords = searchName.split(/\s+/).filter((w: string) => w.length > 0 && !articles.has(w.toLowerCase()))
+                const firstSearchWord = searchWords[0] // Ex: "bolacha", "chaveiro", "figure"
+                
+                // Filtra matches que contenham TODAS as palavras-chave importantes
+                const matchesWithAllKeywords = allMatches.filter(m => {
+                  const mNameLower = m.name.toLowerCase()
+                  // Verifica se o nome do produto contém TODAS as palavras-chave importantes
+                  return searchWords.every((keyword: string) => mNameLower.includes(keyword.toLowerCase()))
+                })
+                
+                // Se houver matches que contenham todas as palavras-chave, prioriza esses
+                // Caso contrário, usa a lógica antiga (score >= 60 ou primeira palavra corresponde)
+                let relevantMatches: typeof allMatches
+                if (matchesWithAllKeywords.length > 0) {
+                  // Prioriza matches que contêm todas as palavras-chave
+                  relevantMatches = matchesWithAllKeywords
+                  console.warn(`   🔍 Encontrados ${matchesWithAllKeywords.length} matches com todas as palavras-chave: ${searchWords.join(', ')}`)
+                } else {
+                  // Fallback: usa lógica antiga (score >= 60 ou primeira palavra corresponde)
+                  relevantMatches = allMatches.filter(m => {
+                    const mWords = m.name.toLowerCase().split(/\s+/)
+                    const firstMatchWord = mWords[0]
+                    
+                    // Match relevante se:
+                    // - Score >= 60 (match bom)
+                    // - OU score >= 50 E primeira palavra corresponde (ex: "bolacha" = "bolacha")
+                    return m.score >= 60 || (m.score >= 50 && firstMatchWord === firstSearchWord)
+                  })
+                }
+                
+                // Se houver apenas UM match relevante que contenha todas as palavras-chave, usa diretamente (sem ambiguidade)
+                if (matchesWithAllKeywords.length === 1) {
+                  console.warn(`   ✅ Match único encontrado com todas as palavras-chave: "${matchesWithAllKeywords[0].name}"`)
+                  // Não detecta ambiguidade - usa esse match diretamente
+                } else if (isGenericTerm && relevantMatches.length > 1) {
+                  // Se a mensagem original é genérica E há múltiplas opções relevantes, detecta ambiguidade
+                  console.warn(`   ⚠️ AMBIGUIDADE DETECTADA: Mensagem genérica do usuário + múltiplos produtos relevantes encontrados`)
+                } else if (relevantMatches.length > 1 && relevantMatches[0].score === relevantMatches[1].score) {
+                  // Mesmo se não for termo genérico, se houver empate no score, também detecta ambiguidade
+                  console.warn(`   ⚠️ AMBIGUIDADE DETECTADA: Empate no score entre múltiplos produtos`)
+                }
+                
+                // Só detecta ambiguidade se:
+                // 1. NÃO há um match único com todas as palavras-chave
+                // 2. E (mensagem genérica + múltiplos matches) OU (empate no score)
+                if (matchesWithAllKeywords.length !== 1 && ((isGenericTerm && relevantMatches.length > 1) || (relevantMatches.length > 1 && relevantMatches[0].score === relevantMatches[1].score))) {
+                  // Há múltiplas opções - retorna erro informando à IA
+                  console.warn(`   ⚠️ AMBIGUIDADE DETECTADA: Múltiplos produtos encontrados para "${args.product_name}":`)
+                  relevantMatches.forEach(m => {
+                    console.warn(`      - ${m.name} (score: ${m.score}, preço: R$ ${m.price})`)
+                  })
+                  
+                  // Monta mensagem visual e simples, similar ao formato do carrinho
+                  let optionsMessage = `📦 *Opções Disponíveis:*\n`
+                  optionsMessage += `━━━━━━━━━━━━━━━━━━━━\n\n`
+                  
+                  relevantMatches.forEach((m, i) => {
+                    const formattedPrice = m.price > 0 ? m.price.toFixed(2).replace('.', ',') : 'Consulte'
+                    optionsMessage += `${i + 1}. *${m.name}*\n`
+                    optionsMessage += `   R$ ${formattedPrice}\n\n`
+                  })
+                  
+                  optionsMessage += `━━━━━━━━━━━━━━━━━━━━\n`
+                  optionsMessage += `Qual você prefere?`
+                  
+                  // ⚠️ CRÍTICO: Retorna a mensagem formatada diretamente - a IA deve usar exatamente como está
+                  return {
+                    success: false,
+                    error: optionsMessage,
+                  }
+                }
+                
+                // Se há apenas um match ou nenhum, usa o melhor (ou primeiro)
+                // Prioriza matches que contenham todas as palavras-chave
+                let bestMatch = null
+                if (matchesWithAllKeywords.length > 0) {
+                  // Se houver matches com todas as palavras-chave, usa o de maior score entre eles
+                  bestMatch = matchesWithAllKeywords[0]
+                  console.warn(`   ✅ Match encontrado com todas as palavras-chave: "${bestMatch.name}"`)
+                } else if (allMatches.length > 0) {
+                  // Caso contrário, usa o match de maior score geral
+                  bestMatch = allMatches[0]
+                  console.warn(`   ✅ Match encontrado (melhor score): "${bestMatch.name}"`)
+                }
+                
+                if (bestMatch && bestMatch.price > 0) {
+                  console.warn(`   ✅ Node encontrado por nome: "${bestMatch.node.id}"`)
+                  unitPrice = bestMatch.price
+                  args.product_id = bestMatch.node.id
+                  console.warn(`   Preço encontrado: R$ ${unitPrice}`)
+                } else {
+                  console.warn(`   ❌ Nenhum node válido encontrado por nome "${args.product_name}"`)
                 }
               }
             }
@@ -3726,6 +3934,15 @@ async function executeAIOnlyWorkflow(
             unitPrice,
           })
 
+          // Busca carrinho ANTES de adicionar para verificar se o item já existe
+          const { getCart: getCartBefore } = await import('./cart')
+          const cartBefore = await getCartBefore(instanceId, normalizedContactNumber)
+          const existingItem = cartBefore.items.find(
+            item => item.productId === args.product_id && item.productType === args.product_type
+          )
+          const itemExistedBefore = !!existingItem
+          const previousQuantity = existingItem ? existingItem.quantity : 0
+          
           let cart
           try {
             cart = await addToCart(instanceId, normalizedContactNumber, {
@@ -3768,8 +3985,22 @@ async function executeAIOnlyWorkflow(
           const itemCount = cart.items.length
           const cartTotal = cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
           
+          // Verifica se o item já existia no carrinho (foi atualizado) ou foi adicionado novo
+          const addedItem = cart.items.find(
+            item => item.productId === args.product_id && item.productType === args.product_type
+          )
           // Monta mensagem detalhada e bonita
-          let message = `✅ *${args.product_name}* adicionado ao carrinho!\n\n`
+          let message = ''
+          if (itemExistedBefore && addedItem) {
+            // Item já existia - quantidade foi atualizada
+            message = `✅ Quantidade de *${args.product_name}* atualizada no carrinho!\n\n`
+            message += `📦 *Quantidade anterior: ${previousQuantity}x*\n`
+            message += `📦 *Quantidade atual: ${addedItem.quantity}x*\n\n`
+          } else {
+            // Item novo - foi adicionado
+            message = `✅ *${args.product_name}* adicionado ao carrinho!\n\n`
+          }
+          
           message += `📦 *Resumo do Carrinho:*\n`
           message += `━━━━━━━━━━━━━━━━━━━━\n\n`
           
@@ -3823,19 +4054,428 @@ async function executeAIOnlyWorkflow(
       // Função para remover item do carrinho
       if (functionName === 'remove_from_cart' && userId) {
         try {
-          const { removeFromCart, getCart } = await import('./cart')
+          const { removeFromCart, getCart, updateCartItemQuantity, getCartTotal } = await import('./cart')
 
           // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
           const normalizedContactNumber = contactNumber.replace(/\D/g, '')
 
+          console.log(`🛒 [remove_from_cart] ========== REMOVENDO ITEM ==========`)
+          console.log(`   Args recebidos:`, JSON.stringify(args, null, 2))
+          console.log(`   product_id: ${args.product_id}`)
+          console.log(`   product_type: ${args.product_type}`)
+
           if (!args.product_id || !args.product_type) {
+            console.error(`🛒 [remove_from_cart] ❌ Parâmetros inválidos!`)
             return {
               success: false,
               error: 'ID e tipo do produto são obrigatórios para remover.',
             }
           }
 
-          console.log(`🛒 [remove_from_cart] Removendo item:`, {
+          // ⚠️ DETECÇÃO INTELIGENTE: Verifica se o usuário quer reduzir quantidade ou remover completamente
+          // Se a mensagem do usuário contém "uma", "um", "reduz", provavelmente quer reduzir, não remover
+          console.log(`🛒 [remove_from_cart] 🔍 Verificando se deve reduzir quantidade...`)
+          console.log(`   userMessage: "${userMessage}"`)
+          console.log(`   product_id recebido: "${args.product_id}"`)
+          console.log(`   product_type recebido: "${args.product_type}"`)
+          
+          let currentItem: any = null
+          try {
+            const currentCart = await getCart(instanceId, normalizedContactNumber)
+            console.log(`   Itens no carrinho: ${currentCart.items.length}`)
+            
+            // Lista todos os itens para debug
+            currentCart.items.forEach((item, i) => {
+              console.log(`   [${i + 1}] productId: "${item.productId}", productName: "${item.productName}", productType: "${item.productType}", quantity: ${item.quantity}`)
+            })
+            
+            // Tenta encontrar pelo ID exato primeiro
+            currentItem = currentCart.items.find(
+              item => item.productId === args.product_id && item.productType === args.product_type
+            )
+            
+            // ⚠️ VALIDAÇÃO: Mesmo se encontrou pelo ID, verifica se o produto corresponde ao que o usuário pediu
+            // Extrai palavras-chave da mensagem do usuário para validar
+            const userMessageLower = userMessage.toLowerCase()
+            const messageWords = userMessageLower.split(/\s+/)
+            const productKeywords = ['chaveiro', 'figure', 'figures', 'bolacha', 'columbina', 'furina', 'mavuika', 'nahida', 'emilie']
+            const foundKeywords = messageWords.filter(word => 
+              productKeywords.some(keyword => word.includes(keyword) || keyword.includes(word))
+            )
+            
+            // Se encontrou pelo ID, valida se o nome do produto corresponde às palavras-chave da mensagem
+            if (currentItem && foundKeywords.length > 0) {
+              const itemNameLower = currentItem.productName.toLowerCase()
+              const hasRelevantKeywords = foundKeywords.some(keyword => itemNameLower.includes(keyword))
+              
+              // Se o produto encontrado pelo ID não corresponde às palavras-chave, tenta buscar pelo nome
+              if (!hasRelevantKeywords) {
+                console.log(`   ⚠️ Item encontrado pelo ID "${args.product_id}" não corresponde às palavras-chave da mensagem!`)
+                console.log(`   Item encontrado: "${currentItem.productName}"`)
+                console.log(`   Palavras-chave da mensagem: ${foundKeywords.join(', ')}`)
+                console.log(`   Tentando buscar pelo nome da mensagem...`)
+                currentItem = null // Reseta para buscar pelo nome
+              }
+            }
+            
+            // Se não encontrou pelo ID ou o ID não corresponde, tenta encontrar pelo nome (busca parcial, case-insensitive)
+            if (!currentItem) {
+              console.log(`   ⚠️ Item não encontrado pelo ID "${args.product_id}", tentando buscar pelo nome...`)
+              
+              // Extrai termos da mensagem do usuário para buscar o produto correto
+              const userMessageLower = userMessage.toLowerCase()
+              const searchTerms: string[] = []
+              
+              // Adiciona o product_name se existir
+              if (args.product_name) {
+                searchTerms.push(args.product_name)
+              }
+              
+              // Extrai termos da mensagem do usuário (ex: "tire 4 chaveiros da mavuka" → ["chaveiro", "mavuka"])
+              const messageWords = userMessageLower.split(/\s+/)
+              const productKeywords = ['chaveiro', 'figure', 'figures', 'bolacha', 'columbina', 'furina', 'mavuika', 'nahida', 'emilie']
+              
+              // Encontra palavras-chave de produtos na mensagem
+              const foundKeywords = messageWords.filter(word => 
+                productKeywords.some(keyword => word.includes(keyword) || keyword.includes(word))
+              )
+              
+              // Adiciona combinações relevantes (ex: "chaveiro mavuika", "figure da columbina")
+              if (foundKeywords.length > 0) {
+                // Adiciona cada palavra-chave encontrada
+                foundKeywords.forEach(keyword => searchTerms.push(keyword))
+                
+                // Se encontrou múltiplas palavras-chave, tenta combinar (ex: "chaveiro" + "mavuika" = "chaveiro mavuika")
+                if (foundKeywords.length >= 2) {
+                  searchTerms.push(foundKeywords.join(' '))
+                }
+              }
+              
+              // Remove duplicatas e valores vazios
+              const uniqueSearchTerms = Array.from(new Set(searchTerms)).filter(Boolean)
+              console.log(`   🔍 Termos de busca extraídos da mensagem:`, uniqueSearchTerms)
+              
+              // Prioriza busca por termos que contenham múltiplas palavras-chave (mais específicos)
+              // Ordena os termos de busca: primeiro os mais específicos (com mais palavras-chave)
+              const sortedSearchTerms = uniqueSearchTerms.sort((a, b) => {
+                const aWords = a.toLowerCase().split(/\s+/).filter(w => 
+                  productKeywords.some(kw => w.includes(kw) || kw.includes(w))
+                ).length
+                const bWords = b.toLowerCase().split(/\s+/).filter(w => 
+                  productKeywords.some(kw => w.includes(kw) || kw.includes(w))
+                ).length
+                return bWords - aWords // Mais palavras-chave primeiro
+              })
+              
+              console.log(`   🔍 Termos ordenados por especificidade:`, sortedSearchTerms)
+              
+              for (const searchTerm of sortedSearchTerms) {
+                if (!searchTerm) continue
+                
+                const productNameLower = searchTerm.toLowerCase().trim()
+                const searchWords = productNameLower.split(/\s+/)
+                console.log(`   🔍 Tentando buscar por: "${productNameLower}"`)
+                
+                // Extrai palavras-chave do termo de busca
+                const mainKeywords = searchWords.filter(word => 
+                  productKeywords.some(kw => word.includes(kw) || kw.includes(word))
+                )
+                
+                // PRIORIDADE 1: Match exato
+                currentItem = currentCart.items.find(
+                  item => item.productName.toLowerCase().trim() === productNameLower &&
+                          item.productType === args.product_type
+                )
+                
+                // PRIORIDADE 2: Match parcial (nome do produto contém o termo completo)
+                if (!currentItem) {
+                  currentItem = currentCart.items.find(
+                    item => item.productName.toLowerCase().includes(productNameLower) &&
+                            item.productType === args.product_type
+                  )
+                }
+                
+                // PRIORIDADE 3: Match por TODAS as palavras-chave (mais específico)
+                if (!currentItem && mainKeywords.length >= 2) {
+                  currentItem = currentCart.items.find(item => {
+                    const itemNameLower = item.productName.toLowerCase()
+                    const hasAllKeywords = mainKeywords.every(keyword => 
+                      itemNameLower.includes(keyword)
+                    )
+                    return hasAllKeywords && item.productType === args.product_type
+                  })
+                  if (currentItem) {
+                    console.log(`   ✅ Match por todas as palavras-chave: ${mainKeywords.join(', ')}`)
+                  }
+                }
+                
+                // PRIORIDADE 4: Match por palavras-chave individuais (menos específico)
+                if (!currentItem && mainKeywords.length > 0) {
+                  // Tenta encontrar produto que contenha pelo menos uma palavra-chave
+                  // Mas prioriza produtos que contenham palavras-chave mais específicas (nomes próprios)
+                  const specificKeywords = mainKeywords.filter(kw => 
+                    ['mavuika', 'furina', 'columbina', 'nahida', 'emilie'].some(sk => kw.includes(sk))
+                  )
+                  
+                  if (specificKeywords.length > 0) {
+                    // Prioriza matches com palavras-chave específicas
+                    currentItem = currentCart.items.find(item => {
+                      const itemNameLower = item.productName.toLowerCase()
+                      return specificKeywords.some(keyword => itemNameLower.includes(keyword)) &&
+                             item.productType === args.product_type
+                    })
+                  }
+                  
+                  if (!currentItem) {
+                    // Fallback: qualquer palavra-chave
+                    currentItem = currentCart.items.find(item => {
+                      const itemNameLower = item.productName.toLowerCase()
+                      return mainKeywords.some(keyword => itemNameLower.includes(keyword)) &&
+                             item.productType === args.product_type
+                    })
+                  }
+                }
+                
+                if (currentItem) {
+                  console.log(`   ✅ Item encontrado pelo nome "${searchTerm}"! Atualizando product_id de "${args.product_id}" para "${currentItem.productId}"`)
+                  console.log(`   Item encontrado: ${currentItem.productName} (quantidade: ${currentItem.quantity})`)
+                  args.product_id = currentItem.productId
+                  break
+                }
+              }
+            }
+            
+            console.log(`   Item encontrado:`, currentItem ? {
+              productId: currentItem.productId,
+              productName: currentItem.productName,
+              quantity: currentItem.quantity,
+            } : 'NÃO ENCONTRADO')
+          } catch (detectionError) {
+            console.error(`🛒 [remove_from_cart] ❌ Erro na detecção:`, detectionError)
+            // Continua com remoção normal se houver erro na detecção
+          }
+
+          if (currentItem && currentItem.quantity > 0) {
+            // Item existe
+            // Verifica contexto da mensagem do usuário para decidir se reduz ou remove completamente
+            const userMessageLower = userMessage.toLowerCase()
+            console.log(`   userMessageLower: "${userMessageLower}"`)
+            
+            // Extrai números da mensagem (ex: "tire 4 chaveiros" → 4)
+            const numbersInMessage = userMessageLower.match(/\d+/g)
+            const quantityToRemove = numbersInMessage ? parseInt(numbersInMessage[0]) : null
+            console.log(`   Quantidade mencionada na mensagem: ${quantityToRemove}`)
+            
+            // ⚠️ PRIMEIRO: Detecta se o usuário quer DEFINIR quantidade para um valor específico
+            // Ex: "quero apenas uma", "quero só uma", "deixa só uma", "mantém apenas uma"
+            const wantsToSetQuantity = 
+              /(quero|deixa|mantém|deixar|manter)\s+(apenas|só|somente)\s+(uma|um)\b/.test(userMessageLower) ||
+              /(quero|deixa|mantém|deixar|manter)\s+(uma|um)\s+(apenas|só|somente)\b/.test(userMessageLower) ||
+              /\b(apenas|só|somente)\s+(uma|um)\b/.test(userMessageLower) ||
+              /\b(uma|um)\s+(apenas|só|somente)\b/.test(userMessageLower)
+            
+            // Detecta se o usuário quer REDUZIR uma quantidade específica
+            // Ex: "tire 4 chaveiros", "remove 2 figures", "tira 3 bolachas"
+            const wantsToReduceQuantity = quantityToRemove !== null && quantityToRemove > 0 && quantityToRemove < currentItem.quantity &&
+              (userMessageLower.includes('tire') || userMessageLower.includes('remove') || userMessageLower.includes('tira') || 
+               userMessageLower.includes('reduz') || userMessageLower.includes('menos'))
+            
+            if (wantsToReduceQuantity) {
+              // Usuário quer REDUZIR uma quantidade específica (ex: "tire 4 chaveiros" quando tem 6)
+              console.log(`🛒 [remove_from_cart] ⚠️ Detectado: usuário quer REDUZIR ${quantityToRemove} unidades (tem ${currentItem.quantity}, reduzindo para ${currentItem.quantity - quantityToRemove})`)
+              
+              const newQuantity = currentItem.quantity - quantityToRemove
+              
+              if (newQuantity <= 0) {
+                // Se a nova quantidade seria 0 ou negativa, remove completamente
+                console.log(`🛒 [remove_from_cart] Nova quantidade seria ${newQuantity}, removendo completamente.`)
+                // Continua com remoção completa abaixo
+              } else {
+                // Reduz a quantidade
+                console.log(`🛒 [remove_from_cart] Redirecionando para update_cart_item_quantity com quantity: ${newQuantity}...`)
+                
+                const cart = await updateCartItemQuantity(
+                  instanceId,
+                  normalizedContactNumber,
+                  args.product_id,
+                  args.product_type as 'service' | 'catalog',
+                  newQuantity
+                )
+                
+                const itemCount = cart.items.length
+                const cartTotal = getCartTotal(cart)
+                
+                const updatedItem = cart.items.find(
+                  item => item.productId === args.product_id && item.productType === args.product_type
+                )
+                
+                let message = `✅ Quantidade reduzida!\n\n`
+                if (updatedItem) {
+                  message += `📦 *${updatedItem.productName}*\n`
+                  message += ` Quantidade: ${updatedItem.quantity}x (reduzida de ${currentItem.quantity})\n`
+                  message += ` Preço unitário: R$ ${updatedItem.unitPrice.toFixed(2).replace('.', ',')}\n`
+                  message += ` Subtotal: R$ ${(updatedItem.quantity * updatedItem.unitPrice).toFixed(2).replace('.', ',')}\n\n`
+                }
+                
+                message += `📦 *Carrinho Atualizado:*\n`
+                message += `━━━━━━━━━━━━━━━━━━━━\n\n`
+                
+                cart.items.forEach((item, index) => {
+                  const itemTotal = item.quantity * item.unitPrice
+                  message += `${index + 1}. *${item.productName}*\n`
+                  message += `   ${item.quantity}x R$ ${item.unitPrice.toFixed(2).replace('.', ',')} = R$ ${itemTotal.toFixed(2).replace('.', ',')}\n\n`
+                })
+                
+                message += `━━━━━━━━━━━━━━━━━━━━\n`
+                message += `💰 *Total: R$ ${cartTotal.toFixed(2).replace('.', ',')}*\n\n`
+                message += `Deseja adicionar mais algo ou finalizar o pedido?`
+                
+                return {
+                  success: true,
+                  message,
+                  cartItems: itemCount,
+                  cartTotal,
+                }
+              }
+            } else if (wantsToSetQuantity) {
+              // Usuário quer DEFINIR quantidade para 1, não apenas reduzir
+              console.log(`🛒 [remove_from_cart] ⚠️ Detectado: usuário quer DEFINIR quantidade para 1 (tem ${currentItem.quantity})`)
+              console.log(`🛒 [remove_from_cart] Redirecionando para update_cart_item_quantity com quantity=1...`)
+              
+              // Redireciona para update_cart_item_quantity com quantidade = 1
+              const cart = await updateCartItemQuantity(
+                instanceId,
+                normalizedContactNumber,
+                args.product_id,
+                args.product_type as 'service' | 'catalog',
+                1 // Define para 1 diretamente
+              )
+
+              const itemCount = cart.items.length
+              const cartTotal = getCartTotal(cart)
+
+              const updatedItem = cart.items.find(
+                item => item.productId === args.product_id && item.productType === args.product_type
+              )
+
+              let message = `✅ Quantidade ajustada para 1!\n\n`
+              if (updatedItem) {
+                const itemTotal = updatedItem.quantity * updatedItem.unitPrice
+                const formattedUnitPrice = updatedItem.unitPrice.toFixed(2).replace('.', ',')
+                const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
+                message += `📦 *${updatedItem.productName}*\n`
+                message += `   Quantidade: ${updatedItem.quantity}x (ajustada de ${currentItem.quantity})\n`
+                message += `   Preço unitário: R$ ${formattedUnitPrice}\n`
+                message += `   Subtotal: R$ ${formattedItemTotal}\n\n`
+              }
+
+              message += `📦 *Carrinho Atualizado:*\n`
+              message += `━━━━━━━━━━━━━━━━━━━━\n\n`
+
+              cart.items.forEach((item, index) => {
+                const itemTotal = item.quantity * item.unitPrice
+                const formattedUnitPrice = item.unitPrice.toFixed(2).replace('.', ',')
+                const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
+
+                message += `${index + 1}. *${item.productName}*\n`
+                message += `   ${item.quantity}x R$ ${formattedUnitPrice} = R$ ${formattedItemTotal}\n\n`
+              })
+
+              message += `━━━━━━━━━━━━━━━━━━━━\n`
+              message += `💰 *Total: R$ ${cartTotal.toFixed(2).replace('.', ',')}*\n\n`
+              message += `Deseja adicionar mais algo ou finalizar o pedido?`
+
+              return {
+                success: true,
+                message,
+                cartItems: itemCount,
+                cartTotal,
+              }
+            }
+            
+            // Detecção mais robusta: verifica "uma" com ou sem espaço, no início, meio ou fim da palavra
+            const wantsToReduce = 
+              /uma\s/.test(userMessageLower) ||           // "uma " com espaço
+              /\buma\b/.test(userMessageLower) ||         // "uma" como palavra completa
+              /um\s/.test(userMessageLower) ||             // "um " com espaço
+              /\bum\b/.test(userMessageLower) ||          // "um" como palavra completa
+              userMessageLower.includes('reduz') ||
+              userMessageLower.includes('tira uma') ||
+              userMessageLower.includes('remove uma') ||
+              userMessageLower.includes('tira um') ||
+              userMessageLower.includes('remove um') ||
+              userMessageLower.includes('menos uma') ||
+              userMessageLower.includes('menos um')
+            
+            console.log(`   wantsToReduce: ${wantsToReduce}`)
+            console.log(`   Verificações:`, {
+              'uma ': userMessageLower.includes('uma '),
+              'um ': userMessageLower.includes('um '),
+              'reduz': userMessageLower.includes('reduz'),
+              'tira uma': userMessageLower.includes('tira uma'),
+              'remove uma': userMessageLower.includes('remove uma'),
+            })
+
+            if (wantsToReduce) {
+              // Usuário quer REDUZIR quantidade em 1, não remover completamente
+              console.log(`🛒 [remove_from_cart] ⚠️ Detectado: usuário quer REDUZIR quantidade (tem ${currentItem.quantity}, reduzindo para ${currentItem.quantity - 1})`)
+              console.log(`🛒 [remove_from_cart] Redirecionando para update_cart_item_quantity...`)
+              
+              // Redireciona para update_cart_item_quantity
+              const newQuantity = currentItem.quantity - 1
+              const cart = await updateCartItemQuantity(
+                instanceId,
+                normalizedContactNumber,
+                args.product_id,
+                args.product_type as 'service' | 'catalog',
+                newQuantity
+              )
+
+              const itemCount = cart.items.length
+              const cartTotal = getCartTotal(cart)
+
+              const updatedItem = cart.items.find(
+                item => item.productId === args.product_id && item.productType === args.product_type
+              )
+
+              let message = `✅ Quantidade reduzida!\n\n`
+              if (updatedItem) {
+                const itemTotal = updatedItem.quantity * updatedItem.unitPrice
+                const formattedUnitPrice = updatedItem.unitPrice.toFixed(2).replace('.', ',')
+                const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
+                message += `📦 *${updatedItem.productName}*\n`
+                message += `   Quantidade: ${updatedItem.quantity}x (reduzida de ${currentItem.quantity})\n`
+                message += `   Preço unitário: R$ ${formattedUnitPrice}\n`
+                message += `   Subtotal: R$ ${formattedItemTotal}\n\n`
+              }
+
+              message += `📦 *Carrinho Atualizado:*\n`
+              message += `━━━━━━━━━━━━━━━━━━━━\n\n`
+
+              cart.items.forEach((item, index) => {
+                const itemTotal = item.quantity * item.unitPrice
+                const formattedUnitPrice = item.unitPrice.toFixed(2).replace('.', ',')
+                const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
+
+                message += `${index + 1}. *${item.productName}*\n`
+                message += `   ${item.quantity}x R$ ${formattedUnitPrice} = R$ ${formattedItemTotal}\n\n`
+              })
+
+              message += `━━━━━━━━━━━━━━━━━━━━\n`
+              message += `💰 *Total: R$ ${cartTotal.toFixed(2).replace('.', ',')}*\n\n`
+              message += `Deseja adicionar mais algo ou finalizar o pedido?`
+
+              return {
+                success: true,
+                message,
+                cartItems: itemCount,
+                cartTotal,
+              }
+            }
+          }
+
+          // Remove completamente (comportamento original)
+          console.log(`🛒 [remove_from_cart] Removendo item completamente:`, {
             product_id: args.product_id,
             product_type: args.product_type,
           })
@@ -3888,6 +4528,191 @@ async function executeAIOnlyWorkflow(
           return {
             success: false,
             error: `Erro ao remover item do carrinho: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
+          }
+        }
+      }
+
+      // Função para atualizar quantidade de um item no carrinho
+      if (functionName === 'update_cart_item_quantity' && userId) {
+        try {
+          const { updateCartItemQuantity, getCart, getCartTotal } = await import('./cart')
+
+          // CRÍTICO: Normaliza o número ANTES de usar nas funções do carrinho
+          const normalizedContactNumber = contactNumber.replace(/\D/g, '')
+
+          console.log(`🛒 [update_cart_item_quantity] ========== ATUALIZANDO QUANTIDADE ==========`)
+          console.log(`   Args recebidos:`, JSON.stringify(args, null, 2))
+          console.log(`   product_id: ${args.product_id}`)
+          console.log(`   product_type: ${args.product_type}`)
+          console.log(`   quantity: ${args.quantity}`)
+
+          if (!args.product_id || !args.product_type) {
+            return {
+              success: false,
+              error: 'ID e tipo do produto são obrigatórios.',
+            }
+          }
+
+          // Busca o item no carrinho (pode ser pelo ID ou pelo nome)
+          const currentCart = await getCart(instanceId, normalizedContactNumber)
+          console.log(`   Itens no carrinho: ${currentCart.items.length}`)
+          
+          // Lista todos os itens para debug
+          currentCart.items.forEach((item, i) => {
+            console.log(`   [${i + 1}] productId: "${item.productId}", productName: "${item.productName}", productType: "${item.productType}", quantity: ${item.quantity}`)
+          })
+          
+          // Tenta encontrar pelo ID exato primeiro
+          let currentItem = currentCart.items.find(
+            item => item.productId === args.product_id && item.productType === args.product_type
+          )
+          
+          // Se não encontrou pelo ID, tenta encontrar pelo nome (busca parcial, case-insensitive)
+          if (!currentItem) {
+            console.log(`   ⚠️ Item não encontrado pelo ID "${args.product_id}", tentando buscar pelo nome...`)
+            
+            // Tenta extrair o nome do produto da mensagem do usuário ou dos args
+            const searchTerms = [
+              args.product_name,
+              'columbina',
+              'figure',
+              'figure da columbina',
+            ].filter(Boolean)
+            
+            for (const searchTerm of searchTerms) {
+              if (!searchTerm) continue
+              
+              const productNameLower = searchTerm.toLowerCase().trim()
+              console.log(`   🔍 Tentando buscar por: "${productNameLower}"`)
+              
+              // Tenta match exato primeiro
+              currentItem = currentCart.items.find(
+                item => item.productName.toLowerCase().trim() === productNameLower &&
+                        item.productType === args.product_type
+              )
+              
+              // Se não encontrou, tenta match parcial
+              if (!currentItem) {
+                currentItem = currentCart.items.find(
+                  item => item.productName.toLowerCase().includes(productNameLower) &&
+                          item.productType === args.product_type
+                )
+              }
+              
+              // Se ainda não encontrou, tenta match reverso (nome do produto contém o termo de busca)
+              if (!currentItem) {
+                currentItem = currentCart.items.find(
+                  item => productNameLower.includes(item.productName.toLowerCase()) &&
+                          item.productType === args.product_type
+                )
+              }
+              
+              if (currentItem) {
+                console.log(`   ✅ Item encontrado pelo nome "${searchTerm}"! Atualizando product_id de "${args.product_id}" para "${currentItem.productId}"`)
+                args.product_id = currentItem.productId
+                break
+              }
+            }
+          }
+          
+          if (!currentItem) {
+            return {
+              success: false,
+              error: `Item não encontrado no carrinho. Verifique se o produto está no carrinho.`,
+            }
+          }
+          
+          console.log(`   Item encontrado:`, {
+            productId: currentItem.productId,
+            productName: currentItem.productName,
+            quantity: currentItem.quantity,
+          })
+
+          // Se quantity não foi fornecida, busca a quantidade atual e reduz 1
+          let targetQuantity = args.quantity
+          if (typeof targetQuantity !== 'number' || isNaN(targetQuantity)) {
+            console.log(`🛒 [update_cart_item_quantity] Quantidade não fornecida, reduzindo 1 da quantidade atual...`)
+            // Reduz 1 da quantidade atual
+            targetQuantity = Math.max(0, currentItem.quantity - 1)
+            console.log(`🛒 [update_cart_item_quantity] Quantidade atual: ${currentItem.quantity}, nova quantidade: ${targetQuantity}`)
+          }
+
+          if (targetQuantity < 0) {
+            return {
+              success: false,
+              error: 'Quantidade deve ser >= 0.',
+            }
+          }
+
+          console.log(`🛒 [update_cart_item_quantity] Atualizando quantidade:`, {
+            product_id: args.product_id,
+            product_type: args.product_type,
+            new_quantity: targetQuantity,
+          })
+
+          const cart = await updateCartItemQuantity(
+            instanceId,
+            normalizedContactNumber,
+            args.product_id,
+            args.product_type as 'service' | 'catalog',
+            targetQuantity
+          )
+
+          const itemCount = cart.items.length
+          const cartTotal = getCartTotal(cart)
+
+          if (args.quantity === 0) {
+            return {
+              success: true,
+              message: '✅ Item removido do carrinho (quantidade ajustada para 0).',
+              cartItems: itemCount,
+              cartTotal,
+            }
+          }
+
+          const updatedItem = cart.items.find(
+            item => item.productId === args.product_id && item.productType === args.product_type
+          )
+
+          let message = `✅ Quantidade atualizada!\n\n`
+          if (updatedItem) {
+            const itemTotal = updatedItem.quantity * updatedItem.unitPrice
+            const formattedUnitPrice = updatedItem.unitPrice.toFixed(2).replace('.', ',')
+            const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
+            message += `📦 *${updatedItem.productName}*\n`
+            message += `   Quantidade: ${updatedItem.quantity}x\n`
+            message += `   Preço unitário: R$ ${formattedUnitPrice}\n`
+            message += `   Subtotal: R$ ${formattedItemTotal}\n\n`
+          }
+
+          message += `📦 *Carrinho Atualizado:*\n`
+          message += `━━━━━━━━━━━━━━━━━━━━\n\n`
+
+          cart.items.forEach((item, index) => {
+            const itemTotal = item.quantity * item.unitPrice
+            const formattedUnitPrice = item.unitPrice.toFixed(2).replace('.', ',')
+            const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
+
+            message += `${index + 1}. *${item.productName}*\n`
+            message += `   ${item.quantity}x R$ ${formattedUnitPrice} = R$ ${formattedItemTotal}\n\n`
+          })
+
+          message += `━━━━━━━━━━━━━━━━━━━━\n`
+          message += `💰 *Total: R$ ${cartTotal.toFixed(2).replace('.', ',')}*\n\n`
+          message += `Deseja adicionar mais algo ou finalizar o pedido?`
+
+          return {
+            success: true,
+            message,
+            cartItems: itemCount,
+            cartTotal,
+          }
+        } catch (error) {
+          log.error('Erro ao atualizar quantidade no carrinho', error)
+          console.error('Erro detalhado ao atualizar quantidade:', error)
+          return {
+            success: false,
+            error: `Erro ao atualizar quantidade: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
           }
         }
       }
@@ -4158,16 +4983,215 @@ async function executeAIOnlyWorkflow(
           }
           
           if (deliveryType === 'delivery' && !deliveryAddress) {
+            // Verifica se o usuário está confirmando uso de endereço anterior
+            const userMessageLower = userMessage.toLowerCase().trim()
+            const confirmPatterns = [
+              /usar\s+(este|esse|o\s+mesmo|o\s+endereço\s+anterior)/i,
+              /mesmo\s+endereço/i,
+              /endereço\s+anterior/i,
+              /pode\s+usar/i,
+              /usa\s+(esse|este)/i,
+            ]
+            
+            const isConfirmingPrevious = confirmPatterns.some(pattern => pattern.test(userMessage))
+            
+            if (isConfirmingPrevious) {
+              // Busca endereço anterior nas mensagens recentes
+              try {
+                const previousMessages = await prisma.message.findMany({
+                  where: {
+                    instanceId,
+                    from: normalizedContactNumber,
+                    isFromMe: false,
+                  },
+                  orderBy: { timestamp: 'desc' },
+                  take: 10,
+                })
+                
+                // Usa os mesmos padrões de busca de endereço
+                const addressPatterns = [
+                  /(?:rua|avenida|av\.?|r\.?|estrada|rodovia)\s+[^,\n]+(?:,\s*\d+[^,\n]*)?(?:,\s*[^,\n]+)?(?:,\s*[^,\n]+)?(?:,\s*[^,\n]+)?(?:,\s*[^,\n]+)?(?:,\s*[^,\n]+)?(?:,\s*[^,\n]+)?(?:,\s*\d{5}-?\d{3})?/i,
+                  /[^,\n]+(?:-\s*\d+)?(?:,\s*[^,\n]+){2,}(?:,\s*[^,\n]+)?(?:,\s*\d{5}-?\d{3})?/i,
+                ]
+                
+                for (const msg of previousMessages) {
+                  if (msg.body.length < 20) continue
+                  
+                  for (const pattern of addressPatterns) {
+                    const match = msg.body.match(pattern)
+                    if (match && match[0].length >= 20 && match[0].length <= 200) {
+                      const hasNumbers = /\d/.test(match[0])
+                      const hasWords = /[a-záàâãéèêíïóôõöúçñ]{3,}/i.test(match[0])
+                      
+                      if (hasNumbers && hasWords) {
+                        deliveryAddress = match[0].trim()
+                        console.log(`🛒 [checkout] ✅ Cliente confirmou uso de endereço anterior: "${deliveryAddress}"`)
+                        break
+                      }
+                    }
+                  }
+                  
+                  if (deliveryAddress) break
+                }
+                
+                if (!deliveryAddress) {
+                  return {
+                    success: false,
+                    error: 'Não encontrei um endereço anterior para usar. Por favor, informe o endereço completo de entrega (rua, número, bairro, cidade e CEP se possível).',
+                    requiresDeliveryAddress: true,
+                  }
+                }
+              } catch (error) {
+                console.error(`🛒 [checkout] Erro ao buscar endereço anterior:`, error)
             return {
               success: false,
               error: 'Para entrega, é necessário informar o endereço completo. Por favor, informe o endereço de entrega (rua, número, bairro, cidade e CEP se possível).',
               requiresDeliveryAddress: true,
+                }
+              }
+            } else {
+              return {
+                success: false,
+                error: 'Para entrega, é necessário informar o endereço completo. Por favor, informe o endereço de entrega (rua, número, bairro, cidade e CEP se possível).',
+                requiresDeliveryAddress: true,
+              }
+            }
+          }
+          
+          // ⚠️ VALIDAÇÃO CRÍTICA: Verifica se o endereço foi fornecido na mensagem ATUAL do usuário
+          // Previne que a IA use endereços de conversas anteriores
+          if (deliveryType === 'delivery' && deliveryAddress) {
+            const userMessageLower = userMessage.toLowerCase().trim()
+            const deliveryAddressLower = deliveryAddress.toLowerCase().trim()
+            
+            // Extrai palavras-chave significativas do endereço (rua, número, bairro, cidade, CEP)
+            // Remove palavras comuns que não são específicas do endereço
+            const commonWords = new Set(['rua', 'avenida', 'av', 'r', 'n', 'numero', 'número', 'bairro', 'cidade', 'estado', 'cep', 'sp', 'rj', 'mg', 'pr', 'sc', 'rs', 'ba', 'go', 'pe', 'ce', 'df', 'es', 'pb', 'al', 'se', 'rn', 'pi', 'ma', 'to', 'pa', 'ap', 'ro', 'ac', 'rr', 'am', 'ms', 'mt'])
+            
+            const addressKeywords = deliveryAddressLower
+              .split(/[,\s-]+/)
+              .filter((word: string) => word.length > 1 && !commonWords.has(word)) // Remove palavras muito curtas e comuns
+              .slice(0, 6) // Pega até 6 palavras-chave específicas
+            
+            // Verifica se pelo menos 2 palavras-chave específicas do endereço estão na mensagem atual
+            const keywordsInMessage = addressKeywords.filter((keyword: string) => 
+              userMessageLower.includes(keyword)
+            )
+            
+            // Se menos de 2 palavras-chave específicas estão na mensagem, o endereço não foi fornecido agora
+            if (addressKeywords.length > 0 && keywordsInMessage.length < 2) {
+              console.warn(`🛒 [checkout] ⚠️ Endereço fornecido pela IA não está na mensagem atual do usuário`)
+              console.warn(`   Mensagem do usuário: "${userMessage}"`)
+              console.warn(`   Endereço fornecido pela IA: "${deliveryAddress}"`)
+              console.warn(`   Palavras-chave específicas encontradas: ${keywordsInMessage.length}/${addressKeywords.length}`)
+              console.warn(`   Palavras-chave do endereço: ${addressKeywords.join(', ')}`)
+              
+              // Busca endereços anteriores nas mensagens recentes do usuário
+              try {
+                const previousMessages = await prisma.message.findMany({
+                  where: {
+                    instanceId,
+                    from: normalizedContactNumber,
+                    isFromMe: false, // Apenas mensagens do usuário
+                  },
+                  orderBy: { timestamp: 'desc' },
+                  take: 10, // Últimas 10 mensagens do usuário
+                })
+                
+                // Procura por endereços nas mensagens anteriores
+                // Padrões mais flexíveis para capturar diferentes formatos de endereço
+                const addressPatterns = [
+                  // Formato completo: Rua/Av, Número, Bairro, Cidade - Estado, CEP
+                  /(?:rua|avenida|av\.?|r\.?|estrada|rodovia)\s+[^,\n]+(?:,\s*\d+[^,\n]*)?(?:,\s*[^,\n]+)?(?:,\s*[^,\n]+)?(?:,\s*[^,\n]+)?(?:,\s*[^,\n]+)?(?:,\s*[^,\n]+)?(?:,\s*\d{5}-?\d{3})?/i,
+                  // Formato com hífen: Rua - Número, Bairro, Cidade - Estado
+                  /[^,\n]+(?:-\s*\d+)?(?:,\s*[^,\n]+){2,}(?:,\s*[^,\n]+)?(?:,\s*\d{5}-?\d{3})?/i,
+                ]
+                
+                let previousAddress: string | null = null
+                for (const msg of previousMessages) {
+                  // Pula mensagens muito curtas (provavelmente não são endereços)
+                  if (msg.body.length < 20) continue
+                  
+                  for (const pattern of addressPatterns) {
+                    const match = msg.body.match(pattern)
+                    if (match && match[0].length >= 20 && match[0].length <= 200) {
+                      // Verifica se parece um endereço (contém números e palavras)
+                      const hasNumbers = /\d/.test(match[0])
+                      const hasWords = /[a-záàâãéèêíïóôõöúçñ]{3,}/i.test(match[0])
+                      
+                      if (hasNumbers && hasWords) {
+                        previousAddress = match[0].trim()
+                        console.log(`🛒 [checkout] 📍 Endereço anterior encontrado: "${previousAddress}"`)
+                        break
+                      }
+                    }
+                  }
+                  
+                  if (previousAddress) break
+                }
+                
+                // Se encontrou um endereço anterior, pergunta se o cliente quer usar
+                if (previousAddress) {
+                  return {
+                    success: false,
+                    error: `Encontrei um endereço de uma conversa anterior:\n\n📍 *${previousAddress}*\n\nVocê gostaria de usar este endereço para a entrega ou prefere informar um endereço diferente?\n\nDigite "usar este" ou "usar esse" para usar o endereço acima, ou informe um novo endereço.`,
+                    requiresDeliveryAddress: true,
+                    previousAddress: previousAddress, // Passa o endereço anterior para a IA poder usar
+                  }
+                }
+              } catch (error) {
+                console.error(`🛒 [checkout] Erro ao buscar endereços anteriores:`, error)
+              }
+              
+              // Se não encontrou endereço anterior, pede um novo
+              return {
+                success: false,
+                error: 'Para entrega, é necessário informar o endereço completo na mensagem atual. Por favor, informe o endereço de entrega (rua, número, bairro, cidade e CEP se possível).',
+                requiresDeliveryAddress: true,
+              }
+            }
+          }
+          
+          // Calcula frete se for entrega
+          let freightAmount: number | null = null
+          if (deliveryType === 'delivery' && deliveryAddress) {
+            console.log(`🛒 [checkout] Calculando frete para entrega...`)
+            try {
+              // Busca configurações do usuário
+              const user = await prisma.user.findUnique({
+                where: { id: userId },
+                select: {
+                  businessAddress: true,
+                  deliveryPricePerKm: true,
+                },
+              })
+
+              if (user?.businessAddress && user?.deliveryPricePerKm && user.deliveryPricePerKm > 0) {
+                // Importa função de cálculo de frete
+                const { calculateFrete } = await import('./delivery')
+                const freightResult = await calculateFrete(user.businessAddress, deliveryAddress.trim(), user.deliveryPricePerKm)
+                
+                if (freightResult && freightResult.success) {
+                  freightAmount = freightResult.freightPrice ?? null
+                  console.log(`🛒 [checkout] Frete calculado: R$ ${freightAmount} (distância: ${freightResult.distance}km)`)
+                } else {
+                  console.warn(`🛒 [checkout] ⚠️ Erro ao calcular frete:`, freightResult?.error)
+                  // Continua sem frete se houver erro
+                }
+              } else {
+                console.warn(`🛒 [checkout] ⚠️ Configurações de entrega não encontradas ou incompletas`)
+                // Continua sem frete
+              }
+            } catch (error) {
+              console.error(`🛒 [checkout] ❌ Erro ao calcular frete:`, error)
+              // Continua sem frete se houver erro
             }
           }
           
           console.log(`🛒 [checkout] Tipo de entrega definido:`, {
             deliveryType,
             deliveryAddress: deliveryAddress ? 'fornecido' : 'não fornecido',
+            freightAmount: freightAmount || 0,
           })
 
           // Log antes de criar pedido
@@ -4177,6 +5201,7 @@ async function executeAIOnlyWorkflow(
             normalizedContactNumber,
             itemCount: cart.items.length,
             deliveryType,
+            freightAmount,
           })
 
           // Cria o pedido
@@ -4189,7 +5214,8 @@ async function executeAIOnlyWorkflow(
               contactNameFinal,
               deliveryType,
               deliveryAddress,
-              args.notes
+              args.notes,
+              freightAmount
             )
             console.log(`🛒 [checkout] ✅ Pedido criado com sucesso:`, {
               orderId: result.orderId,
@@ -4206,7 +5232,11 @@ async function executeAIOnlyWorkflow(
           }
 
           // Calcula o total
-          const totalAmount = cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+          const cartSubtotal = cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+          const freight = freightAmount && freightAmount > 0 ? freightAmount : 0
+          const totalAmount = cartSubtotal + freight
+          const formattedSubtotal = cartSubtotal.toFixed(2).replace('.', ',')
+          const formattedFreight = freight.toFixed(2).replace('.', ',')
           const formattedTotal = totalAmount.toFixed(2).replace('.', ',')
 
           // Monta mensagem de confirmação com resumo detalhado e bonito
@@ -4232,6 +5262,13 @@ async function executeAIOnlyWorkflow(
           })
 
           message += `━━━━━━━━━━━━━━━━━━━━\n`
+          message += `📦 *Subtotal dos Itens: R$ ${formattedSubtotal}*\n`
+          
+          // Adiciona frete se houver
+          if (deliveryType === 'delivery' && freight > 0) {
+            message += `🚚 *Frete: R$ ${formattedFreight}*\n`
+          }
+          
           message += `💰 *Total do Pedido: R$ ${formattedTotal}*\n\n`
 
           // Informações de entrega
@@ -4240,6 +5277,9 @@ async function executeAIOnlyWorkflow(
             message += `Tipo: *Entrega*\n`
             if (deliveryAddress) {
               message += `📍 Endereço: ${deliveryAddress}\n`
+            }
+            if (freight > 0) {
+              message += `💰 Frete calculado: R$ ${formattedFreight}\n`
             }
           } else {
             message += `Tipo: *Retirada no estabelecimento*\n`
@@ -4264,7 +5304,7 @@ async function executeAIOnlyWorkflow(
             message += `Método: *PIX*\n`
             message += `🔑 Chave Pix:\n`
             message += `\`${result.paymentPixKey}\`\n\n`
-            message += `💰 Valor: R$ ${formattedTotal}\n\n`
+            message += `💰 Valor Total: R$ ${formattedTotal}\n\n`
             message += `Copie a chave Pix acima e realize o pagamento no valor de R$ ${formattedTotal}.\n`
           } else {
             message += `Método: *Pagamento na Entrega/Retirada*\n`
@@ -4310,6 +5350,9 @@ async function executeAIOnlyWorkflow(
     // Intercepta chamadas de função para verificar se há agendamento pendente
     let pendingAppointmentResponse: string | null = null
     let pendingAppointmentMedia: MediaAttachment | null = null
+    
+    // Intercepta resposta de view_cart para forçar uso da mensagem exata
+    let viewCartExactMessage: string | null = null
 
     const interceptedFunctionCall = async (functionName: string, args: any) => {
       console.log(`🔧🔧🔧 [interceptedFunctionCall] ========== INTERCEPTANDO CHAMADA DE FUNÇÃO ==========`)
@@ -4350,6 +5393,12 @@ async function executeAIOnlyWorkflow(
 
         console.log(`✅ [interceptedFunctionCall] Função ${functionName} executada`)
         console.log(`📊 [interceptedFunctionCall] Resultado:`, JSON.stringify(result, null, 2))
+
+        // Se view_cart retornou sucesso, armazena a mensagem exata para usar diretamente
+        if (functionName === 'view_cart' && result && typeof result === 'object' && 'success' in result && result.success === true && 'message' in result) {
+          viewCartExactMessage = result.message as string
+          console.log(`🛒 [interceptedFunctionCall] Mensagem exata de view_cart armazenada para uso direto`)
+        }
 
         // Se retornou um agendamento pendente, intercepta a resposta
         if (result && typeof result === 'object' && 'pending' in result && result.pending === true) {
@@ -4509,7 +5558,7 @@ async function executeAIOnlyWorkflow(
         },
         {
           name: 'add_to_cart',
-          description: '⚠️⚠️⚠️ CRÍTICO: Adiciona um produto ou serviço ao carrinho de compras. Você DEVE CHAMAR ESTA FUNÇÃO quando: (1) O cliente pedir um produto (ex: "quero um chaveiro", "vou querer uma bolacha"), (2) Você ofereceu um produto e o cliente disse "sim", "ok", "quero", "pode adicionar", (3) O cliente mencionar produtos que quer comprar. NUNCA diga que adicionou sem chamar esta função! Se você não chamar esta função, o produto NÃO será adicionado ao carrinho. APÓS adicionar, a IA deve perguntar: "Deseja adicionar mais algo ou finalizar o pedido?". Se o cliente responder "não", "só isso" ou "finalizar", a IA deve chamar a função CHECKOUT.',
+          description: '⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Adiciona um produto ou serviço ao carrinho de compras. Você DEVE CHAMAR ESTA FUNÇÃO SEMPRE que o cliente pedir um produto! EXEMPLOS: "quero 9 figures da furina" → CHAME add_to_cart(product_name: "figure da furina", quantity: 9), "quero um chaveiro" → CHAME add_to_cart(product_name: "chaveiro"), "vou querer uma bolacha" → CHAME add_to_cart(product_name: "bolacha da nahida"). NUNCA diga "adicionei" ou "vou adicionar" SEM chamar esta função primeiro! Se você não chamar esta função, o produto NÃO será adicionado ao carrinho e o cliente ficará confuso! FLUXO OBRIGATÓRIO: Cliente pede produto → Você CHAMA add_to_cart → Função retorna → Você informa o cliente.',
           parameters: {
             type: 'object',
             properties: {
@@ -4540,7 +5589,7 @@ async function executeAIOnlyWorkflow(
         },
         {
           name: 'view_cart',
-          description: 'Visualiza o conteúdo atual do carrinho de compras. Use quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido" ou quando quiser ver o resumo antes de finalizar.',
+          description: '⚠️⚠️⚠️ CRÍTICO: Visualiza o conteúdo atual do carrinho de compras. Retorna uma mensagem formatada com TODOS os itens, suas QUANTIDADES, preços unitários, subtotais e o total. Você DEVE usar EXATAMENTE a mensagem retornada por esta função, SEM reformular, SEM remover quantidades, SEM simplificar! A mensagem já está formatada corretamente com todas as informações necessárias. Use quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido" ou quando quiser ver o resumo antes de finalizar.',
           parameters: {
             type: 'object',
             properties: {},
@@ -4549,7 +5598,7 @@ async function executeAIOnlyWorkflow(
         },
         {
           name: 'remove_from_cart',
-          description: 'Remove um item específico do carrinho de compras. Use quando o cliente quiser remover um produto do carrinho, disser "tira isso", "remove", "não quero mais esse", "cancela esse item". Você precisa do product_id e product_type do item que deseja remover.',
+          description: '⚠️⚠️⚠️ ATENÇÃO: Remove um item ESPECÍFICO do carrinho COMPLETAMENTE (remove todas as unidades). Use APENAS quando o cliente quiser REMOVER TODAS as unidades de um produto (ex: "remove a figure", "tira a bolacha", "não quero mais esse produto"). ⚠️ NÃO use quando o cliente quiser REDUZIR quantidade (ex: "quero apenas uma, não duas") - nesse caso use update_cart_item_quantity! Você precisa do product_id e product_type do item que deseja remover.',
           parameters: {
             type: 'object',
             properties: {
@@ -4564,6 +5613,29 @@ async function executeAIOnlyWorkflow(
               },
             },
             required: ['product_id', 'product_type'],
+          },
+        },
+        {
+          name: 'update_cart_item_quantity',
+          description: '⚠️⚠️⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Atualiza a quantidade de um item no carrinho. ⚠️⚠️⚠️ USE ESTA FUNÇÃO quando o cliente disser: "remove uma X", "tira uma X", "reduz uma X", "quero apenas uma X, não duas", "muda para 3", "só quero 1". ⚠️⚠️⚠️ REGRA DE OURO: "remove uma X" = REDUZIR quantidade (use esta função), NÃO é "remove_from_cart"! Você precisa do product_id e product_type. O parâmetro quantity é OPCIONAL - se você omitir, a função reduzirá automaticamente 1 unidade. Se você souber a quantidade exata desejada, pode passar quantity. Se quantity for 0, o item é removido. ⚠️⚠️⚠️ NUNCA use remove_from_cart quando o cliente quiser reduzir quantidade - SEMPRE use esta função!',
+          parameters: {
+            type: 'object',
+            properties: {
+              product_id: {
+                type: 'string',
+                description: 'ID do produto/serviço cuja quantidade será atualizada.',
+              },
+              product_type: {
+                type: 'string',
+                enum: ['service', 'catalog'],
+                description: 'Tipo do produto: "service" para serviços ou "catalog" para produtos do catálogo.',
+              },
+              quantity: {
+                type: 'number',
+                description: 'Nova quantidade desejada (deve ser >= 0). Se for 0, o item é removido. Se omitido, a função reduzirá automaticamente 1 unidade da quantidade atual.',
+              },
+            },
+            required: ['product_id', 'product_type', 'quantity'],
           },
         },
         {
@@ -4602,6 +5674,16 @@ async function executeAIOnlyWorkflow(
       onFunctionCall: interceptedFunctionCall,
     })
 
+    // Se view_cart retornou sucesso, usa a mensagem exata diretamente em vez da resposta da IA
+    if (viewCartExactMessage) {
+      console.log(`🛒 [executeAIOnlyWorkflow] Usando mensagem exata de view_cart em vez da resposta da IA`)
+      const contactKey = `${instanceId}-${contactNumber}`
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, viewCartExactMessage!, 'service')
+      })
+      return
+    }
+
     // Se há uma resposta de agendamento pendente, usa ela diretamente em vez da resposta da IA
     if (pendingAppointmentResponse) {
       const contactKey = `${instanceId}-${contactNumber}`
@@ -4609,29 +5691,26 @@ async function executeAIOnlyWorkflow(
       if (isImageAttachment(pendingAppointmentMedia)) {
         const media: MediaAttachment = pendingAppointmentMedia
         await queueMessage(contactKey, async () => {
-          try {
             await sendWhatsAppImage(
               instanceId,
               contactNumber,
               media.url,
               media.caption
             )
-          } catch (mediaError) {
-            console.error('❌ Erro ao enviar imagem de confirmação:', mediaError)
-          }
         })
       }
 
+      // Envia mensagem de confirmação (em modo de teste, apenas salva no banco)
       await queueMessage(contactKey, async () => {
         await sendWhatsAppMessage(instanceId, contactNumber, pendingAppointmentResponse!, 'service')
       })
-      console.log(`📅 Mensagem de confirmação de agendamento enviada diretamente`)
+      console.log(`📅 Mensagem de confirmação de agendamento enviada`)
       return
     }
 
     // Não força mais mencionar o nome do negócio em todas as mensagens para manter naturalidade
 
-    // Envia a resposta gerada pela IA
+    // Envia a resposta gerada pela IA (em modo de teste, apenas salva no banco)
     const contactKey = `${instanceId}-${contactNumber}`
     await queueMessage(contactKey, async () => {
       await sendWhatsAppMessage(instanceId, contactNumber, aiResponse, 'service')
@@ -4651,7 +5730,7 @@ async function executeAIOnlyWorkflow(
       })
     }
 
-    // Envia mensagem de erro amigável
+    // Envia mensagem de erro amigável (em modo de teste, apenas salva no banco)
     const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Nossa equipe foi notificada.'
     const contactKey = `${instanceId}-${contactNumber}`
     try {

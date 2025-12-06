@@ -16,6 +16,9 @@ model User {
   password  String
   name      String
   workingHoursConfig String? // JSON com configuração de horários de funcionamento globais
+  businessAddress String? // Endereço completo do estabelecimento (rua, número, bairro, cidade, CEP)
+  deliveryPricePerKm Float? // Preço por quilômetro para cálculo de frete
+  messageRetentionDays Int? // Número de dias para manter mensagens (padrão: 90 dias)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -370,6 +373,7 @@ model Order {
   contactName   String?
   deliveryType  String   @default("pickup") // "pickup" ou "delivery"
   deliveryAddress String? // Endereço completo de entrega (se deliveryType = "delivery")
+  freightAmount Float? // Valor do frete calculado (se deliveryType = "delivery")
   status        String   @default("pending") // "pending", "confirmed", "preparing", "ready", "delivered", "picked_up", "cancelled"
   totalAmount   Float    @default(0)
   paymentMethod String? // "pix", "gateway", "cash" (se não tiver link)

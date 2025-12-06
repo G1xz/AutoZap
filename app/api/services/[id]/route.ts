@@ -28,6 +28,42 @@ const updateServiceSchema = z.object({
   paymentPixKeyId: z.string().nullable().optional(),
 })
 
+export async function GET(
+  request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: 'Não autorizado' }, { status: 401 })
+    }
+
+    const service = await prisma.service.findFirst({
+      where: {
+        id: params.id,
+        userId: session.user.id,
+      },
+      select: {
+        id: true,
+        name: true,
+        imageUrl: true,
+      },
+    })
+
+    if (!service) {
+      return NextResponse.json({ error: 'Serviço não encontrado' }, { status: 404 })
+    }
+
+    return NextResponse.json(service)
+  } catch (error) {
+    console.error('Erro ao buscar serviço:', error)
+    return NextResponse.json(
+      { error: 'Erro ao buscar serviço' },
+      { status: 500 }
+    )
+  }
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }

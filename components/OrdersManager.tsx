@@ -63,10 +63,53 @@ export default function OrdersManager() {
     const [orders, setOrders] = useState<Order[]>([])
     const [filterStatus, setFilterStatus] = useState<string | undefined>(undefined)
     const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+    const [productImages, setProductImages] = useState<Record<string, string>>({})
 
     useEffect(() => {
         fetchOrders()
     }, [filterStatus])
+
+    const fetchProductImages = async (items: OrderItem[]) => {
+        const imageMap: Record<string, string> = {}
+        
+        // Agrupa itens por productId e productType para evitar buscas duplicadas
+        const uniqueProducts = new Map<string, OrderItem>()
+        items.forEach(item => {
+            const key = `${item.productType}-${item.productId}`
+            if (!uniqueProducts.has(key)) {
+                uniqueProducts.set(key, item)
+            }
+        })
+        
+        // Busca imagens para cada produto único
+        for (const [key, item] of Array.from(uniqueProducts.entries())) {
+            try {
+                if (item.productType === 'catalog') {
+                    // Busca imagem do catálogo
+                    const response = await fetch(`/api/catalogs/node/${item.productId}`)
+                    if (response.ok) {
+                        const nodeData = await response.json()
+                        if (nodeData.imageUrl) {
+                            imageMap[key] = nodeData.imageUrl
+                        }
+                    }
+                } else if (item.productType === 'service') {
+                    // Busca imagem do serviço
+                    const response = await fetch(`/api/services/${item.productId}`)
+                    if (response.ok) {
+                        const serviceData = await response.json()
+                        if (serviceData.imageUrl) {
+                            imageMap[key] = serviceData.imageUrl
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error(`Erro ao buscar imagem do produto ${item.productId}:`, error)
+            }
+        }
+        
+        setProductImages(imageMap)
+    }
 
     const fetchOrders = async () => {
         setLoading(true)
@@ -75,7 +118,12 @@ export default function OrdersManager() {
             const response = await fetch(url)
             if (response.ok) {
                 const data = await response.json()
-                setOrders(data.orders || [])
+                const ordersData = data.orders || []
+                setOrders(ordersData)
+                
+                // Busca imagens de todos os produtos de todos os pedidos
+                const allItems = ordersData.flatMap((order: Order) => order.items)
+                await fetchProductImages(allItems)
             } else {
                 toast.error('Erro ao carregar pedidos')
             }
@@ -275,27 +323,45 @@ export default function OrdersManager() {
                                 <div className="mb-4">
                                     <h4 className="text-sm font-semibold text-gray-700 mb-2">Itens do Pedido:</h4>
                                     <div className="space-y-2">
-                                        {order.items.map((item) => (
-                                            <div
-                                                key={item.id}
-                                                className="flex items-center justify-between py-2 border-b border-gray-100 last:border-0"
-                                            >
-                                                <div className="flex-1">
-                                                    <div className="text-sm font-medium text-gray-900">
-                                                        {item.productName}
-                                                        {item.quantity > 1 && (
-                                                            <span className="text-gray-500 ml-2">x{item.quantity}</span>
+                                        {order.items.map((item) => {
+                                            const imageKey = `${item.productType}-${item.productId}`
+                                            const imageUrl = productImages[imageKey]
+                                            
+                                            return (
+                                                <div
+                                                    key={item.id}
+                                                    className="flex items-center gap-3 py-2 border-b border-gray-100 last:border-0"
+                                                >
+                                                    {imageUrl ? (
+                                                        <div className="flex-shrink-0 w-12 h-12 rounded-md overflow-hidden bg-gray-100">
+                                                            <img 
+                                                                src={imageUrl} 
+                                                                alt={item.productName}
+                                                                className="w-full h-full object-cover"
+                                                            />
+                                                        </div>
+                                                    ) : (
+                                                        <div className="flex-shrink-0 w-12 h-12 rounded-md bg-gray-100 flex items-center justify-center">
+                                                            <Package size={20} className="text-gray-400" />
+                                                        </div>
+                                                    )}
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="text-sm font-medium text-gray-900">
+                                                            {item.productName}
+                                                            {item.quantity > 1 && (
+                                                                <span className="text-gray-500 ml-2">x{item.quantity}</span>
+                                                            )}
+                                                        </div>
+                                                        {item.notes && (
+                                                            <div className="text-xs text-gray-500 mt-1">📝 {item.notes}</div>
                                                         )}
                                                     </div>
-                                                    {item.notes && (
-                                                        <div className="text-xs text-gray-500 mt-1">📝 {item.notes}</div>
-                                                    )}
+                                                    <div className="text-sm font-medium text-gray-900 flex-shrink-0">
+                                                        {formatCurrency(item.totalPrice)}
+                                                    </div>
                                                 </div>
-                                                <div className="text-sm font-medium text-gray-900">
-                                                    {formatCurrency(item.totalPrice)}
-                                                </div>
-                                            </div>
-                                        ))}
+                                            )
+                                        })}
                                     </div>
                                 </div>
 
