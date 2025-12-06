@@ -172,6 +172,7 @@ export function buildSystemPrompt(
   // ==========================================
   if (servicesWithAppointment.length > 0) {
     prompt += `\n\n📅 FUNCIONALIDADE DE AGENDAMENTO (AUTONOMIA COMPLETA):\n`
+    prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Agendamento é APENAS para serviços que requerem agendamento! Se o cliente está finalizando um PEDIDO (com produtos no carrinho) e fornece um endereço após escolher "entrega", isso é sobre CHECKOUT/FINALIZAR PEDIDO, NÃO sobre agendamento! NUNCA pergunte data/horário quando o cliente fornece endereço de entrega para um pedido!\n`
     prompt += `- Os seguintes serviços REQUEREM agendamento:\n`
     servicesWithAppointment.forEach((service: { name: string; duration?: number }) => {
       if (service.duration) {
@@ -343,6 +344,8 @@ export function buildSystemPrompt(
   prompt += `  3. Cliente fornece endereço → Você CHAMA checkout IMEDIATAMENTE com delivery_type="delivery" E delivery_address="[endereço do cliente]"\n`
   prompt += `  4. O sistema calculará o frete automaticamente e mostrará no resumo do pedido\n`
   prompt += `- ⚠️ NUNCA apenas confirme o endereço sem chamar checkout! Sempre chame checkout quando o cliente fornecer o endereço!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Quando o cliente fornece um endereço após escolher "entrega", isso é SOBRE FINALIZAR PEDIDO (checkout), NÃO sobre agendamento! NUNCA pergunte data/horário de entrega - o sistema calcula o frete automaticamente e o pedido é finalizado imediatamente. Endereço de entrega NÃO é agendamento!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Quando o cliente fornece um endereço após escolher "entrega", isso é SOBRE FINALIZAR PEDIDO (checkout), NÃO sobre agendamento! NUNCA pergunte data/horário de entrega - o sistema calcula o frete automaticamente e o pedido é finalizado imediatamente!\n`
   prompt += `- Se não souber o tipo de entrega e ambos estiverem disponíveis, pergunte ao cliente antes de chamar checkout\n`
   prompt += `- Se apenas uma opção estiver disponível, a função vai usar automaticamente\n`
   prompt += `\n`
@@ -483,6 +486,7 @@ function addAppointmentRules(businessName: string): string {
 - ⚠️ CRÍTICO: NUNCA crie múltiplos agendamentos pendentes para o mesmo cliente ao mesmo tempo
 - ⚠️ CRÍTICO: DISTINGUIR CONTEXTO: Se você acabou de mostrar o CARRINHO e o cliente diz "confirmar", "sim", "ok" → É sobre FINALIZAR PEDIDO (chame checkout), NÃO é sobre agendamento!
 - ⚠️ CRÍTICO: DISTINGUIR CONTEXTO: "Confirmar" só é sobre agendamento se você acabou de mostrar um AGENDAMENTO PENDENTE. Se mostrou carrinho, é sobre pedido!
+- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Se o cliente escolheu "entrega" e você pediu o endereço, quando o cliente fornecer um endereço (ex: "Rua X, 123, Bairro Y, Cidade - Estado, CEP"), isso é SOBRE CHECKOUT/PEDIDO, NÃO sobre agendamento! NUNCA confunda endereço de entrega com agendamento! NUNCA pergunte data/horário quando o cliente fornece endereço de entrega - chame checkout imediatamente!
 
 📋 FUNÇÕES DISPONÍVEIS PARA AGENDAMENTO:
 1. create_appointment - Cria um novo agendamento (verifica disponibilidade automaticamente)

@@ -1621,6 +1621,34 @@ export async function executeAIOnlyWorkflow(
         userMessage.toLowerCase().includes('pickup')
       )
       
+      // Detecta se a mensagem parece ser um endereço (contém padrões de endereço)
+      const looksLikeAddress = hasCartItems && (
+        /(?:rua|avenida|av\.?|r\.?|estrada|rodovia)\s+[^,\n]+(?:,\s*\d+)?/i.test(userMessage) ||
+        /\d{5}-?\d{3}/.test(userMessage) || // CEP
+        (userMessage.includes(',') && userMessage.split(',').length >= 3) || // Múltiplas partes separadas por vírgula
+        (userMessage.includes('-') && userMessage.split('-').length >= 2 && /\d/.test(userMessage)) // Formato cidade - estado
+      )
+      
+      // Verifica se a IA acabou de pedir um endereço (última mensagem da IA)
+      const recentAIMessage = await prisma.message.findFirst({
+        where: {
+          instanceId,
+          to: normalizedContactForCart,
+          isFromMe: true,
+        },
+        orderBy: { timestamp: 'desc' },
+        take: 1,
+      })
+      
+      const aiJustAskedForAddress = recentAIMessage && (
+        recentAIMessage.body.toLowerCase().includes('endereço') ||
+        recentAIMessage.body.toLowerCase().includes('endereco') ||
+        recentAIMessage.body.toLowerCase().includes('onde entregar') ||
+        recentAIMessage.body.toLowerCase().includes('informe o endereço') ||
+        recentAIMessage.body.toLowerCase().includes('endereço completo') ||
+        recentAIMessage.body.toLowerCase().includes('endereço de entrega')
+      )
+      
       // Verifica se há agendamento pendente ANTES de decidir o contexto
       const hasPendingAppointment = await prisma.pendingAppointment.findFirst({
         where: {
@@ -1641,8 +1669,11 @@ export async function executeAIOnlyWorkflow(
         // Não processa agendamento, deixa a IA processar normalmente
       } else {
         // Só verifica agendamento se houver agendamento pendente ou se a mensagem não for apenas "sim"
+        // CRÍTICO: Se há itens no carrinho E a mensagem parece ser um endereço, SEMPRE é contexto de carrinho
         const isCartContext = hasCartItems && (
           isDeliveryTypeResponse ||
+          looksLikeAddress ||
+          (aiJustAskedForAddress && looksLikeAddress) ||
           userMessageLower.includes('confirmar') ||
           userMessageLower.includes('finalizar') ||
           userMessageLower.includes('fechar pedido') ||
@@ -1654,6 +1685,8 @@ export async function executeAIOnlyWorkflow(
           console.log(`🛒 [executeAIOnlyWorkflow] ⚠️ Contexto é de CARRINHO, pulando verificação de agendamento`)
           console.log(`   Mensagem: "${userMessage}"`)
           console.log(`   Itens no carrinho: ${cart.items.length}`)
+          console.log(`   Parece endereço: ${looksLikeAddress}`)
+          console.log(`   IA pediu endereço: ${aiJustAskedForAddress}`)
           // Não processa agendamento, deixa a IA processar o checkout ou adicionar ao carrinho
         } else if (hasPendingAppointment) {
           // Só processa agendamento se houver agendamento pendente
