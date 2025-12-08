@@ -324,8 +324,8 @@ export default function ServiceNode(props: NodeProps) {
                 </label>
                 {showCustomDuration ? (
                   <div className="space-y-2">
-                    <input
-                      type="number"
+                <input
+                  type="number"
                       min={slotSize}
                       step={slotSize}
                       value={customDuration}
@@ -345,16 +345,12 @@ export default function ServiceNode(props: NodeProps) {
                           const rounded = Math.ceil(numValue / slotSize) * slotSize
                           setCustomDuration(rounded.toString())
                           setAppointmentDuration(rounded.toString())
-                          toast({
-                            title: 'Duração ajustada',
-                            description: `A duração foi ajustada para ${rounded} minutos (múltiplo de ${slotSize} minutos)`,
-                            variant: 'default',
-                          })
+                          toast.success(`A duração foi ajustada para ${rounded} minutos (múltiplo de ${slotSize} minutos)`)
                         }
                       }}
                       placeholder={`Múltiplo de ${slotSize} minutos`}
-                      className="w-full px-2 py-1 text-xs bg-white/90 rounded border border-gray-300 text-gray-800"
-                    />
+                  className="w-full px-2 py-1 text-xs bg-white/90 rounded border border-gray-300 text-gray-800"
+                />
                     <div className="flex gap-2">
                       <button
                         onClick={() => {
@@ -390,11 +386,7 @@ export default function ServiceNode(props: NodeProps) {
                               setCustomDuration(rounded.toString())
                               setAppointmentDuration(rounded.toString())
                               setShowCustomDuration(false)
-                              toast({
-                                title: 'Duração ajustada',
-                                description: `A duração foi ajustada para ${rounded} minutos (múltiplo de ${slotSize} minutos)`,
-                                variant: 'default',
-                              })
+                              toast.success(`A duração foi ajustada para ${rounded} minutos (múltiplo de ${slotSize} minutos)`)
                             }
                           } else {
                             setShowCustomDuration(false)

@@ -427,11 +427,11 @@ export const StaggeredMenu: React.FC<StaggeredMenuProps> = ({
 
   return (
     <div
-      className={`sm-scope z-40 ${isFixed ? (open ? 'fixed top-0 left-0 w-screen h-screen overflow-hidden' : 'fixed top-0 left-0') : 'w-full h-full'} ${!open ? 'pointer-events-none' : ''}`}
+      className={`sm-scope z-[60] ${isFixed ? (open ? 'fixed top-0 left-0 w-screen h-screen overflow-hidden' : 'fixed top-0 left-0') : 'w-full h-full'} ${!open ? 'pointer-events-none' : ''}`}
       style={!open && isFixed ? { width: 'auto', height: 'auto' } : undefined}
     >
       <div
-        className={(className ? className + ' ' : '') + `staggered-menu-wrapper ${open ? 'relative w-full h-full' : 'relative'} z-40`}
+        className={(className ? className + ' ' : '') + `staggered-menu-wrapper ${open ? 'relative w-full h-full' : 'relative'} z-[60]`}
         style={accentColor ? ({ ['--sm-accent' as any]: accentColor } as React.CSSProperties) : undefined}
         data-position={position}
         data-open={open || undefined}
@@ -459,7 +459,7 @@ export const StaggeredMenu: React.FC<StaggeredMenuProps> = ({
         </div>
 
         <header
-          className={`staggered-menu-header absolute top-0 left-0 w-full flex items-center p-[2em] bg-transparent pointer-events-none z-20 ${
+          className={`staggered-menu-header absolute top-0 left-0 w-full flex items-center p-[2em] bg-transparent pointer-events-none z-[60] ${
             position === 'left' ? 'justify-start gap-8' : 'justify-between'
           }`}
           aria-label="Main navigation header"
@@ -468,7 +468,7 @@ export const StaggeredMenu: React.FC<StaggeredMenuProps> = ({
           {position === 'left' && (
             <button
               ref={toggleBtnRef}
-            className={`sm-toggle relative inline-flex items-center gap-[0.3rem] bg-transparent border-0 cursor-pointer font-medium leading-none overflow-visible pointer-events-auto z-50 ${
+            className={`sm-toggle relative inline-flex items-center gap-[0.3rem] bg-transparent border-0 cursor-pointer font-medium leading-none overflow-visible pointer-events-auto z-[70] ${
               open ? 'text-black' : 'text-[#e9e9ef]'
             }`}
               style={{ pointerEvents: 'auto' }}
@@ -513,7 +513,7 @@ export const StaggeredMenu: React.FC<StaggeredMenuProps> = ({
           {position === 'right' && (
             <button
               ref={toggleBtnRef}
-            className={`sm-toggle relative inline-flex items-center gap-[0.3rem] bg-transparent border-0 cursor-pointer font-medium leading-none overflow-visible pointer-events-auto z-50 ${
+            className={`sm-toggle relative inline-flex items-center gap-[0.3rem] bg-transparent border-0 cursor-pointer font-medium leading-none overflow-visible pointer-events-auto z-[70] ${
               open ? 'text-black' : 'text-[#e9e9ef]'
             }`}
               style={{ pointerEvents: 'auto' }}

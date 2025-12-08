@@ -69,7 +69,7 @@ export default function LoginPage() {
       <div className="bg-white p-8 rounded-lg shadow-xl w-full max-w-md border border-gray-200">
         <div className="flex flex-col items-center mb-6">
           <h1 className="text-3xl font-bold text-autozap-primary">
-            AutoZap
+            AutoFlow
           </h1>
         </div>
         

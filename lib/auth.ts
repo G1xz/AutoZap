@@ -63,15 +63,41 @@ export const authOptions: NextAuthOptions = {
     strategy: 'jwt',
   },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger }) {
       if (user) {
         token.id = user.id
+        token.name = user.name
+        token.email = user.email
       }
+      
+      // Se updateSession foi chamado, busca dados atualizados do banco
+      if (trigger === 'update' && token.id) {
+        try {
+          const updatedUser = await prisma.user.findUnique({
+            where: { id: token.id as string },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          })
+          
+          if (updatedUser) {
+            token.name = updatedUser.name
+            token.email = updatedUser.email
+          }
+        } catch (error) {
+          console.error('Erro ao atualizar token JWT:', error)
+        }
+      }
+      
       return token
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string
+        session.user.name = (token.name as string) || session.user.name
+        session.user.email = (token.email as string) || session.user.email
       }
       return session
     },

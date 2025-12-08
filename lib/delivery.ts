@@ -143,7 +143,7 @@ async function calculateFreteFallback(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(originAddress)}&limit=1`,
       {
         headers: {
-          'User-Agent': 'AutoZap-Delivery-Calculator/1.0', // Obrigatório para Nominatim
+          'User-Agent': 'AutoFlow-Delivery-Calculator/1.0', // Obrigatório para Nominatim
         },
       }
     )
@@ -153,7 +153,7 @@ async function calculateFreteFallback(
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(destinationAddress)}&limit=1`,
       {
         headers: {
-          'User-Agent': 'AutoZap-Delivery-Calculator/1.0', // Obrigatório para Nominatim
+          'User-Agent': 'AutoFlow-Delivery-Calculator/1.0', // Obrigatório para Nominatim
         },
       }
     )

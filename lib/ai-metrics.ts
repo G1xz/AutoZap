@@ -4,6 +4,7 @@
  */
 
 import { log } from './logger'
+import { prisma } from './prisma'
 
 interface AIMetric {
   timestamp: number
@@ -24,11 +25,15 @@ const metrics: AIMetric[] = []
 // Limite de métricas em memória (últimas 1000)
 const MAX_METRICS = 1000
 
-// Custos por token (USD) - atualizar conforme preços da OpenAI
+// Custos por token (USD) - Preços atualizados da OpenAI (Dezembro 2024)
 const COST_PER_TOKEN = {
   'gpt-3.5-turbo': {
-    prompt: 0.0005 / 1000, // $0.0005 por 1K tokens
-    completion: 0.0015 / 1000, // $0.0015 por 1K tokens
+    prompt: 0.0005 / 1000, // $0.0005 por 1K tokens (input)
+    completion: 0.0015 / 1000, // $0.0015 por 1K tokens (output)
+  },
+  'gpt-3.5-turbo-1106': {
+    prompt: 0.001 / 1000,
+    completion: 0.002 / 1000,
   },
   'gpt-4': {
     prompt: 0.03 / 1000,
@@ -37,6 +42,14 @@ const COST_PER_TOKEN = {
   'gpt-4-turbo': {
     prompt: 0.01 / 1000,
     completion: 0.03 / 1000,
+  },
+  'gpt-4o': {
+    prompt: 0.0025 / 1000,
+    completion: 0.01 / 1000,
+  },
+  'gpt-4o-mini': {
+    prompt: 0.00015 / 1000,
+    completion: 0.0006 / 1000,
   },
   default: {
     prompt: 0.0005 / 1000,
@@ -62,8 +75,9 @@ function calculateCost(
 
 /**
  * Registra métrica de uso da IA
+ * Salva no banco de dados para persistência
  */
-export function recordAIMetric(params: {
+export async function recordAIMetric(params: {
   userId?: string
   instanceId?: string
   model: string
@@ -72,31 +86,54 @@ export function recordAIMetric(params: {
   totalTokens: number
   duration: number
   cached?: boolean
-}): void {
+  endpoint?: string
+}): Promise<void> {
   const cost = calculateCost(
     params.model,
     params.promptTokens,
     params.completionTokens
   )
 
-  const metric: AIMetric = {
-    timestamp: Date.now(),
-    userId: params.userId,
-    instanceId: params.instanceId,
-    model: params.model,
-    promptTokens: params.promptTokens,
-    completionTokens: params.completionTokens,
-    totalTokens: params.totalTokens,
-    cost,
-    duration: params.duration,
-    cached: params.cached || false,
-  }
-
-  metrics.push(metric)
-
-  // Mantém apenas as últimas MAX_METRICS
-  if (metrics.length > MAX_METRICS) {
-    metrics.shift()
+  // Salva no banco de dados
+  try {
+    await prisma.aIMetric.create({
+      data: {
+        userId: params.userId || null,
+        instanceId: params.instanceId || null,
+        model: params.model,
+        promptTokens: params.promptTokens,
+        completionTokens: params.completionTokens,
+        totalTokens: params.totalTokens,
+        cost,
+        duration: params.duration,
+        cached: params.cached || false,
+        endpoint: params.endpoint || null,
+      },
+    })
+  } catch (error: any) {
+    // Se der erro (ex: coluna não existe), tenta criar a coluna e salvar novamente
+    if (error?.code === 'P2022' || error?.message?.includes('does not exist')) {
+      console.error('⚠️ Erro ao salvar métrica de IA (coluna pode não existir):', error.message)
+      // Mantém em memória como fallback
+      const metric: AIMetric = {
+        timestamp: Date.now(),
+        userId: params.userId,
+        instanceId: params.instanceId,
+        model: params.model,
+        promptTokens: params.promptTokens,
+        completionTokens: params.completionTokens,
+        totalTokens: params.totalTokens,
+        cost,
+        duration: params.duration,
+        cached: params.cached || false,
+      }
+      metrics.push(metric)
+      if (metrics.length > MAX_METRICS) {
+        metrics.shift()
+      }
+    } else {
+      console.error('❌ Erro ao salvar métrica de IA:', error)
+    }
   }
 
   // Log da métrica
@@ -117,13 +154,14 @@ export function recordAIMetric(params: {
 
 /**
  * Obtém estatísticas de uso da IA
+ * Busca do banco de dados
  */
-export function getAIStats(params?: {
+export async function getAIStats(params?: {
   userId?: string
   instanceId?: string
   startDate?: Date
   endDate?: Date
-}): {
+}): Promise<{
   totalRequests: number
   totalTokens: number
   totalCost: number
@@ -132,54 +170,124 @@ export function getAIStats(params?: {
   cachedRequests: number
   averageDuration: number
   byModel: Record<string, { requests: number; tokens: number; cost: number }>
-} {
-  let filtered = [...metrics]
-
-  // Filtra por usuário
-  if (params?.userId) {
-    filtered = filtered.filter((m) => m.userId === params.userId)
-  }
-
-  // Filtra por instância
-  if (params?.instanceId) {
-    filtered = filtered.filter((m) => m.instanceId === params.instanceId)
-  }
-
-  // Filtra por data
-  if (params?.startDate) {
-    filtered = filtered.filter((m) => m.timestamp >= params.startDate!.getTime())
-  }
-
-  if (params?.endDate) {
-    filtered = filtered.filter((m) => m.timestamp <= params.endDate!.getTime())
-  }
-
-  const totalRequests = filtered.length
-  const totalTokens = filtered.reduce((sum, m) => sum + m.totalTokens, 0)
-  const totalCost = filtered.reduce((sum, m) => sum + m.cost, 0)
-  const cachedRequests = filtered.filter((m) => m.cached).length
-  const totalDuration = filtered.reduce((sum, m) => sum + m.duration, 0)
-
-  // Agrupa por modelo
-  const byModel: Record<string, { requests: number; tokens: number; cost: number }> = {}
-  filtered.forEach((m) => {
-    if (!byModel[m.model]) {
-      byModel[m.model] = { requests: 0, tokens: 0, cost: 0 }
+}> {
+  try {
+    // Monta filtros para o Prisma
+    const where: any = {}
+    
+    if (params?.userId) {
+      where.userId = params.userId
     }
-    byModel[m.model].requests++
-    byModel[m.model].tokens += m.totalTokens
-    byModel[m.model].cost += m.cost
-  })
+    
+    if (params?.instanceId) {
+      where.instanceId = params.instanceId
+    }
+    
+    if (params?.startDate || params?.endDate) {
+      where.createdAt = {}
+      if (params?.startDate) {
+        where.createdAt.gte = params.startDate
+      }
+      if (params?.endDate) {
+        where.createdAt.lte = params.endDate
+      }
+    }
 
-  return {
-    totalRequests,
-    totalTokens,
-    totalCost,
-    averageTokens: totalRequests > 0 ? totalTokens / totalRequests : 0,
-    averageCost: totalRequests > 0 ? totalCost / totalRequests : 0,
-    cachedRequests,
-    averageDuration: totalRequests > 0 ? totalDuration / totalRequests : 0,
-    byModel,
+    // Busca métricas do banco
+    const dbMetrics = await prisma.aIMetric.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+    })
+
+    // Converte para formato compatível
+    const filtered = dbMetrics.map((m) => ({
+      timestamp: m.createdAt.getTime(),
+      userId: m.userId || undefined,
+      instanceId: m.instanceId || undefined,
+      model: m.model,
+      promptTokens: m.promptTokens,
+      completionTokens: m.completionTokens,
+      totalTokens: m.totalTokens,
+      cost: m.cost,
+      duration: m.duration,
+      cached: m.cached,
+    }))
+
+    const totalRequests = filtered.length
+    const totalTokens = filtered.reduce((sum, m) => sum + m.totalTokens, 0)
+    const totalCost = filtered.reduce((sum, m) => sum + m.cost, 0)
+    const cachedRequests = filtered.filter((m) => m.cached).length
+    const totalDuration = filtered.reduce((sum, m) => sum + m.duration, 0)
+
+    // Agrupa por modelo
+    const byModel: Record<string, { requests: number; tokens: number; cost: number }> = {}
+    filtered.forEach((m) => {
+      if (!byModel[m.model]) {
+        byModel[m.model] = { requests: 0, tokens: 0, cost: 0 }
+      }
+      byModel[m.model].requests++
+      byModel[m.model].tokens += m.totalTokens
+      byModel[m.model].cost += m.cost
+    })
+
+    return {
+      totalRequests,
+      totalTokens,
+      totalCost,
+      averageTokens: totalRequests > 0 ? totalTokens / totalRequests : 0,
+      averageCost: totalRequests > 0 ? totalCost / totalRequests : 0,
+      cachedRequests,
+      averageDuration: totalRequests > 0 ? totalDuration / totalRequests : 0,
+      byModel,
+    }
+  } catch (error: any) {
+    // Se der erro (ex: tabela não existe), usa métricas em memória como fallback
+    console.error('⚠️ Erro ao buscar métricas do banco, usando memória:', error.message)
+    
+    let filtered = [...metrics]
+
+    if (params?.userId) {
+      filtered = filtered.filter((m) => m.userId === params.userId)
+    }
+
+    if (params?.instanceId) {
+      filtered = filtered.filter((m) => m.instanceId === params.instanceId)
+    }
+
+    if (params?.startDate) {
+      filtered = filtered.filter((m) => m.timestamp >= params.startDate!.getTime())
+    }
+
+    if (params?.endDate) {
+      filtered = filtered.filter((m) => m.timestamp <= params.endDate!.getTime())
+    }
+
+    const totalRequests = filtered.length
+    const totalTokens = filtered.reduce((sum, m) => sum + m.totalTokens, 0)
+    const totalCost = filtered.reduce((sum, m) => sum + m.cost, 0)
+    const cachedRequests = filtered.filter((m) => m.cached).length
+    const totalDuration = filtered.reduce((sum, m) => sum + m.duration, 0)
+
+    const byModel: Record<string, { requests: number; tokens: number; cost: number }> = {}
+    filtered.forEach((m) => {
+      if (!byModel[m.model]) {
+        byModel[m.model] = { requests: 0, tokens: 0, cost: 0 }
+      }
+      byModel[m.model].requests++
+      byModel[m.model].tokens += m.totalTokens
+      byModel[m.model].cost += m.cost
+    })
+
+    return {
+      totalRequests,
+      totalTokens,
+      totalCost,
+      averageTokens: totalRequests > 0 ? totalTokens / totalRequests : 0,
+      averageCost: totalRequests > 0 ? totalCost / totalRequests : 0,
+      cachedRequests,
+      averageDuration: totalRequests > 0 ? totalDuration / totalRequests : 0,
+      byModel,
+    }
   }
 }
 

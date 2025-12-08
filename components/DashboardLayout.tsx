@@ -1,17 +1,19 @@
 'use client'
 
-import { useSession, signOut } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
 import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings, ShoppingBag, Bug, TestTube } from 'lucide-react'
 import StaggeredMenu, { StaggeredMenuSocialItem } from './StaggeredMenu'
 import SlotCompatibilityBanner from './SlotCompatibilityBanner'
+import Navbar from './Navbar'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { data: session } = useSession()
   const pathname = usePathname()
 
   // Verifica se está em uma página de editor (fluxos ou catálogos)
   const isEditorPage = pathname?.includes('/workflows/') || pathname?.includes('/catalogs/')
+  
+  // Verifica se está na página de pedidos (para aplicar layout com scroll interno)
+  const isOrdersPage = pathname?.includes('/pedidos')
 
   // Mapeia o pathname para o label do menu
   const getActiveLabel = () => {
@@ -97,6 +99,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div className="min-h-screen bg-gray-50 relative">
+      {/* Navbar no topo */}
+      {!isEditorPage && (
+        <div className="fixed top-0 left-0 right-0 z-50 flex justify-center pt-3 pb-2">
+          <div className="w-full max-w-7xl px-2 sm:px-4 lg:px-8">
+            <div className="bg-white/70 backdrop-blur-md rounded-full border-2 border-gray-300/50 shadow-sm">
+              <Navbar />
+            </div>
+          </div>
+        </div>
+      )}
+
       {!isEditorPage && (
         <StaggeredMenu
           position="left"
@@ -122,29 +135,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           {children}
         </div>
       ) : (
-        <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8 pt-20 sm:pt-24 relative z-10">
+        <div className={`max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8 pt-28 sm:pt-32 relative z-10 ${isOrdersPage ? 'h-[calc(100vh-7rem)]' : ''}`}>
           <SlotCompatibilityBanner />
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-            <div className="p-3 sm:p-6">
+          <div className={`bg-white rounded-lg shadow-sm border border-gray-200 ${isOrdersPage ? 'h-full flex flex-col' : ''}`}>
+            <div className={`p-3 sm:p-6 ${isOrdersPage ? 'flex-1 flex flex-col min-h-0' : ''}`}>
               {children}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Botão de logout fixo no canto inferior direito */}
-      {!isEditorPage && (
-        <div className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-30">
-          <div className="flex flex-col items-end gap-2">
-            <span className="text-xs sm:text-sm text-gray-700 bg-white border border-gray-200 px-2 sm:px-3 py-1 rounded shadow-sm hidden sm:block">
-              {session?.user?.name}
-            </span>
-            <button
-              onClick={() => signOut()}
-              className="px-3 sm:px-4 py-1.5 sm:py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors shadow-lg text-sm sm:text-base"
-            >
-              Sair
-            </button>
           </div>
         </div>
       )}

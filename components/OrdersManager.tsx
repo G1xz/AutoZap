@@ -194,50 +194,53 @@ export default function OrdersManager() {
     }
 
     return (
-        <div className="space-y-6">
-            <div className="flex justify-between items-center">
-                <div>
-                    <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
-                        <ShoppingBag size={24} />
-                        Pedidos
-                    </h2>
-                    <p className="text-sm text-gray-600 mt-1">
-                        Gerencie os pedidos dos seus clientes
-                    </p>
-                </div>
-                <div className="flex gap-2">
-                    <button
-                        onClick={() => setFilterStatus(undefined)}
-                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${filterStatus === undefined
-                            ? 'bg-autozap-primary text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                            }`}
-                    >
-                        Todos
-                    </button>
-                    <button
-                        onClick={() => setFilterStatus('pending')}
-                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${filterStatus === 'pending'
-                            ? 'bg-autozap-primary text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                            }`}
-                    >
-                        Pendentes
-                    </button>
-                    <button
-                        onClick={() => setFilterStatus('confirmed')}
-                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${filterStatus === 'confirmed'
-                            ? 'bg-autozap-primary text-white'
-                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-                            }`}
-                    >
-                        Confirmados
-                    </button>
+        <div className="h-full flex flex-col">
+            {/* Cabeçalho fixo */}
+            <div className="flex-shrink-0 pb-4 border-b border-gray-200 mb-4">
+                <div className="flex justify-between items-center">
+                    <div>
+                        <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                            <ShoppingBag size={24} />
+                            Pedidos
+                        </h2>
+                        <p className="text-sm text-gray-600 mt-1">
+                            Gerencie os pedidos dos seus clientes
+                        </p>
+                    </div>
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => setFilterStatus(undefined)}
+                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${filterStatus === undefined
+                                ? 'bg-autozap-primary text-white'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                }`}
+                        >
+                            Todos
+                        </button>
+                        <button
+                            onClick={() => setFilterStatus('pending')}
+                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${filterStatus === 'pending'
+                                ? 'bg-autozap-primary text-white'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                }`}
+                        >
+                            Pendentes
+                        </button>
+                        <button
+                            onClick={() => setFilterStatus('confirmed')}
+                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${filterStatus === 'confirmed'
+                                ? 'bg-autozap-primary text-white'
+                                : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                }`}
+                        >
+                            Confirmados
+                        </button>
+                    </div>
                 </div>
             </div>
 
-            {/* Estatísticas */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Estatísticas fixas */}
+            <div className="flex-shrink-0 grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
                 <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm flex items-center gap-3">
                     <ShoppingBag className="text-autozap-primary" size={24} />
                     <div>
@@ -261,19 +264,20 @@ export default function OrdersManager() {
                 </div>
             </div>
 
-            {/* Lista de Pedidos */}
-            {orders.length === 0 ? (
-                <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
-                    <Package size={48} className="mx-auto text-gray-400 mb-4" />
-                    <p className="text-gray-600">
-                        {filterStatus
-                            ? `Nenhum pedido com status "${statusLabels[filterStatus] || filterStatus}" encontrado.`
-                            : 'Nenhum pedido encontrado.'}
-                    </p>
-                </div>
-            ) : (
-                <div className="space-y-4">
-                    {orders.map((order) => (
+            {/* Lista de Pedidos - Scrollável */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+                {orders.length === 0 ? (
+                    <div className="bg-white border border-gray-200 rounded-lg p-8 text-center">
+                        <Package size={48} className="mx-auto text-gray-400 mb-4" />
+                        <p className="text-gray-600">
+                            {filterStatus
+                                ? `Nenhum pedido com status "${statusLabels[filterStatus] || filterStatus}" encontrado.`
+                                : 'Nenhum pedido encontrado.'}
+                        </p>
+                    </div>
+                ) : (
+                    <div className="space-y-4 pr-2">
+                        {orders.map((order) => (
                         <div
                             key={order.id}
                             className="bg-white border border-gray-200 rounded-lg shadow-sm overflow-hidden hover:shadow-md transition-shadow cursor-pointer"
@@ -441,8 +445,9 @@ export default function OrdersManager() {
                             </div>
                         </div>
                     ))}
-                </div>
-            )}
+                    </div>
+                )}
+            </div>
 
             {/* Modal de detalhes do pedido */}
             {selectedOrder && (

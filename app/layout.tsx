@@ -3,7 +3,7 @@ import './globals.css'
 import { Providers } from './providers'
 
 export const metadata: Metadata = {
-  title: 'AutoZap',
+  title: 'AutoFlow',
   description: 'Sistema de automação de conversas para WhatsApp',
 }
 

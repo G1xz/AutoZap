@@ -3545,7 +3545,7 @@ export async function executeAIOnlyWorkflow(
               }
             }
           }
-          
+
           console.log(`✅ [handleFunctionCall] Horário disponível e válido! Prosseguindo com criação do agendamento pendente.`)
 
           // Armazena temporariamente o agendamento pendente

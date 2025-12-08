@@ -163,6 +163,7 @@ export async function generateAIResponse(
     if (cached) {
       const duration = Date.now() - startTime
       const { recordAIMetric } = await import('./ai-metrics')
+      // Registra métrica de cache de forma assíncrona
       recordAIMetric({
         userId: context?.userId,
         instanceId: context?.instanceId,
@@ -172,6 +173,9 @@ export async function generateAIResponse(
         totalTokens: 0,
         duration,
         cached: true,
+        endpoint: 'chat',
+      }).catch((error) => {
+        console.error('Erro ao salvar métrica de cache (não bloqueia):', error)
       })
       return cached
     }
@@ -211,13 +215,17 @@ export async function generateAIResponse(
 
   // Chama a API com function calling se disponível
   const { log } = await import('./logger')
+  const model = 'gpt-3.5-turbo' // Modelo padrão usado
+  
   log.debug('Chamando OpenAI', {
     messageCount: messages.length,
     hasFunctions: !!context?.functions && context.functions.length > 0,
     functions: context?.functions?.map(f => f.name) || [],
+    model,
   })
   
   const response = await callChatGPT(messages, {
+    model,
     temperature: context?.temperature,
     maxTokens: context?.maxTokens,
     functions: context?.functions,
@@ -236,15 +244,19 @@ export async function generateAIResponse(
   const { recordAIMetric } = await import('./ai-metrics')
   const { setCachedResponse, cacheConfig } = await import('./ai-cache')
   
+  // Registra métricas de forma assíncrona (não bloqueia a resposta)
   recordAIMetric({
     userId: context?.userId,
     instanceId: context?.instanceId,
-    model: 'gpt-3.5-turbo',
+    model: model,
     promptTokens: response.usage?.promptTokens || 0,
     completionTokens: response.usage?.completionTokens || 0,
     totalTokens: response.usage?.totalTokens || 0,
     duration,
     cached: false,
+    endpoint: 'chat',
+  }).catch((error) => {
+    console.error('Erro ao salvar métrica de IA (não bloqueia):', error)
   })
 
   // Armazena no cache
@@ -346,15 +358,19 @@ export async function generateAIResponse(
   const { recordAIMetric } = await import('./ai-metrics')
   const { setCachedResponse, cacheConfig } = await import('./ai-cache')
   
+  // Registra métricas de forma assíncrona (não bloqueia a resposta)
   recordAIMetric({
     userId: context?.userId,
     instanceId: context?.instanceId,
-    model: 'gpt-3.5-turbo',
+    model: model,
     promptTokens: totalPromptTokens,
     completionTokens: totalCompletionTokens,
     totalTokens: totalTokens,
     duration,
     cached: false,
+    endpoint: 'chat',
+  }).catch((error) => {
+    console.error('Erro ao salvar métrica de IA (não bloqueia):', error)
   })
 
   // Armazena no cache se não for função calling

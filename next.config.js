@@ -3,7 +3,14 @@ const nextConfig = {
   reactStrictMode: true,
   // Configurações para produção
   images: {
-    domains: ['localhost'],
+    domains: ['localhost', 'res.cloudinary.com'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'res.cloudinary.com',
+        pathname: '/**',
+      },
+    ],
   },
   // Excluir midas-exemplo do build (é apenas referência)
   pageExtensions: ['ts', 'tsx', 'js', 'jsx'],

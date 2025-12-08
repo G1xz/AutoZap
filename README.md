@@ -1,4 +1,4 @@
-# AutoZap - Automação WhatsApp
+# AutoFlow - Automação WhatsApp
 
 Sistema de automação de conversas para WhatsApp com Editor Visual de Fluxos, Next.js, TypeScript, Prisma e Neon.
 

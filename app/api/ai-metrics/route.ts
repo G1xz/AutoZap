@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Busca estatísticas de IA para o usuário
-    const stats = getAIStats({
+    const stats = await getAIStats({
       userId: session.user.id,
     })
 

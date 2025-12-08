@@ -48,9 +48,9 @@ export default function WorkingHoursManager() {
           const cleanDay: any = {}
           if (value.isOpen !== undefined) cleanDay.isOpen = value.isOpen
           if (value.slots && Array.isArray(value.slots) && value.slots.length > 0) {
-            cleanDay.slots = value.slots.filter(slot => 
-              slot && 
-              slot.openTime && 
+            cleanDay.slots = value.slots.filter((slot: any) =>
+              slot &&
+              slot.openTime &&
               slot.closeTime &&
               typeof slot.openTime === 'string' &&
               typeof slot.closeTime === 'string'
@@ -66,7 +66,7 @@ export default function WorkingHoursManager() {
           }
           
           if (Object.keys(cleanDay).length > 0) {
-            acc[key] = cleanDay
+            (acc as any)[key] = cleanDay
           }
         }
         return acc
@@ -193,13 +193,13 @@ export default function WorkingHoursManager() {
           updated[dayKey] = {
             isOpen: true,
             slots: sourceSlots.map(slot => ({ ...slot })), // Deep copy dos slots
-          }
+          } as any
         } else {
           // Se o dia fonte está fechado, fecha o dia destino também
           updated[dayKey] = {
             isOpen: false,
             slots: [],
-          }
+          } as any
         }
       })
       
