@@ -5,6 +5,7 @@ import PixKeysManager from './PixKeysManager'
 import WorkingHoursManager from './WorkingHoursManager'
 import DeliverySettingsManager from './DeliverySettingsManager'
 import MessageCleanupManager from './MessageCleanupManager'
+import SlotConfigManager from './SlotConfigManager'
 
 export default function SettingsManager() {
   return (
@@ -21,6 +22,9 @@ export default function SettingsManager() {
           </div>
           <div className="border-t border-gray-200 pt-6">
             <WorkingHoursManager />
+          </div>
+          <div className="border-t border-gray-200 pt-6">
+            <SlotConfigManager />
           </div>
           <div className="border-t border-gray-200 pt-6">
             <DeliverySettingsManager />

@@ -205,6 +205,11 @@ export function findValidStartTimes(
     // Verifica se há N slots consecutivos livres
     let allFree = true
     for (let j = 0; j < requiredSlots; j++) {
+      if (i + j >= allSlots.length) {
+        // Não há slots suficientes restantes
+        allFree = false
+        break
+      }
       if (occupiedSlots.has(allSlots[i + j])) {
         allFree = false
         break
@@ -212,7 +217,13 @@ export function findValidStartTimes(
     }
     
     if (allFree) {
-      validTimes.push(allSlots[i])
+      // CRÍTICO: Verifica se o último slot necessário ainda existe na lista
+      // Se requiredSlots = 2 e o último slot do turno é 11:45, então 11:45 não pode ser início
+      // porque precisaria de 12:00 que não existe na lista
+      const lastSlotIndex = i + requiredSlots - 1
+      if (lastSlotIndex < allSlots.length) {
+        validTimes.push(allSlots[i])
+      }
     }
   }
   

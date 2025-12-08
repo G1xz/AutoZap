@@ -4,6 +4,7 @@ import { useSession, signOut } from 'next-auth/react'
 import { usePathname } from 'next/navigation'
 import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings, ShoppingBag, Bug, TestTube } from 'lucide-react'
 import StaggeredMenu, { StaggeredMenuSocialItem } from './StaggeredMenu'
+import SlotCompatibilityBanner from './SlotCompatibilityBanner'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { data: session } = useSession()
@@ -122,6 +123,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       ) : (
         <div className="max-w-7xl mx-auto px-2 sm:px-4 lg:px-8 py-4 sm:py-8 pt-20 sm:pt-24 relative z-10">
+          <SlotCompatibilityBanner />
           <div className="bg-white rounded-lg shadow-sm border border-gray-200">
             <div className="p-3 sm:p-6">
               {children}

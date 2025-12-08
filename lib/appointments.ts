@@ -187,9 +187,35 @@ export async function createAppointment(
       const validation = canFitAppointment(params.date, duration, finalWorkingHours)
       if (!validation.valid) {
         console.warn('⚠️ Agendamento fora do horário de funcionamento:', validation.reason)
+        
+        // Busca horários alternativos disponíveis no mesmo dia
+        let errorMessage = validation.reason || 'Agendamento fora do horário de funcionamento'
+        try {
+          const availableTimesResult = await getAvailableTimes(
+            params.userId,
+            params.date,
+            duration,
+            undefined,
+            undefined,
+            params.instanceId || undefined,
+            finalWorkingHours
+          )
+
+          if (availableTimesResult.success && availableTimesResult.availableTimes && availableTimesResult.availableTimes.length > 0) {
+            // Pega os primeiros 5 horários disponíveis
+            const suggestions = availableTimesResult.availableTimes.slice(0, 5)
+            const suggestionsText = suggestions.map(t => `• ${t}`).join('\n')
+            
+            errorMessage += `\n\n💡 Horários disponíveis no mesmo dia:\n${suggestionsText}`
+          }
+        } catch (error) {
+          console.error('Erro ao buscar horários alternativos:', error)
+          // Continua mesmo se houver erro ao buscar horários alternativos
+        }
+        
         return {
           success: false,
-          error: validation.reason || 'Agendamento fora do horário de funcionamento',
+          error: errorMessage,
         }
       }
     }
@@ -797,6 +823,110 @@ export async function getAvailableTimes(
       success: false,
       error: `Erro ao buscar horários disponíveis: ${error instanceof Error ? error.message : String(error)}`,
     }
+  }
+}
+
+/**
+ * Busca horários disponíveis próximos ao horário solicitado (3 antes e 3 depois)
+ * Respeita a duração do serviço e os turnos de funcionamento
+ * CRÍTICO: Verifica se o agendamento completo (início + duração) cabe dentro do turno
+ */
+export async function getAvailableTimesNear(
+  userId: string,
+  requestedDate: Date,
+  durationMinutes: number,
+  instanceId?: string,
+  workingHours?: WorkingHoursConfig | null
+): Promise<string[]> {
+  try {
+    // Busca todos os horários disponíveis do dia
+    const allAvailable = await getAvailableTimes(
+      userId,
+      requestedDate,
+      durationMinutes,
+      undefined,
+      undefined,
+      instanceId,
+      workingHours
+    )
+    
+    if (!allAvailable.success || !allAvailable.availableTimes || allAvailable.availableTimes.length === 0) {
+      return []
+    }
+    
+    // Busca horários de funcionamento se não foram fornecidos
+    let finalWorkingHours = workingHours
+    if (!finalWorkingHours) {
+      const { getUserWorkingHours } = await import('./user-working-hours')
+      finalWorkingHours = await getUserWorkingHours(userId)
+    }
+    
+    // Converte horário solicitado para minutos totais do dia
+    const requestedHour = requestedDate.getHours()
+    const requestedMinute = requestedDate.getMinutes()
+    const requestedTotalMinutes = requestedHour * 60 + requestedMinute
+    
+    // Converte todos os horários disponíveis para minutos e ordena
+    const availableMinutes = allAvailable.availableTimes
+      .map(time => {
+        const [h, m] = time.split(':').map(Number)
+        return h * 60 + m
+      })
+      .sort((a, b) => a - b)
+    
+    // CRÍTICO: Filtra apenas horários onde o agendamento completo cabe no turno
+    const validMinutes: number[] = []
+    
+    for (const startMinutes of availableMinutes) {
+      // Calcula horário de término do agendamento
+      const endMinutes = startMinutes + durationMinutes
+      
+      // Cria uma data de teste para validar
+      const testDate = new Date(requestedDate)
+      testDate.setHours(Math.floor(startMinutes / 60), startMinutes % 60, 0, 0)
+      
+      // Verifica se o agendamento cabe no horário de funcionamento
+      if (finalWorkingHours) {
+        const { canFitAppointment } = await import('./working-hours')
+        const validation = canFitAppointment(testDate, durationMinutes, finalWorkingHours)
+        if (validation.valid) {
+          validMinutes.push(startMinutes)
+        } else {
+          // Log para debug
+          const timeStr = `${Math.floor(startMinutes / 60).toString().padStart(2, '0')}:${(startMinutes % 60).toString().padStart(2, '0')}`
+          console.log(`⚠️ [getAvailableTimesNear] Horário ${timeStr} rejeitado: ${validation.reason}`)
+        }
+      } else {
+        // Se não há horários configurados, aceita todos
+        validMinutes.push(startMinutes)
+      }
+    }
+    
+    console.log(`📅 [getAvailableTimesNear] Horários disponíveis: ${availableMinutes.length}, Válidos após validação: ${validMinutes.length}`)
+    
+    // Encontra o índice do horário solicitado (ou o mais próximo) nos horários válidos
+    let requestedIndex = validMinutes.findIndex(m => m >= requestedTotalMinutes)
+    if (requestedIndex === -1) {
+      // Se não encontrou nenhum depois, pega o último
+      requestedIndex = validMinutes.length
+    }
+    
+    // Pega 3 antes e 3 depois
+    const startIndex = Math.max(0, requestedIndex - 3)
+    const endIndex = Math.min(validMinutes.length, requestedIndex + 3)
+    const nearbyMinutes = validMinutes.slice(startIndex, endIndex)
+    
+    // Converte de volta para formato HH:mm
+    const nearbyTimes = nearbyMinutes.map(minutes => {
+      const h = Math.floor(minutes / 60)
+      const m = minutes % 60
+      return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`
+    })
+    
+    return nearbyTimes
+  } catch (error) {
+    console.error('❌ Erro ao buscar horários próximos:', error)
+    return []
   }
 }
 

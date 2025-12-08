@@ -96,12 +96,14 @@ export function isWithinWorkingHours(
     const openMinutes = timeToMinutes(slot.openTime)
     const closeMinutes = timeToMinutes(slot.closeTime)
     
+    // CRÍTICO: Horário deve estar dentro do turno (>= abertura e < fechamento)
+    // Não permite horário exatamente no fechamento (ex: 12:00 quando turno termina às 12:00)
     if (appointmentTime >= openMinutes && appointmentTime < closeMinutes) {
       return { valid: true }
     }
   }
 
-  // Se não está em nenhum turno, retorna erro
+  // Se não está em nenhum turno, retorna erro com mensagem mais específica
   const firstSlot = slots[0]
   const lastSlot = slots[slots.length - 1]
   
@@ -112,6 +114,30 @@ export function isWithinWorkingHours(
     }
   }
   
+  // Verifica se está entre turnos (ex: 12:00 quando há turno 9h-12h e 13h-19h)
+  // Procura se há um turno seguinte que começa depois
+  let nextSlot: TimeSlot | null = null
+  for (let i = 0; i < slots.length; i++) {
+    const slot = slots[i]
+    const slotCloseMinutes = timeToMinutes(slot.closeTime)
+    if (appointmentTime >= slotCloseMinutes) {
+      // Encontrou um turno que já fechou, procura o próximo
+      if (i + 1 < slots.length) {
+        nextSlot = slots[i + 1]
+        break
+      }
+    }
+  }
+  
+  if (nextSlot) {
+    // nextSlot.openTime já é uma string no formato "HH:mm", não precisa converter
+    return {
+      valid: false,
+      reason: `Este horário está entre nossos turnos de funcionamento. O próximo turno começa às ${formatTimeString24h(nextSlot.openTime)}.`,
+    }
+  }
+  
+  // Se não há próximo turno, está após o último turno
   return {
     valid: false,
     reason: `Nosso horário de funcionamento termina às ${formatTimeString24h(lastSlot.closeTime)}.`,
@@ -177,25 +203,15 @@ export function canFitAppointment(
     
     // Se o início está dentro deste turno (>= abertura e < fechamento)
     // E o fim está dentro ou no máximo no fechamento (<= fechamento)
-    // CRÍTICO: Permite agendamentos que terminam exatamente no horário de fechamento
+    // CRÍTICO: Não permite começar exatamente no fechamento (ex: 12:00 quando turno termina às 12:00)
     if (startMinutes >= openMinutes && startMinutes < closeMinutes && endMinutes <= closeMinutes) {
       return { valid: true }
     }
     
-    // CRÍTICO: Se o agendamento começa antes do fechamento mas termina depois,
-    // verifica se pelo menos parte dele está dentro do turno
-    // Exemplo: turno 7h-12h, agendamento 11:50-12:10 → válido (maioria está dentro)
-    if (startMinutes >= openMinutes && startMinutes < closeMinutes && endMinutes > closeMinutes) {
-      // Calcula quanto do agendamento está dentro do turno
-      const durationInside = closeMinutes - startMinutes
-      const totalDuration = endMinutes - startMinutes
-      const percentageInside = (durationInside / totalDuration) * 100
-      
-      // Se pelo menos 50% do agendamento está dentro do turno, considera válido
-      if (percentageInside >= 50) {
-        return { valid: true }
-      }
-    }
+    // CRÍTICO: NÃO permite agendamentos que ultrapassam o fechamento do turno
+    // Um agendamento deve estar COMPLETAMENTE dentro do turno
+    // Exemplo: turno 9h-12h, agendamento de 30min começando às 11:45 → termina às 12:15 → INVÁLIDO
+    // A regra de "50% dentro" foi removida porque causa problemas práticos
   }
 
   // Se não cabe em nenhum turno, retorna erro

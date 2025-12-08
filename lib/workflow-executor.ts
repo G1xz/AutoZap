@@ -1512,7 +1512,20 @@ export async function processAppointmentConfirmation(
         workflowExecutions.delete(executionKey)
       }
 
-      let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${pendingAppointment.time}`
+      // Formata o horário corretamente (garante formato HH:MM)
+      let formattedTime = pendingAppointment.time
+      // Se o horário não está no formato correto, tenta formatar
+      if (!/^\d{2}:\d{2}$/.test(formattedTime)) {
+        // Tenta parsear e formatar
+        const timeMatch = formattedTime.match(/(\d{1,2}):?(\d{2})?/)
+        if (timeMatch) {
+          const hours = parseInt(timeMatch[1]).toString().padStart(2, '0')
+          const minutes = timeMatch[2] ? timeMatch[2].padStart(2, '0') : '00'
+          formattedTime = `${hours}:${minutes}`
+        }
+      }
+      
+      let confirmationMessage = `✅ Agendamento confirmado com sucesso!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${formattedTime}`
       if (pendingAppointment.duration) {
         confirmationMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
       }
@@ -1633,6 +1646,65 @@ export async function processAppointmentConfirmation(
 
     console.log(`❌ Cancelamento processado - RETORNANDO TRUE`)
     return true // Processou cancelamento, não deve chamar IA
+  }
+
+  // Verifica se o usuário está pedindo para mudar o horário
+  // Exemplos: "10 horas então", "às 10", "10h", "pode ser às 10", etc.
+  const timePatterns = [
+    /(\d{1,2})\s*(?:horas?|h|hora)\s*(?:então|mesmo|ai|ok)?/i,
+    /às?\s*(\d{1,2})\s*(?:horas?|h)?/i,
+    /(\d{1,2}):?(\d{2})?\s*(?:horas?|h)?/i,
+    /pode\s+ser\s+(?:às?\s*)?(\d{1,2})/i,
+  ]
+  
+  let requestedTime: { hour: number; minute: number } | null = null
+  
+  for (const pattern of timePatterns) {
+    const match = userMessage.match(pattern)
+    if (match) {
+      const hour = parseInt(match[1])
+      const minute = match[2] ? parseInt(match[2]) : 0
+      
+      // Valida hora (0-23)
+      if (hour >= 0 && hour <= 23 && minute >= 0 && minute < 60) {
+        requestedTime = { hour, minute }
+        console.log(`🕐 [processAppointmentConfirmation] Horário detectado na mensagem: ${hour}:${minute.toString().padStart(2, '0')}`)
+        break
+      }
+    }
+  }
+  
+  // Se detectou um novo horário, atualiza o agendamento pendente
+  if (requestedTime) {
+    console.log(`🔄 [processAppointmentConfirmation] Usuário quer mudar horário para ${requestedTime.hour}:${requestedTime.minute.toString().padStart(2, '0')}`)
+    
+    // Atualiza o agendamento pendente com o novo horário
+    const { storePendingAppointment } = await import('./pending-appointments')
+    const newTime = `${requestedTime.hour.toString().padStart(2, '0')}:${requestedTime.minute.toString().padStart(2, '0')}`
+    
+    await storePendingAppointment(instanceId, normalizedContactNumber, {
+      date: pendingAppointment.date,
+      time: newTime,
+      duration: pendingAppointment.duration,
+      service: pendingAppointment.service,
+      description: pendingAppointment.description,
+    }, userId)
+    
+    console.log(`✅ [processAppointmentConfirmation] Agendamento pendente atualizado para ${newTime}`)
+    
+    // Mostra o novo agendamento atualizado
+    let updatedMessage = `✅ Horário atualizado!\n\n📅 Data: ${pendingAppointment.date}\n🕐 Hora: ${newTime}`
+    if (pendingAppointment.duration) {
+      updatedMessage += `\n⏱️ Duração: ${pendingAppointment.duration} minutos`
+    }
+    updatedMessage += `\n🛠️ Serviço: ${pendingAppointment.service}\n\nDigite "confirmar" para confirmar ou "cancelar" para cancelar.`
+    
+    const contactKey = `${instanceId}-${contactNumber}`
+    await queueMessage(contactKey, async () => {
+      await sendWhatsAppMessage(instanceId, contactNumber, updatedMessage, 'service')
+    })
+    
+    return true // Processou mudança de horário, não deve chamar IA
   }
 
   // Se há agendamento pendente mas não confirmou nem cancelou, relembra
@@ -3320,6 +3392,47 @@ export async function executeAIOnlyWorkflow(
                 conflictMessage = `❌ Este horário não está disponível!\n\nJá existe um agendamento pendente de confirmação para este horário.\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis usando "quais horários estão disponíveis?".`
               }
 
+              // Busca horários próximos (3 antes e 3 depois) do solicitado
+              try {
+                const { getAvailableTimesNear } = await import('./appointments')
+                const { getUserWorkingHours } = await import('./user-working-hours')
+                const workingHours = await getUserWorkingHours(userId)
+                
+                const nearbyTimes = await getAvailableTimesNear(
+                  userId,
+                  appointmentDateUTC,
+                  serviceDuration,
+                  instanceId,
+                  workingHours
+                )
+                
+                if (nearbyTimes && nearbyTimes.length > 0) {
+                  const suggestionsText = nearbyTimes.map((t: string) => `• ${t}`).join('\n')
+                  conflictMessage += `\n\n💡 Horários disponíveis próximos:\n${suggestionsText}`
+                } else {
+                  // Se não encontrou próximos, busca qualquer horário disponível
+                  const { getAvailableTimes } = await import('./appointments')
+                  const availableTimesResult = await getAvailableTimes(
+                    userId,
+                    appointmentDateUTC,
+                    serviceDuration,
+                    undefined,
+                    undefined,
+                    instanceId,
+                    workingHours
+                  )
+                  
+                  if (availableTimesResult.success && availableTimesResult.availableTimes && availableTimesResult.availableTimes.length > 0) {
+                    const suggestions = availableTimesResult.availableTimes.slice(0, 6)
+                    const suggestionsText = suggestions.map(t => `• ${t}`).join('\n')
+                    conflictMessage += `\n\n💡 Horários disponíveis no mesmo dia:\n${suggestionsText}`
+                  }
+                }
+              } catch (error) {
+                console.error('Erro ao buscar horários alternativos:', error)
+                // Continua mesmo se houver erro ao buscar horários alternativos
+              }
+
               return {
                 success: false,
                 error: conflictMessage,
@@ -3327,14 +3440,113 @@ export async function executeAIOnlyWorkflow(
               }
             }
           } else if (pendingConflict) {
+            let conflictMessage = `❌ Este horário não está disponível!\n\nJá existe um agendamento pendente de confirmação para este horário.\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis usando "quais horários estão disponíveis?".`
+            
+            // Busca horários próximos (3 antes e 3 depois) do solicitado
+            try {
+              const { getAvailableTimesNear } = await import('./appointments')
+              const { getUserWorkingHours } = await import('./user-working-hours')
+              const workingHours = await getUserWorkingHours(userId)
+              
+              const nearbyTimes = await getAvailableTimesNear(
+                userId,
+                appointmentDateUTC,
+                serviceDuration,
+                instanceId,
+                workingHours
+              )
+              
+              if (nearbyTimes && nearbyTimes.length > 0) {
+                const suggestionsText = nearbyTimes.map(t => `• ${t}`).join('\n')
+                conflictMessage += `\n\n💡 Horários disponíveis próximos:\n${suggestionsText}`
+              } else {
+                // Se não encontrou próximos, busca qualquer horário disponível
+                const { getAvailableTimes } = await import('./appointments')
+                const availableTimesResult = await getAvailableTimes(
+                  userId,
+                  appointmentDateUTC,
+                  serviceDuration,
+                  undefined,
+                  undefined,
+                  instanceId,
+                  workingHours
+                )
+                
+                if (availableTimesResult.success && availableTimesResult.availableTimes && availableTimesResult.availableTimes.length > 0) {
+                  const suggestions = availableTimesResult.availableTimes.slice(0, 6)
+                  const suggestionsText = suggestions.map(t => `• ${t}`).join('\n')
+                  conflictMessage += `\n\n💡 Horários disponíveis no mesmo dia:\n${suggestionsText}`
+                }
+              }
+            } catch (error) {
+              console.error('Erro ao buscar horários alternativos:', error)
+              // Continua mesmo se houver erro ao buscar horários alternativos
+            }
+
             return {
               success: false,
-              error: `❌ Este horário não está disponível!\n\nJá existe um agendamento pendente de confirmação para este horário.\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis usando "quais horários estão disponíveis?".`,
-              message: `❌ Este horário não está disponível!\n\nJá existe um agendamento pendente de confirmação para este horário.\n\nPor favor, escolha outro horário ou pergunte quais horários estão disponíveis usando "quais horários estão disponíveis?".`,
+              error: conflictMessage,
+              message: conflictMessage,
             }
           }
 
-          console.log(`✅ [handleFunctionCall] Horário disponível! Prosseguindo com criação do agendamento pendente.`)
+          // CRÍTICO: Valida horário de funcionamento ANTES de criar agendamento pendente
+          const { getUserWorkingHours } = await import('./user-working-hours')
+          const { canFitAppointment } = await import('./working-hours')
+          const workingHours = await getUserWorkingHours(userId)
+          
+          if (workingHours) {
+            const validation = canFitAppointment(appointmentDateUTC, serviceDuration, workingHours)
+            if (!validation.valid) {
+              console.warn('⚠️ [handleFunctionCall] Horário fora do horário de funcionamento:', validation.reason)
+              
+              // Busca horários próximos (3 antes e 3 depois) do solicitado
+              let errorMessage = validation.reason || 'Horário fora do horário de funcionamento'
+              try {
+                const { getAvailableTimesNear } = await import('./appointments')
+                const nearbyTimes = await getAvailableTimesNear(
+                  userId,
+                  appointmentDateUTC,
+                  serviceDuration,
+                  instanceId,
+                  workingHours
+                )
+                
+                if (nearbyTimes && nearbyTimes.length > 0) {
+                  const suggestionsText = nearbyTimes.map((t: string) => `• ${t}`).join('\n')
+                  errorMessage += `\n\n💡 Horários disponíveis próximos:\n${suggestionsText}`
+                } else {
+                  // Se não encontrou próximos, busca qualquer horário disponível
+                  const { getAvailableTimes } = await import('./appointments')
+                  const availableTimesResult = await getAvailableTimes(
+                    userId,
+                    appointmentDateUTC,
+                    serviceDuration,
+                    undefined,
+                    undefined,
+                    instanceId,
+                    workingHours
+                  )
+                  
+                  if (availableTimesResult.success && availableTimesResult.availableTimes && availableTimesResult.availableTimes.length > 0) {
+                    const suggestions = availableTimesResult.availableTimes.slice(0, 6)
+                    const suggestionsText = suggestions.map(t => `• ${t}`).join('\n')
+                    errorMessage += `\n\n💡 Horários disponíveis no mesmo dia:\n${suggestionsText}`
+                  }
+                }
+              } catch (error) {
+                console.error('Erro ao buscar horários alternativos:', error)
+              }
+              
+              return {
+                success: false,
+                error: errorMessage,
+                message: errorMessage,
+              }
+            }
+          }
+          
+          console.log(`✅ [handleFunctionCall] Horário disponível e válido! Prosseguindo com criação do agendamento pendente.`)
 
           // Armazena temporariamente o agendamento pendente
           console.log(`📅📅📅 [handleFunctionCall] ========== CRIANDO AGENDAMENTO PENDENTE ==========`)

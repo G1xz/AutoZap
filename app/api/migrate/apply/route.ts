@@ -58,15 +58,18 @@ export async function GET(request: NextRequest) {
       results.push('ℹ️ Coluna Workflow.aiBusinessDetails já existe')
     }
 
-    // 2. Migration para User (slotConfig)
+    // 2. Migration para User (slotConfig e workingHoursConfig)
     const checkUserColumns = await prisma.$queryRawUnsafe(`
       SELECT column_name 
       FROM information_schema.columns 
       WHERE table_name = 'User' 
-      AND column_name = 'slotConfig';
+      AND column_name IN ('slotConfig', 'workingHoursConfig');
     `) as Array<{ column_name: string }>
 
-    if (checkUserColumns.length === 0) {
+    const existingUserColumns = checkUserColumns.map(c => c.column_name)
+
+    // Adiciona slotConfig se não existir
+    if (!existingUserColumns.includes('slotConfig')) {
       try {
         await prisma.$executeRawUnsafe(`
           ALTER TABLE "User" 
@@ -80,12 +83,27 @@ export async function GET(request: NextRequest) {
       results.push('ℹ️ Coluna User.slotConfig já existe')
     }
 
+    // Adiciona workingHoursConfig se não existir
+    if (!existingUserColumns.includes('workingHoursConfig')) {
+      try {
+        await prisma.$executeRawUnsafe(`
+          ALTER TABLE "User" 
+          ADD COLUMN "workingHoursConfig" TEXT;
+        `)
+        results.push('✅ Coluna User.workingHoursConfig criada com sucesso')
+      } catch (error: any) {
+        results.push(`❌ Erro ao criar workingHoursConfig: ${error.message}`)
+      }
+    } else {
+      results.push('ℹ️ Coluna User.workingHoursConfig já existe')
+    }
+
     // Verifica novamente todas as colunas
     const finalCheck = await prisma.$queryRawUnsafe(`
       SELECT table_name, column_name, data_type, is_nullable, column_default
       FROM information_schema.columns 
       WHERE (table_name = 'Workflow' AND column_name IN ('isAIOnly', 'aiBusinessDetails'))
-         OR (table_name = 'User' AND column_name = 'slotConfig')
+         OR (table_name = 'User' AND column_name IN ('slotConfig', 'workingHoursConfig'))
       ORDER BY table_name, column_name;
     `) as Array<{ table_name: string; column_name: string; data_type: string; is_nullable: string; column_default: string | null }>
 

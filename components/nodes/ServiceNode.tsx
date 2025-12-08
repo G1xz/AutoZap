@@ -42,8 +42,56 @@ export default function ServiceNode(props: NodeProps) {
   const [imageUrl, setImageUrl] = useState(nodeData.imageUrl || '')
   const [requiresAppointment, setRequiresAppointment] = useState(nodeData.requiresAppointment || false)
   const [appointmentDuration, setAppointmentDuration] = useState(nodeData.appointmentDuration?.toString() || '')
+  const [slotSize, setSlotSize] = useState(15) // Tamanho do slot padrão
+  const [showCustomDuration, setShowCustomDuration] = useState(false) // SEMPRE começa como false para mostrar o select
+  const [customDuration, setCustomDuration] = useState('')
   const [uploading, setUploading] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Busca configuração de slot do usuário
+  useEffect(() => {
+    const fetchSlotConfig = async () => {
+      try {
+        const response = await fetch('/api/slot-config')
+        if (response.ok) {
+          const data = await response.json()
+          if (data.slotConfig?.slotSizeMinutes) {
+            setSlotSize(data.slotConfig.slotSizeMinutes)
+          }
+        }
+      } catch (error) {
+        console.error('Erro ao buscar configuração de slot:', error)
+      }
+    }
+    fetchSlotConfig()
+  }, [])
+
+  // Verifica se a duração salva precisa ser mostrada como personalizada
+  useEffect(() => {
+    const savedDuration = nodeData.appointmentDuration?.toString() || ''
+    if (savedDuration && slotSize > 0) {
+      const duration = Number(savedDuration)
+      // Só mostra como personalizado se:
+      // 1. A duração é maior que 120 min (fora das opções padrão)
+      // 2. OU não é múltiplo do slot (incompatível)
+      if (duration > 120 || duration % slotSize !== 0) {
+        setShowCustomDuration(true)
+        setCustomDuration(savedDuration)
+      } else {
+        // Se está nas opções padrão (até 120 min e múltiplo do slot), mostra no select
+        setShowCustomDuration(false)
+        setCustomDuration('')
+        // Garante que o appointmentDuration está setado para aparecer no select
+        if (appointmentDuration !== savedDuration) {
+          setAppointmentDuration(savedDuration)
+        }
+      }
+    } else {
+      // Se não há duração salva, garante que está no modo select
+      setShowCustomDuration(false)
+      setCustomDuration('')
+    }
+  }, [nodeData.appointmentDuration, slotSize])
   
   // Promoções dinâmicas
   const [hasPromotions, setHasPromotions] = useState(nodeData.hasPromotions || false)
@@ -272,16 +320,204 @@ export default function ServiceNode(props: NodeProps) {
             {requiresAppointment && (
               <div>
                 <label className="text-xs font-semibold text-white block mb-1">
-                  Duração do agendamento (minutos):
+                  Duração do agendamento:
                 </label>
-                <input
-                  type="number"
-                  min="1"
-                  value={appointmentDuration}
-                  onChange={(e) => setAppointmentDuration(e.target.value)}
-                  placeholder="Ex: 30, 60, 90..."
-                  className="w-full px-2 py-1 text-xs bg-white/90 rounded border border-gray-300 text-gray-800"
-                />
+                {showCustomDuration ? (
+                  <div className="space-y-2">
+                    <input
+                      type="number"
+                      min={slotSize}
+                      step={slotSize}
+                      value={customDuration}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        if (value === '') {
+                          setCustomDuration('')
+                          return
+                        }
+                        const numValue = Number(value)
+                        // Valida que é múltiplo do slot
+                        if (numValue % slotSize === 0) {
+                          setCustomDuration(value)
+                          setAppointmentDuration(value)
+                        } else {
+                          // Arredonda para o próximo múltiplo
+                          const rounded = Math.ceil(numValue / slotSize) * slotSize
+                          setCustomDuration(rounded.toString())
+                          setAppointmentDuration(rounded.toString())
+                          toast({
+                            title: 'Duração ajustada',
+                            description: `A duração foi ajustada para ${rounded} minutos (múltiplo de ${slotSize} minutos)`,
+                            variant: 'default',
+                          })
+                        }
+                      }}
+                      placeholder={`Múltiplo de ${slotSize} minutos`}
+                      className="w-full px-2 py-1 text-xs bg-white/90 rounded border border-gray-300 text-gray-800"
+                    />
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => {
+                          setShowCustomDuration(false)
+                          // Se havia uma duração salva que está nas opções, mantém ela
+                          // Se não, volta para vazio
+                          if (appointmentDuration) {
+                            const duration = Number(appointmentDuration)
+                            // Verifica se está nas opções padrão (até 120 min e múltiplo do slot)
+                            if (duration <= 120 && duration % slotSize === 0) {
+                              // Mantém o valor
+                            } else {
+                              // Se não está nas opções, limpa
+                              setAppointmentDuration('')
+                            }
+                          }
+                          setCustomDuration('')
+                        }}
+                        className="px-2 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (customDuration) {
+                            const numValue = Number(customDuration)
+                            if (numValue > 0 && numValue % slotSize === 0) {
+                              setAppointmentDuration(customDuration)
+                              setShowCustomDuration(false)
+                            } else {
+                              // Arredonda para o próximo múltiplo válido
+                              const rounded = Math.ceil(numValue / slotSize) * slotSize
+                              setCustomDuration(rounded.toString())
+                              setAppointmentDuration(rounded.toString())
+                              setShowCustomDuration(false)
+                              toast({
+                                title: 'Duração ajustada',
+                                description: `A duração foi ajustada para ${rounded} minutos (múltiplo de ${slotSize} minutos)`,
+                                variant: 'default',
+                              })
+                            }
+                          } else {
+                            setShowCustomDuration(false)
+                          }
+                        }}
+                        className="px-2 py-1 text-xs bg-autozap-primary text-white rounded hover:bg-autozap-light"
+                      >
+                        Confirmar
+                      </button>
+                    </div>
+                    <p className="text-xs text-gray-300">
+                      Deve ser múltiplo de {slotSize} minutos (ex: {slotSize}, {slotSize * 2}, {slotSize * 3}, {slotSize * 4}...)
+                    </p>
+                  </div>
+                ) : slotSize > 0 ? (
+                  <>
+                    <select
+                      value={appointmentDuration || ''}
+                      onChange={(e) => {
+                        const value = e.target.value
+                        if (value === 'custom') {
+                          setShowCustomDuration(true)
+                          setCustomDuration(appointmentDuration || '')
+                        } else {
+                          setAppointmentDuration(value)
+                          setShowCustomDuration(false)
+                        }
+                      }}
+                      className="w-full px-2 py-1 text-xs bg-white/90 rounded border border-gray-300 text-gray-800"
+                    >
+                      <option value="">Selecione...</option>
+                      {(() => {
+                        const options: Array<{ duration: number; label: string }> = []
+                        const currentDuration = Number(appointmentDuration || 0)
+                        
+                        // Primeiras 4 opções sempre aparecem
+                        for (let i = 1; i <= 4; i++) {
+                          const duration = slotSize * i
+                          let label = ''
+                          
+                          if (duration === 15) {
+                            label = '15 minutos'
+                          } else if (duration === 30) {
+                            label = 'Meia hora (30 minutos)'
+                          } else if (duration === 45) {
+                            label = '45 minutos'
+                          } else if (duration === 60) {
+                            label = 'Uma hora (60 minutos)'
+                          } else if (duration < 60) {
+                            label = `${duration} minutos`
+                          } else {
+                            const hours = Math.floor(duration / 60)
+                            const minutes = duration % 60
+                            if (minutes === 0) {
+                              label = `${hours} ${hours === 1 ? 'hora' : 'horas'} (${duration} minutos)`
+                            } else {
+                              label = `${hours}h ${minutes}min (${duration} minutos)`
+                            }
+                          }
+                          
+                          options.push({ duration, label })
+                        }
+                        
+                        // Adiciona mais opções até 2 horas (120 minutos)
+                        let multiplier = 5
+                        while (slotSize * multiplier <= 120) {
+                          const duration = slotSize * multiplier
+                          const hours = Math.floor(duration / 60)
+                          const minutes = duration % 60
+                          
+                          let label = ''
+                          if (duration === 60) {
+                            label = 'Uma hora (60 minutos)'
+                          } else if (duration === 90) {
+                            label = '1h 30min (90 minutos)'
+                          } else if (duration === 120) {
+                            label = 'Duas horas (120 minutos)'
+                          } else if (hours > 0) {
+                            label = minutes === 0 
+                              ? `${hours} ${hours === 1 ? 'hora' : 'horas'} (${duration} minutos)`
+                              : `${hours}h ${minutes}min (${duration} minutos)`
+                          } else {
+                            label = `${duration} minutos`
+                          }
+                          
+                          // Evita duplicatas
+                          if (!options.find(opt => opt.duration === duration)) {
+                            options.push({ duration, label })
+                          }
+                          multiplier++
+                        }
+                        
+                        // Se há uma duração salva que não está nas opções padrão, adiciona ela também
+                        if (currentDuration > 0 && currentDuration % slotSize === 0 && !options.find(opt => opt.duration === currentDuration)) {
+                          const hours = Math.floor(currentDuration / 60)
+                          const minutes = currentDuration % 60
+                          let label = ''
+                          if (hours > 0) {
+                            label = minutes === 0 
+                              ? `${hours} ${hours === 1 ? 'hora' : 'horas'} (${currentDuration} minutos)`
+                              : `${hours}h ${minutes}min (${currentDuration} minutos)`
+                          } else {
+                            label = `${currentDuration} minutos`
+                          }
+                          options.push({ duration: currentDuration, label })
+                          options.sort((a, b) => a.duration - b.duration)
+                        }
+                        
+                        return options.map(opt => (
+                          <option key={opt.duration} value={opt.duration.toString()}>
+                            {opt.label}
+                          </option>
+                        ))
+                      })()}
+                      <option value="custom">Personalizado...</option>
+                    </select>
+                    <p className="text-xs text-gray-300 mt-1">
+                      Opções baseadas no slot de {slotSize} minutos
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-xs text-gray-300">Carregando opções...</p>
+                )}
               </div>
             )}
           </div>
