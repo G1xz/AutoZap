@@ -52,9 +52,15 @@ export async function getUserSlotConfig(userId: string): Promise<SlotConfig> {
       }
     }
   } catch (error: any) {
-    // Se o erro for porque o campo não existe (PrismaClientValidationError), retorna padrão
-    if (error?.name === 'PrismaClientValidationError' || error?.message?.includes('Unknown arg')) {
-      console.warn('⚠️ Campo slotConfig não existe ainda no schema. Usando valores padrão.')
+    // Se o erro for porque o campo não existe no banco de dados (P2022), retorna padrão
+    if (
+      error?.code === 'P2022' || 
+      error?.name === 'PrismaClientValidationError' || 
+      error?.message?.includes('Unknown arg') ||
+      error?.message?.includes('does not exist') ||
+      error?.message?.includes('slotConfig')
+    ) {
+      console.warn('⚠️ Campo slotConfig não existe ainda no banco de dados. Usando valores padrão.')
       return {
         slotSizeMinutes: 15,
         bufferMinutes: 0,
