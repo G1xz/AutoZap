@@ -1073,3 +1073,5 @@ Cliente recebe mensagem
 **Versão do sistema:** Atual (com todas as melhorias implementadas)
 
 
+
+

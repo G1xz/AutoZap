@@ -1259,9 +1259,108 @@ export async function processAppointmentConfirmation(
 
     // Converte a data formatada de volta para Date
     const [day, month, year] = pendingAppointment.date.split('/').map(Number)
-    const [hour, minute] = pendingAppointment.time.split(':').map(Number)
+    let [hour, minute] = pendingAppointment.time.split(':').map(Number)
 
     console.log(`📅 Convertendo dados: ${day}/${month}/${year} às ${hour}:${minute}`)
+    
+    // CRÍTICO: Tenta corrigir a hora se parecer errada
+    // Busca a última mensagem do usuário antes do agendamento pendente ser criado
+    // para verificar se há uma discrepância (ex: "1 da tarde" mas hora é 12:00)
+    try {
+      const { prisma } = await import('./prisma')
+      
+      // CRÍTICO: Busca mensagens do contato nos últimos 10 minutos (mais amplo)
+      // Tenta múltiplos formatos do número para garantir que encontra
+      const searchNumbers = [
+        normalizedContactNumber,
+        normalizedContactNumber.replace(/^55/, ''), // Sem código do país
+        `55${normalizedContactNumber.replace(/^55/, '')}`, // Com código do país
+      ]
+      
+      console.log(`🔍 [processAppointmentConfirmation] Buscando mensagem original para correção de hora`)
+      console.log(`   Números a buscar:`, searchNumbers)
+      console.log(`   instanceId: ${instanceId}`)
+      
+      // Busca a mensagem mais recente do contato que contenha palavras relacionadas a agendamento
+      const recentMessage = await prisma.message.findFirst({
+        where: {
+          instanceId,
+          from: {
+            in: searchNumbers,
+          },
+          isFromMe: false, // Mensagem recebida (não enviada por nós)
+          body: {
+            contains: 'agendar', // Filtra apenas mensagens sobre agendamento
+          },
+          createdAt: {
+            gte: new Date(Date.now() - 10 * 60 * 1000), // Últimos 10 minutos (mais amplo)
+          },
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+        select: {
+          body: true,
+          createdAt: true,
+        },
+      })
+      
+      console.log(`🔍 [processAppointmentConfirmation] Mensagem encontrada:`, recentMessage ? `"${recentMessage.body.substring(0, 50)}..."` : 'NÃO ENCONTRADA')
+      
+      if (recentMessage?.body) {
+        const messageLower = recentMessage.body.toLowerCase()
+        console.log(`🔍 [processAppointmentConfirmation] Buscando correção de hora na mensagem: "${messageLower}"`)
+        
+        // Procura por padrões de hora na mensagem original
+        const tardeMatch = messageLower.match(/(\d{1,2})\s*(?:da\s*)?tarde/i)
+        const noiteMatch = messageLower.match(/(\d{1,2})\s*(?:da\s*)?noite/i)
+        const manhaMatch = messageLower.match(/(\d{1,2})\s*(?:da\s*)?(?:manhã|manha)/i)
+        
+        console.log(`🔍 [processAppointmentConfirmation] Padrões encontrados:`)
+        console.log(`   "tarde":`, tardeMatch ? `"${tardeMatch[0]}" (hora: ${tardeMatch[1]})` : 'NÃO')
+        console.log(`   "noite":`, noiteMatch ? `"${noiteMatch[0]}" (hora: ${noiteMatch[1]})` : 'NÃO')
+        console.log(`   "manhã":`, manhaMatch ? `"${manhaMatch[0]}" (hora: ${manhaMatch[1]})` : 'NÃO')
+        
+        if (tardeMatch) {
+          const requestedHour = parseInt(tardeMatch[1])
+          const expectedHour = requestedHour >= 1 && requestedHour <= 11 ? requestedHour + 12 : requestedHour
+          console.log(`🔍 [processAppointmentConfirmation] Comparando: hora atual=${hour}, esperada=${expectedHour}`)
+          if (hour !== expectedHour) {
+            console.log(`🔧 [processAppointmentConfirmation] ✅✅✅ CORREÇÃO APLICADA: Hora do agendamento pendente (${hour}:${minute}) não corresponde à mensagem original ("${requestedHour} da tarde" = ${expectedHour}:00)`)
+            hour = expectedHour
+            minute = 0
+            console.log(`🔧 [processAppointmentConfirmation] ✅ Hora corrigida para: ${hour}:${minute.toString().padStart(2, '0')}`)
+          } else {
+            console.log(`✅ [processAppointmentConfirmation] Hora já está correta: ${hour}:${minute.toString().padStart(2, '0')}`)
+          }
+        } else if (noiteMatch) {
+          const requestedHour = parseInt(noiteMatch[1])
+          const expectedHour = requestedHour >= 1 && requestedHour <= 11 ? requestedHour + 12 : requestedHour
+          if (hour !== expectedHour) {
+            console.log(`🔧 [processAppointmentConfirmation] ✅✅✅ CORREÇÃO APLICADA: Hora do agendamento pendente (${hour}:${minute}) não corresponde à mensagem original ("${requestedHour} da noite" = ${expectedHour}:00)`)
+            hour = expectedHour
+            minute = 0
+            console.log(`🔧 [processAppointmentConfirmation] ✅ Hora corrigida para: ${hour}:${minute.toString().padStart(2, '0')}`)
+          }
+        } else if (manhaMatch) {
+          const requestedHour = parseInt(manhaMatch[1])
+          if (hour !== requestedHour) {
+            console.log(`🔧 [processAppointmentConfirmation] ✅✅✅ CORREÇÃO APLICADA: Hora do agendamento pendente (${hour}:${minute}) não corresponde à mensagem original ("${requestedHour} da manhã" = ${requestedHour}:00)`)
+            hour = requestedHour
+            minute = 0
+            console.log(`🔧 [processAppointmentConfirmation] ✅ Hora corrigida para: ${hour}:${minute.toString().padStart(2, '0')}`)
+          }
+        } else {
+          console.log(`⚠️ [processAppointmentConfirmation] Nenhum padrão de hora encontrado na mensagem original`)
+        }
+      } else {
+        console.log(`⚠️ [processAppointmentConfirmation] Mensagem original não encontrada ou sem body`)
+      }
+    } catch (error: any) {
+      console.error(`⚠️ [processAppointmentConfirmation] Erro ao buscar mensagem original para correção:`, error?.message || error)
+      console.error(`⚠️ [processAppointmentConfirmation] Stack:`, error?.stack)
+      // Continua com a hora do agendamento pendente mesmo se houver erro
+    }
 
     // Função auxiliar para criar data UTC no fuso do Brasil
     const createBrazilianDateAsUTC = (year: number, month: number, day: number, hour: number, minute: number): Date => {
@@ -1662,26 +1761,48 @@ export async function executeAIOnlyWorkflow(
       const userMessageLower = userMessage.toLowerCase().trim()
       const isSimpleYes = userMessageLower === 'sim' || userMessageLower === 'ok' || userMessageLower === 's'
       
+      // CRÍTICO: Detecta se a mensagem é explicitamente sobre AGENDAMENTO
+      // Se for, SEMPRE processa agendamento, mesmo que haja itens no carrinho
+      const isExplicitlyAboutAppointment = 
+        userMessageLower.includes('agendar') ||
+        userMessageLower.includes('agendamento') ||
+        userMessageLower.includes('marcar') ||
+        userMessageLower.includes('horário') ||
+        userMessageLower.includes('horario') ||
+        userMessageLower.includes('consulta') ||
+        userMessageLower.includes('serviço') ||
+        userMessageLower.includes('servico') ||
+        userMessageLower.includes('confronto') ||
+        userMessageLower.includes('abismo') ||
+        userMessageLower.includes('análise') ||
+        userMessageLower.includes('analise')
+      
+      // Define isCartContext ANTES de usar (fora dos blocos condicionais)
+      const isCartContext = !isExplicitlyAboutAppointment && hasCartItems && (
+        isDeliveryTypeResponse ||
+        looksLikeAddress ||
+        (aiJustAskedForAddress && looksLikeAddress) ||
+        userMessageLower.includes('confirmar') ||
+        userMessageLower.includes('finalizar') ||
+        userMessageLower.includes('fechar pedido') ||
+        userMessageLower.includes('completar pedido') ||
+        userMessageLower.includes('concluir compra')
+      )
+      
       // CRÍTICO: Se não há agendamento pendente e a mensagem é apenas "sim"/"ok",
       // NÃO processa como agendamento - deixa a IA processar (pode ser adicionar produto)
       if (isSimpleYes && !hasPendingAppointment) {
         console.log(`🛒 [executeAIOnlyWorkflow] "Sim" sem agendamento pendente - deixando IA processar (pode ser adicionar produto)`)
         // Não processa agendamento, deixa a IA processar normalmente
       } else {
-        // Só verifica agendamento se houver agendamento pendente ou se a mensagem não for apenas "sim"
-        // CRÍTICO: Se há itens no carrinho E a mensagem parece ser um endereço, SEMPRE é contexto de carrinho
-        const isCartContext = hasCartItems && (
-          isDeliveryTypeResponse ||
-          looksLikeAddress ||
-          (aiJustAskedForAddress && looksLikeAddress) ||
-          userMessageLower.includes('confirmar') ||
-          userMessageLower.includes('finalizar') ||
-          userMessageLower.includes('fechar pedido') ||
-          userMessageLower.includes('completar pedido') ||
-          userMessageLower.includes('concluir compra')
-        )
-        
-        if (isCartContext) {
+        // CRÍTICO: Se a mensagem é explicitamente sobre agendamento, SEMPRE processa agendamento
+        // mesmo que haja itens no carrinho - não pula verificação
+        if (isExplicitlyAboutAppointment) {
+          console.log(`📅 [executeAIOnlyWorkflow] Mensagem é sobre AGENDAMENTO, processando agendamento (ignorando contexto de carrinho)`)
+          console.log(`   Mensagem: "${userMessage}"`)
+          console.log(`   Itens no carrinho: ${cart.items.length} (será ignorado)`)
+          // Continua processando agendamento normalmente abaixo
+        } else if (isCartContext) {
           console.log(`🛒 [executeAIOnlyWorkflow] ⚠️ Contexto é de CARRINHO, pulando verificação de agendamento`)
           console.log(`   Mensagem: "${userMessage}"`)
           console.log(`   Itens no carrinho: ${cart.items.length}`)
@@ -1691,6 +1812,10 @@ export async function executeAIOnlyWorkflow(
         } else if (hasPendingAppointment) {
           // Só processa agendamento se houver agendamento pendente
           console.log(`🔍 [executeAIOnlyWorkflow] Há agendamento pendente, verificando confirmação...`)
+        }
+        
+        // Processa agendamento se não foi contexto de carrinho OU se é explicitamente sobre agendamento
+        if (!isCartContext || isExplicitlyAboutAppointment) {
 
     // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
     // Se processou algo, retorna imediatamente SEM chamar a IA
@@ -1830,13 +1955,28 @@ export async function executeAIOnlyWorkflow(
       console.log(`   [${i + 1}] ${msg.isFromMe ? 'IA' : 'Usuário'}: ${msg.body.substring(0, 50)}...`)
     })
 
+    // CRÍTICO: Se a mensagem atual é uma solicitação explícita de agendamento,
+    // limita o histórico para evitar que mensagens anteriores confundam a IA
+    const isExplicitAppointmentRequest = 
+      userMessageLower.includes('agendar') ||
+      userMessageLower.includes('marcar') ||
+      userMessageLower.includes('horário') ||
+      userMessageLower.includes('horario')
+    
     // Converte mensagens para formato de histórico
-    const conversationHistory = recentMessages
+    let conversationHistory = recentMessages
       .reverse() // Inverte para ordem cronológica
       .map((msg) => ({
         role: msg.isFromMe ? 'assistant' : 'user' as 'user' | 'assistant',
         content: msg.body,
       }))
+    
+    // Se é solicitação explícita de agendamento, limita histórico para evitar confusão
+    if (isExplicitAppointmentRequest && conversationHistory.length > 5) {
+      console.log(`📅 [executeAIOnlyWorkflow] Solicitação explícita de agendamento detectada, limitando histórico de ${conversationHistory.length} para 5 mensagens`)
+      // Mantém apenas as últimas 5 mensagens (incluindo a atual)
+      conversationHistory = conversationHistory.slice(-5)
+    }
 
     // Parse dos detalhes do negócio
     let businessDetails: any = {}
@@ -2206,7 +2346,7 @@ export async function executeAIOnlyWorkflow(
     // Função principal: criar agendamento
     const appointmentFunction = {
       name: 'create_appointment',
-      description: 'Cria um agendamento na agenda quando o cliente quer marcar um horário. Use esta função APENAS quando você tiver coletado tanto a DATA quanto a HORA do cliente. A função verifica automaticamente se o horário está disponível antes de criar.',
+      description: '⚠️⚠️⚠️⚠️⚠️ CRÍTICO ABSOLUTO - LEIA COM ATENÇÃO: Cria um agendamento na agenda quando o cliente quer marcar um horário. ⚠️⚠️⚠️ REGRA DE OURO: Quando o cliente pedir para agendar e você tiver DATA E HORA, você DEVE CHAMAR ESTA FUNÇÃO IMEDIATAMENTE, SEM EXCEÇÃO! ⚠️⚠️⚠️ IGNORE mensagens anteriores onde você perguntou "qual serviço?" - Se o cliente mencionou um serviço na MENSAGEM ATUAL, use esse serviço! ⚠️⚠️⚠️ NUNCA responda apenas com texto pedindo confirmação - SEMPRE chame a função primeiro! ⚠️⚠️⚠️ SE VOCÊ NÃO CHAMAR ESTA FUNÇÃO, O AGENDAMENTO NÃO SERÁ CRIADO E O CLIENTE FICARÁ CONFUSO! MAPEAMENTO DE SERVIÇOS: Se o cliente disser "confronto" ou "um confronto", mapeie para "Confronto Abissal". Se disser "abismo", mapeie para "Abismo Espiral". Se disser "análise" ou "analise", mapeie para "Análise de Conta". Use o nome COMPLETO do serviço na descrição. EXEMPLOS OBRIGATÓRIOS: Cliente: "agendar um confronto para amanhã meio dia" → VOCÊ DEVE CHAMAR IMEDIATAMENTE: create_appointment(date: "amanhã", time: "12:00", description: "Confronto Abissal"). Cliente: "quero marcar para terça às 14h" → VOCÊ DEVE CHAMAR IMEDIATAMENTE: create_appointment(date: "terça-feira", time: "14:00", description: "serviço solicitado"). ⚠️⚠️⚠️ SE O CLIENTE DISSER "AGENDAR" E VOCÊ TIVER DATA E HORA, CHAME A FUNÇÃO AGORA! NÃO PERGUNTE QUAL SERVIÇO - USE O QUE O CLIENTE MENCIONOU NA MENSAGEM ATUAL OU "serviço solicitado"! NÃO PEÇA CONFIRMAÇÃO ANTES - CHAME A FUNÇÃO E ELA VAI PEDIR CONFIRMAÇÃO! A função aceita linguagem natural para data (ex: "amanhã", "próxima segunda") e converte automaticamente. A função verifica automaticamente se o horário está disponível antes de criar.',
       parameters: {
         type: 'object',
         properties: {
@@ -2216,7 +2356,7 @@ export async function executeAIOnlyWorkflow(
           },
           time: {
             type: 'string',
-            description: 'Hora do agendamento no formato HH:MM em horário de 24 horas (ex: "14:00", "16:00", "19:00"). Se o cliente disser "4 da tarde", converta para "16:00". Se disser "7 da manhã", converta para "07:00". Se disser "9 da noite", converta para "21:00". Se não especificar hora, use "14:00" como padrão.',
+            description: 'Hora do agendamento no formato HH:MM em horário de 24 horas (ex: "14:00", "16:00", "19:00"). ⚠️ CRÍTICO - CONVERSÃO DE HORAS: "2 da tarde" = "14:00" (NÃO "12:00"!), "3 da tarde" = "15:00", "4 da tarde" = "16:00", "5 da tarde" = "17:00". "7 da manhã" = "07:00", "9 da noite" = "21:00". "meio dia" ou "meio-dia" = "12:00". Se o cliente disser apenas um número sem especificar manhã/tarde/noite e for < 12, assuma TARDE (ex: "às 4" = "16:00"). Se não especificar hora, use "14:00" como padrão.',
           },
           description: {
             type: 'string',
@@ -2542,51 +2682,273 @@ export async function executeAIOnlyWorkflow(
             }
           }
 
+          // CRÍTICO: Validação e correção de hora baseada na mensagem original do cliente
+          // Se o cliente disse "2 da tarde" mas a IA enviou "12:00", corrige para "14:00"
+          console.log(`🔍 [handleFunctionCall] Verificando correção de hora:`)
+          console.log(`   Mensagem original: "${userMessage}"`)
+          console.log(`   Hora parseada pela IA: "${args.time}" → ${hour}:${minute}`)
+          
+          if (userMessage) {
+            const userMessageLower = userMessage.toLowerCase()
+            
+            // Procura por padrões como "2 da tarde", "3 da tarde", "1 da tarde", etc.
+            // Melhorado para capturar mais variações: "2 da tarde", "às 2 da tarde", "2 tarde", "para amanha 2 da tarde", etc.
+            // CRÍTICO: Procura em qualquer lugar da mensagem, não só no início
+            // CRÍTICO: Aceita "1 da tarde", "2 da tarde", etc. (qualquer número de 1 a 11)
+            const tardeMatch = userMessageLower.match(/(\d{1,2})\s*(?:da\s*)?tarde/i)
+            const noiteMatch = userMessageLower.match(/(\d{1,2})\s*(?:da\s*)?noite/i)
+            const manhaMatch = userMessageLower.match(/(\d{1,2})\s*(?:da\s*)?(?:manhã|manha)/i)
+            
+            console.log(`   🔍 Padrão "tarde" encontrado:`, tardeMatch ? `"${tardeMatch[0]}" (hora: ${tardeMatch[1]})` : 'NÃO ENCONTRADO')
+            console.log(`   🔍 Padrão "noite" encontrado:`, noiteMatch ? `"${noiteMatch[0]}" (hora: ${noiteMatch[1]})` : 'NÃO ENCONTRADO')
+            console.log(`   🔍 Padrão "manhã" encontrado:`, manhaMatch ? `"${manhaMatch[0]}" (hora: ${manhaMatch[1]})` : 'NÃO ENCONTRADO')
+            console.log(`   🔍 Mensagem completa para análise: "${userMessageLower}"`)
+            
+            if (tardeMatch) {
+              const requestedHour = parseInt(tardeMatch[1])
+              const expectedHour = requestedHour + 12
+              console.log(`   Cliente pediu "${requestedHour} da tarde" → deveria ser ${expectedHour}:00`)
+              
+              // Se a hora não está correta, corrige SEMPRE
+              if (hour !== expectedHour) {
+                const oldHour = hour
+                hour = expectedHour
+                minute = 0
+                console.log(`🔧 [handleFunctionCall] ✅ CORREÇÃO APLICADA: "${oldHour}:${minute.toString().padStart(2, '0')}" → "${hour}:00"`)
+                console.log(`   Motivo: Cliente pediu "${requestedHour} da tarde" na mensagem original`)
+              } else {
+                console.log(`   ✅ Hora já está correta: ${hour}:00`)
+              }
+            } else if (noiteMatch) {
+              const requestedHour = parseInt(noiteMatch[1])
+              const expectedHour = requestedHour + 12
+              if (hour !== expectedHour) {
+                const oldHour = hour
+                hour = expectedHour
+                minute = 0
+                console.log(`🔧 [handleFunctionCall] ✅ CORREÇÃO APLICADA: "${oldHour}:${minute.toString().padStart(2, '0')}" → "${hour}:00"`)
+                console.log(`   Motivo: Cliente pediu "${requestedHour} da noite" na mensagem original`)
+              }
+            } else if (manhaMatch) {
+              const requestedHour = parseInt(manhaMatch[1])
+              if (hour !== requestedHour) {
+                const oldHour = hour
+                hour = requestedHour
+                minute = 0
+                console.log(`🔧 [handleFunctionCall] ✅ CORREÇÃO APLICADA: "${oldHour}:${minute.toString().padStart(2, '0')}" → "${hour}:00"`)
+                console.log(`   Motivo: Cliente pediu "${requestedHour} da manhã" na mensagem original`)
+              }
+            } else {
+              console.log(`   ⚠️ Nenhum padrão de hora da tarde/manhã/noite encontrado na mensagem`)
+            }
+          } else {
+            console.log(`   ⚠️ userMessage não está disponível para correção`)
+          }
+          
           console.log(`🕐 [handleFunctionCall] Hora parseada: "${args.time}" → ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`)
 
           // Tenta primeiro parsear como data em português (dias da semana, "amanhã", etc)
           // Mas agora passamos a hora também para parsePortugueseDate considerar
+          // CRÍTICO: Se a data é numérica (ex: "08/12/2025"), tenta ambos os formatos ANTES de parsePortugueseDate
+          // Isso evita que parsePortugueseDate interprete incorretamente
           let appointmentDateUTC: Date | null = null
-
-          // Cria uma string combinada de data e hora para parsePortugueseDate processar
-          const dateTimeStr = `${args.date} ${args.time}`
-          let parsedPortugueseDate = parsePortugueseDate(dateTimeStr)
-
-          // Fallback: se a IA mandou data já convertida (ex: DD/MM) mas o cliente falou em linguagem natural,
-          // tenta interpretar a data direto da mensagem original para evitar erros como "próxima segunda = 29/11".
-          if (!parsedPortugueseDate && userMessage) {
-            const parsedFromUserMessage = parsePortugueseDate(`${userMessage} ${args.time}`)
-            if (parsedFromUserMessage) {
-              parsedPortugueseDate = parsedFromUserMessage
-              console.log(`📅 [handleFunctionCall] Data reinterpretada a partir da mensagem original do cliente: "${userMessage}"`)
+          const numericDateMatch = args.date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+          
+          if (numericDateMatch) {
+            const firstPart = parseInt(numericDateMatch[1])
+            const secondPart = parseInt(numericDateMatch[2])
+            let year = parseInt(numericDateMatch[3])
+            
+            const nowBrazilian = getBrazilDate()
+            const currentYear = nowBrazilian.getFullYear()
+            const currentMonth = nowBrazilian.getMonth()
+            const currentDay = nowBrazilian.getDate()
+            
+            // Corrige o ano se necessário
+            if (year < currentYear) {
+              year = currentYear
+            } else if (year > currentYear + 1) {
+              year = currentYear
+            }
+            
+            // Tenta ambos os formatos: DD/MM/YYYY e MM/DD/YYYY
+            let dateDDMM: Date | null = null
+            let dateMMDD: Date | null = null
+            
+            // Tenta DD/MM/YYYY (formato brasileiro)
+            if (firstPart >= 1 && firstPart <= 31 && secondPart >= 1 && secondPart <= 12) {
+              dateDDMM = createBrazilianDateAsUTC(year, secondPart - 1, firstPart, hour, minute)
+              console.log(`📅 Tentando DD/MM/YYYY: ${firstPart}/${secondPart}/${year}`)
+            }
+            
+            // Tenta MM/DD/YYYY (formato americano)
+            if (firstPart >= 1 && firstPart <= 12 && secondPart >= 1 && secondPart <= 31) {
+              dateMMDD = createBrazilianDateAsUTC(year, firstPart - 1, secondPart, hour, minute)
+              console.log(`📅 Tentando MM/DD/YYYY: ${secondPart}/${firstPart}/${year}`)
+            }
+            
+            // Escolhe o formato que faz mais sentido (não está no passado)
+            const todayOnly = new Date(currentYear, currentMonth, currentDay)
+            
+            if (dateDDMM && dateMMDD) {
+              const ddmmOnly = new Date(year, secondPart - 1, firstPart)
+              const mmddOnly = new Date(year, firstPart - 1, secondPart)
+              
+              const ddmmIsPast = ddmmOnly < todayOnly
+              const mmddIsPast = mmddOnly < todayOnly
+              
+              if (!ddmmIsPast && mmddIsPast) {
+                appointmentDateUTC = dateDDMM
+                console.log(`✅ Escolhido formato DD/MM/YYYY (não está no passado)`)
+              } else if (ddmmIsPast && !mmddIsPast) {
+                appointmentDateUTC = dateMMDD
+                console.log(`✅ Escolhido formato MM/DD/YYYY (não está no passado)`)
+              } else if (!ddmmIsPast && !mmddIsPast) {
+                // Ambos são futuros, escolhe o mais próximo
+                const diffDDMM = Math.abs(ddmmOnly.getTime() - todayOnly.getTime())
+                const diffMMDD = Math.abs(mmddOnly.getTime() - todayOnly.getTime())
+                if (diffDDMM <= diffMMDD) {
+                  appointmentDateUTC = dateDDMM
+                  console.log(`✅ Escolhido formato DD/MM/YYYY (mais próximo de hoje)`)
+                } else {
+                  appointmentDateUTC = dateMMDD
+                  console.log(`✅ Escolhido formato MM/DD/YYYY (mais próximo de hoje)`)
+                }
+              } else {
+                // Ambos são passados, padrão para DD/MM/YYYY
+                appointmentDateUTC = dateDDMM
+                console.log(`⚠️ Ambos formatos são passados, padrão para DD/MM/YYYY`)
+              }
+            } else if (dateDDMM) {
+              appointmentDateUTC = dateDDMM
+              console.log(`✅ Usando formato DD/MM/YYYY (único válido)`)
+            } else if (dateMMDD) {
+              appointmentDateUTC = dateMMDD
+              console.log(`✅ Usando formato MM/DD/YYYY (único válido)`)
             }
           }
-
-          if (parsedPortugueseDate) {
-            // Se conseguiu parsear como data em português, já vem em UTC com hora
-            appointmentDateUTC = parsedPortugueseDate
-            const brazilianCheck = utcToBrazilianComponents(appointmentDateUTC)
-            console.log(`📅 Data parseada do português (UTC): ${appointmentDateUTC.toISOString()}`)
-            console.log(`📅 Data parseada do português (Brasil): ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year} às ${brazilianCheck.hour}:${brazilianCheck.minute.toString().padStart(2, '0')}`)
-          }
-
-          // Se não conseguiu parsear como português, tenta formato DD/MM/YYYY
+          
+          // Se não conseguiu parsear como numérico, tenta parsePortugueseDate
           if (!appointmentDateUTC) {
-            const dateMatch = args.date.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
-            if (!dateMatch) {
-              return {
-                success: false,
-                error: `Data inválida: "${args.date}". Use o formato DD/MM/YYYY (ex: 24/11/2025) ou linguagem natural (ex: "terça-feira", "amanhã").`,
+            const dateTimeStr = `${args.date} ${args.time}`
+            console.log(`📅 [handleFunctionCall] Tentando parsear data: "${dateTimeStr}"`)
+            let parsedPortugueseDate = parsePortugueseDate(dateTimeStr)
+            console.log(`📅 [handleFunctionCall] Resultado parsePortugueseDate:`, parsedPortugueseDate ? parsedPortugueseDate.toISOString() : 'null')
+
+            // Fallback: se a IA mandou data já convertida (ex: DD/MM) mas o cliente falou em linguagem natural,
+            // tenta interpretar a data direto da mensagem original para evitar erros como "próxima segunda = 29/11".
+            if (!parsedPortugueseDate && userMessage) {
+              console.log(`📅 [handleFunctionCall] Tentando parsear a partir da mensagem original: "${userMessage} ${args.time}"`)
+              const parsedFromUserMessage = parsePortugueseDate(`${userMessage} ${args.time}`)
+              if (parsedFromUserMessage) {
+                parsedPortugueseDate = parsedFromUserMessage
+                console.log(`📅 [handleFunctionCall] Data reinterpretada a partir da mensagem original do cliente: "${userMessage}"`)
               }
             }
 
-            const day = parseInt(dateMatch[1])
-            const month = parseInt(dateMatch[2]) - 1 // JavaScript usa meses 0-11
+            if (parsedPortugueseDate) {
+            // Se conseguiu parsear como data em português, verifica se está no passado
+            // Se estiver, pode ser que o formato esteja errado (ex: IA enviou MM/DD mas parseou como DD/MM)
+            const brazilianCheck = utcToBrazilianComponents(parsedPortugueseDate)
+            const nowBrazilian = getBrazilDate()
+            const currentYear = nowBrazilian.getFullYear()
+            const currentMonth = nowBrazilian.getMonth()
+            const currentDay = nowBrazilian.getDate()
+            const todayOnly = new Date(currentYear, currentMonth, currentDay)
+            const parsedDateOnly = new Date(brazilianCheck.year, brazilianCheck.month, brazilianCheck.day)
+            
+            console.log(`📅 [handleFunctionCall] Verificando data parseada:`)
+            console.log(`   Data parseada (Brasil): ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year}`)
+            console.log(`   Data atual (Brasil): ${currentDay}/${currentMonth + 1}/${currentYear}`)
+            console.log(`   Está no passado? ${parsedDateOnly < todayOnly}`)
+            console.log(`   É formato numérico? ${!!args.date.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)}`)
+            
+            // Se a data parseada está no passado E a data original parece ser numérica (ex: "12/8/2025"),
+            // tenta o formato alternativo
+            if (parsedDateOnly < todayOnly && args.date.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+              console.log(`⚠️ Data parseada está no passado, tentando formato alternativo...`)
+              console.log(`   Data parseada: ${brazilianCheck.day}/${brazilianCheck.month + 1}/${brazilianCheck.year}`)
+              console.log(`   Data original: ${args.date}`)
+              
+              // Tenta formato alternativo (MM/DD se parseou como DD/MM, ou vice-versa)
+              const dateMatch = args.date.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+              if (dateMatch) {
+                const firstPart = parseInt(dateMatch[1])
+                const secondPart = parseInt(dateMatch[2])
+                let year = parseInt(dateMatch[3])
+                
+                // Corrige o ano se necessário
+                if (year < currentYear) {
+                  year = currentYear
+                } else if (year > currentYear + 1) {
+                  year = currentYear
+                }
+                
+                // Tenta formato alternativo (inverte primeiro e segundo)
+                if (firstPart >= 1 && firstPart <= 12 && secondPart >= 1 && secondPart <= 31) {
+                  // Tenta MM/DD/YYYY (formato alternativo)
+                  const alternativeDate = new Date(year, firstPart - 1, secondPart)
+                  const alternativeDateOnly = new Date(year, firstPart - 1, secondPart)
+                  
+                  if (alternativeDateOnly >= todayOnly) {
+                    console.log(`✅ Formato alternativo MM/DD/YYYY funciona: ${secondPart}/${firstPart}/${year}`)
+                    appointmentDateUTC = createBrazilianDateAsUTC(year, firstPart - 1, secondPart, hour, minute)
+                  } else {
+                    // Formato alternativo também está no passado, usa o original
+                    appointmentDateUTC = parsedPortugueseDate
+                    console.log(`⚠️ Formato alternativo também está no passado, usando original`)
+                  }
+                } else {
+                  // Não é um formato válido alternativo, usa o original
+                  appointmentDateUTC = parsedPortugueseDate
+                }
+              } else {
+                // Não conseguiu fazer match, usa o original
+                appointmentDateUTC = parsedPortugueseDate
+              }
+            } else {
+              // Data não está no passado ou não é formato numérico, usa o parseado
+              appointmentDateUTC = parsedPortugueseDate
+            }
+            
+            // CRÍTICO: Se parsePortugueseDate retornou uma data, recria usando a hora CORRIGIDA
+            // Isso garante que a correção de hora seja aplicada mesmo quando parsePortugueseDate é usado
+            if (appointmentDateUTC) {
+              const brazilianComponents = utcToBrazilianComponents(appointmentDateUTC)
+              // Recria a data usando a hora CORRIGIDA (hour, minute) em vez da hora parseada por parsePortugueseDate
+              appointmentDateUTC = createBrazilianDateAsUTC(
+                brazilianComponents.year,
+                brazilianComponents.month,
+                brazilianComponents.day,
+                hour, // Usa a hora CORRIGIDA
+                minute // Usa o minuto CORRIGIDO
+              )
+              console.log(`🔧 [handleFunctionCall] Data recriada com hora CORRIGIDA: ${hour}:${minute.toString().padStart(2, '0')}`)
+            }
+            
+              const finalCheck = utcToBrazilianComponents(appointmentDateUTC)
+              console.log(`📅 Data parseada do português (UTC): ${appointmentDateUTC.toISOString()}`)
+              console.log(`📅 Data parseada do português (Brasil): ${finalCheck.day}/${finalCheck.month + 1}/${finalCheck.year} às ${finalCheck.hour}:${finalCheck.minute.toString().padStart(2, '0')}`)
+            } else {
+              // Se parsePortugueseDate retornou null, tenta formato DD/MM/YYYY ou MM/DD/YYYY
+              // Detecta automaticamente qual formato usar baseado em qual faz mais sentido
+              const dateMatch = args.date.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+              if (!dateMatch) {
+                return {
+                  success: false,
+                  error: `Data inválida: "${args.date}". Use o formato DD/MM/YYYY (ex: 24/11/2025) ou linguagem natural (ex: "terça-feira", "amanhã").`,
+                }
+              }
+
+            const firstPart = parseInt(dateMatch[1])
+            const secondPart = parseInt(dateMatch[2])
             let year = parseInt(dateMatch[3])
 
             // Cria a data no horário do Brasil
             const nowBrazilian = getBrazilDate()
             const currentYear = nowBrazilian.getFullYear()
+            const currentMonth = nowBrazilian.getMonth()
+            const currentDay = nowBrazilian.getDate()
 
             // Corrige o ano se necessário
             if (year < currentYear) {
@@ -2597,10 +2959,92 @@ export async function executeAIOnlyWorkflow(
               console.log(`⚠️ Ano ${year} é muito no futuro, corrigindo para ${year}`)
             }
 
-            // Cria a data no fuso do Brasil e converte para UTC com a hora correta
-            appointmentDateUTC = createBrazilianDateAsUTC(year, month, day, hour, minute)
-          } else {
-            // Se já parseou do português mas a hora pode estar errada, recria com a hora correta
+            // Tenta ambos os formatos: DD/MM/YYYY e MM/DD/YYYY
+            // Escolhe o formato que faz mais sentido (não está no passado e está mais próximo de hoje)
+            let day: number
+            let month: number
+            let parsedDateDDMM: Date | null = null
+            let parsedDateMMDD: Date | null = null
+
+            // Tenta DD/MM/YYYY (formato brasileiro) - primeiro valor é dia, segundo é mês
+            if (firstPart >= 1 && firstPart <= 31 && secondPart >= 1 && secondPart <= 12) {
+              parsedDateDDMM = new Date(year, secondPart - 1, firstPart)
+              console.log(`📅 Tentando DD/MM/YYYY: ${firstPart}/${secondPart}/${year}`)
+            }
+
+            // Tenta MM/DD/YYYY (formato americano) - primeiro valor é mês, segundo é dia
+            if (firstPart >= 1 && firstPart <= 12 && secondPart >= 1 && secondPart <= 31) {
+              parsedDateMMDD = new Date(year, firstPart - 1, secondPart)
+              console.log(`📅 Tentando MM/DD/YYYY: ${secondPart}/${firstPart}/${year}`)
+            }
+
+            // Escolhe o formato que faz mais sentido
+            const todayOnly = new Date(currentYear, currentMonth, currentDay)
+            let chosenDate: Date | null = null
+
+            if (parsedDateDDMM && parsedDateMMDD) {
+              // Ambos são válidos, escolhe o que não está no passado
+              const ddmmIsPast = parsedDateDDMM < todayOnly
+              const mmddIsPast = parsedDateMMDD < todayOnly
+
+              if (!ddmmIsPast && mmddIsPast) {
+                // DD/MM não está no passado, MM/DD está
+                chosenDate = parsedDateDDMM
+                day = firstPart
+                month = secondPart - 1
+                console.log(`✅ Escolhido formato DD/MM/YYYY (não está no passado)`)
+              } else if (ddmmIsPast && !mmddIsPast) {
+                // MM/DD não está no passado, DD/MM está
+                chosenDate = parsedDateMMDD
+                day = secondPart
+                month = firstPart - 1
+                console.log(`✅ Escolhido formato MM/DD/YYYY (não está no passado)`)
+              } else if (!ddmmIsPast && !mmddIsPast) {
+                // Ambos não estão no passado, escolhe o mais próximo de hoje
+                const ddmmDiff = Math.abs(parsedDateDDMM.getTime() - todayOnly.getTime())
+                const mmddDiff = Math.abs(parsedDateMMDD.getTime() - todayOnly.getTime())
+                if (ddmmDiff <= mmddDiff) {
+                  chosenDate = parsedDateDDMM
+                  day = firstPart
+                  month = secondPart - 1
+                  console.log(`✅ Escolhido formato DD/MM/YYYY (mais próximo de hoje)`)
+                } else {
+                  chosenDate = parsedDateMMDD
+                  day = secondPart
+                  month = firstPart - 1
+                  console.log(`✅ Escolhido formato MM/DD/YYYY (mais próximo de hoje)`)
+                }
+              } else {
+                // Ambos estão no passado, escolhe DD/MM por padrão (formato brasileiro)
+                chosenDate = parsedDateDDMM
+                day = firstPart
+                month = secondPart - 1
+                console.log(`⚠️ Ambos formatos estão no passado, usando DD/MM/YYYY por padrão`)
+              }
+            } else if (parsedDateDDMM) {
+              chosenDate = parsedDateDDMM
+              day = firstPart
+              month = secondPart - 1
+              console.log(`✅ Usando formato DD/MM/YYYY (único válido)`)
+            } else if (parsedDateMMDD) {
+              chosenDate = parsedDateMMDD
+              day = secondPart
+              month = firstPart - 1
+              console.log(`✅ Usando formato MM/DD/YYYY (único válido)`)
+            } else {
+              return {
+                success: false,
+                error: `Data inválida: "${args.date}". Use o formato DD/MM/YYYY (ex: 24/11/2025) ou linguagem natural (ex: "terça-feira", "amanhã").`,
+              }
+            }
+
+              // Cria a data no fuso do Brasil e converte para UTC com a hora correta
+              appointmentDateUTC = createBrazilianDateAsUTC(year, month, day, hour, minute)
+            }
+          }
+          
+          // Se já parseou mas a hora pode estar errada, recria com a hora correta
+          if (appointmentDateUTC) {
             const brazilianComponents = utcToBrazilianComponents(appointmentDateUTC)
             appointmentDateUTC = createBrazilianDateAsUTC(
               brazilianComponents.year,
@@ -2610,13 +3054,20 @@ export async function executeAIOnlyWorkflow(
               minute
             )
           }
+          
+          // Se ainda não conseguiu parsear, retorna erro
+          if (!appointmentDateUTC) {
+            return {
+              success: false,
+              error: `Data inválida: "${args.date}". Use o formato DD/MM/YYYY (ex: 24/11/2025) ou linguagem natural (ex: "terça-feira", "amanhã").`,
+            }
+          }
 
           // Obtém componentes brasileiros para validação
           const brazilianComponents = utcToBrazilianComponents(appointmentDateUTC)
-          const day = brazilianComponents.day
-          const month = brazilianComponents.month
-          const year = brazilianComponents.year
-
+          let day = brazilianComponents.day
+          let month = brazilianComponents.month
+          let year = brazilianComponents.year
 
           // Cria a data no horário do Brasil para comparação
           const nowBrazilian = getBrazilDate()
@@ -2632,8 +3083,51 @@ export async function executeAIOnlyWorkflow(
           console.log(`📅 Data/hora processada (UTC): ${appointmentDateUTC.toISOString()}`)
 
           // Valida se a data não é no passado (comparando componentes brasileiros)
-          const appointmentDateOnly = new Date(year, month, day)
+          let appointmentDateOnly = new Date(year, month, day)
           const todayOnly = new Date(currentYear, currentMonth, currentDay)
+
+          // CRÍTICO: Se a data está no passado E a data original é numérica, tenta formato alternativo ANTES de retornar erro
+          if (appointmentDateOnly < todayOnly && args.date.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) {
+            console.log(`⚠️⚠️⚠️ [handleFunctionCall] Data está no passado, tentando formato alternativo ANTES de retornar erro...`)
+            console.log(`   Data parseada: ${day}/${month + 1}/${year}`)
+            console.log(`   Data original: ${args.date}`)
+            
+            const dateMatch = args.date.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/)
+            if (dateMatch) {
+              const firstPart = parseInt(dateMatch[1])
+              const secondPart = parseInt(dateMatch[2])
+              let altYear = parseInt(dateMatch[3])
+              
+              // Corrige o ano se necessário
+              if (altYear < currentYear) {
+                altYear = currentYear
+              } else if (altYear > currentYear + 1) {
+                altYear = currentYear
+              }
+              
+              // Tenta formato alternativo (MM/DD se parseou como DD/MM)
+              if (firstPart >= 1 && firstPart <= 12 && secondPart >= 1 && secondPart <= 31) {
+                const alternativeDateOnly = new Date(altYear, firstPart - 1, secondPart)
+                
+                if (alternativeDateOnly >= todayOnly) {
+                  console.log(`✅✅✅ [handleFunctionCall] Formato alternativo MM/DD/YYYY funciona! Corrigindo...`)
+                  console.log(`   Formato original (DD/MM): ${day}/${month + 1}/${year} (passado)`)
+                  console.log(`   Formato alternativo (MM/DD): ${secondPart}/${firstPart}/${altYear} (futuro)`)
+                  
+                  // Usa o formato alternativo
+                  day = secondPart
+                  month = firstPart - 1
+                  year = altYear
+                  appointmentDateUTC = createBrazilianDateAsUTC(year, month, day, hour, minute)
+                  appointmentDateOnly = new Date(year, month, day)
+                  
+                  // Recalcula componentes para logs
+                  const correctedComponents = utcToBrazilianComponents(appointmentDateUTC)
+                  console.log(`✅✅✅ [handleFunctionCall] Data corrigida: ${correctedComponents.day}/${correctedComponents.month + 1}/${correctedComponents.year}`)
+                }
+              }
+            }
+          }
 
           // Se a data é hoje, verifica se a hora não passou
           if (appointmentDateOnly.getTime() === todayOnly.getTime()) {
@@ -2664,8 +3158,19 @@ export async function executeAIOnlyWorkflow(
           }
 
           // Formata data e hora para exibição (declara ANTES de usar)
+          // CRÍTICO: Usa hour e minute que já foram corrigidos pela lógica de correção acima
+          // CRÍTICO: Verifica novamente se a correção foi aplicada antes de formatar
+          console.log(`📅 [handleFunctionCall] ANTES da formatação - Verificando hora final:`)
+          console.log(`   hour=${hour}, minute=${minute}`)
+          console.log(`   args.time original="${args.time}"`)
+          console.log(`   userMessage="${userMessage}"`)
+          
           const formattedDate = `${day.toString().padStart(2, '0')}/${(month + 1).toString().padStart(2, '0')}/${year}`
           const formattedTime = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
+          console.log(`📅 [handleFunctionCall] Formatação final para agendamento pendente:`)
+          console.log(`   Data: ${formattedDate}`)
+          console.log(`   Hora: ${formattedTime} (hour=${hour}, minute=${minute})`)
+          console.log(`   ✅ HORA CORRIGIDA SERÁ USADA: ${formattedTime}`)
 
           // CRÍTICO: Busca informações do serviço para obter duração e imagem
           // A duração DEVE vir do serviço, não pode ser um padrão fixo

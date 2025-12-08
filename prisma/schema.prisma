@@ -16,6 +16,7 @@ model User {
   password  String
   name      String
   workingHoursConfig String? // JSON com configuração de horários de funcionamento globais
+  slotConfig String? // JSON com configuração de slots de agendamento { slotSizeMinutes: number, bufferMinutes?: number }
   businessAddress String? // Endereço completo do estabelecimento (rua, número, bairro, cidade, CEP)
   deliveryPricePerKm Float? // Preço por quilômetro para cálculo de frete
   messageRetentionDays Int? // Número de dias para manter mensagens (padrão: 90 dias)
@@ -355,6 +356,8 @@ model ProductInterest {
 
   user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   instance WhatsAppInstance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  // Relação opcional com Service - apenas quando productType é 'service'
+  // Quando productType é 'catalog', productId é um CatalogNode.id e não há relação
   service  Service?         @relation(fields: [productId], references: [id], onDelete: Cascade)
 
   @@unique([instanceId, contactNumber, productId, productType]) // Um interesse por produto por contato

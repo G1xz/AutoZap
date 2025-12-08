@@ -29,7 +29,7 @@ export interface WorkingHoursConfig {
 /**
  * Converte horário HH:mm para minutos desde meia-noite
  */
-function timeToMinutes(time: string): number {
+export function timeToMinutes(time: string): number {
   const [hours, minutes] = time.split(':').map(Number)
   return hours * 60 + minutes
 }
@@ -175,9 +175,26 @@ export function canFitAppointment(
     const openMinutes = timeToMinutes(slot.openTime)
     const closeMinutes = timeToMinutes(slot.closeTime)
     
-    // Se o início está dentro deste turno e o fim também está
+    // Se o início está dentro deste turno (>= abertura e < fechamento)
+    // E o fim está dentro ou no máximo no fechamento (<= fechamento)
+    // CRÍTICO: Permite agendamentos que terminam exatamente no horário de fechamento
     if (startMinutes >= openMinutes && startMinutes < closeMinutes && endMinutes <= closeMinutes) {
       return { valid: true }
+    }
+    
+    // CRÍTICO: Se o agendamento começa antes do fechamento mas termina depois,
+    // verifica se pelo menos parte dele está dentro do turno
+    // Exemplo: turno 7h-12h, agendamento 11:50-12:10 → válido (maioria está dentro)
+    if (startMinutes >= openMinutes && startMinutes < closeMinutes && endMinutes > closeMinutes) {
+      // Calcula quanto do agendamento está dentro do turno
+      const durationInside = closeMinutes - startMinutes
+      const totalDuration = endMinutes - startMinutes
+      const percentageInside = (durationInside / totalDuration) * 100
+      
+      // Se pelo menos 50% do agendamento está dentro do turno, considera válido
+      if (percentageInside >= 50) {
+        return { valid: true }
+      }
     }
   }
 

@@ -152,31 +152,91 @@ export async function registerProductInterest(params: {
   try {
     const normalizedContact = params.contactNumber.replace(/\D/g, '')
 
-    await prisma.productInterest.upsert({
-      where: {
-        instanceId_contactNumber_productId_productType: {
+    // Quando productType é 'catalog', o productId é um CatalogNode.id, não um Service.id
+    // A foreign key constraint com Service falha, então usamos uma abordagem diferente
+    if (params.productType === 'catalog') {
+      // Gera um ID compatível com CUID usado pelo Prisma
+      const generateCuid = () => {
+        const timestamp = Date.now().toString(36)
+        const random = Math.random().toString(36).substring(2, 15)
+        return `c${timestamp}${random}`
+      }
+
+      // Para catalog, usamos SQL direto para evitar a foreign key constraint
+      // Verifica se já existe antes de inserir
+      const existing = await prisma.$queryRawUnsafe<Array<{ id: string }>>(`
+        SELECT id FROM "ProductInterest"
+        WHERE "instanceId" = $1 
+          AND "contactNumber" = $2 
+          AND "productId" = $3 
+          AND "productType" = $4
+        LIMIT 1
+      `, params.instanceId, normalizedContact, params.productId, params.productType)
+
+      if (existing && existing.length > 0) {
+        // Atualiza registro existente
+        await prisma.$executeRawUnsafe(`
+          UPDATE "ProductInterest"
+          SET "interestType" = $1,
+              "lastInteraction" = NOW(),
+              "status" = $2,
+              "updatedAt" = NOW()
+          WHERE "instanceId" = $3 
+            AND "contactNumber" = $4 
+            AND "productId" = $5 
+            AND "productType" = $6
+        `, params.interestType, 'pending', params.instanceId, normalizedContact, params.productId, params.productType)
+      } else {
+        // Insere novo registro
+        await prisma.$executeRawUnsafe(
+          `
+          INSERT INTO "ProductInterest" (
+            "id", "userId", "instanceId", "contactNumber", "productId", "productType", 
+            "productName", "interestType", "status", "lastInteraction", "createdAt", "updatedAt"
+          )
+          VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW(), NOW()
+          )
+          `,
+          generateCuid(),
+          params.userId,
+          params.instanceId,
+          normalizedContact,
+          params.productId,
+          params.productType,
+          params.productName,
+          params.interestType,
+          'pending'
+        )
+      }
+    } else {
+      // Para service, usamos o método normal do Prisma (com foreign key)
+      await prisma.productInterest.upsert({
+        where: {
+          instanceId_contactNumber_productId_productType: {
+            instanceId: params.instanceId,
+            contactNumber: normalizedContact,
+            productId: params.productId,
+            productType: params.productType,
+          },
+        },
+        update: {
+          interestType: params.interestType,
+          lastInteraction: new Date(),
+          status: 'pending', // Reset para pending se ainda não converteu
+        },
+        create: {
+          userId: params.userId,
           instanceId: params.instanceId,
           contactNumber: normalizedContact,
           productId: params.productId,
           productType: params.productType,
+          productName: params.productName,
+          interestType: params.interestType,
+          status: 'pending',
         },
-      },
-      update: {
-        interestType: params.interestType,
-        lastInteraction: new Date(),
-        status: 'pending', // Reset para pending se ainda não converteu
-      },
-      create: {
-        userId: params.userId,
-        instanceId: params.instanceId,
-        contactNumber: normalizedContact,
-        productId: params.productId,
-        productType: params.productType,
-        productName: params.productName,
-        interestType: params.interestType,
-        status: 'pending',
-      },
-    })
+      })
+    }
 
     log.event('product_interest_registered', {
       userId: params.userId,

@@ -459,8 +459,15 @@ function addAppointmentRules(businessName: string): string {
   return `
 🎯 FLUXO DE AGENDAMENTO (SIGA EXATAMENTE ESTA SEQUÊNCIA):
 1. CLIENTE SOLICITA AGENDAMENTO:
-   - Cliente diz algo como "quero agendar X para amanhã às 3h" ou "pode ser às 4?"
-   - Você DEVE chamar create_appointment IMEDIATAMENTE com os dados coletados
+   - Cliente diz algo como "quero agendar X para amanhã às 3h" ou "pode ser às 4?" ou "agendar um confronto para amanhã meio dia"
+   - ⚠️⚠️⚠️⚠️⚠️ CRÍTICO ABSOLUTO - REGRA DE OURO: Quando o cliente pedir para agendar e você tiver DATA E HORA, você DEVE CHAMAR create_appointment IMEDIATAMENTE, SEM EXCEÇÃO! 
+   - ⚠️⚠️⚠️ IGNORE mensagens anteriores onde você perguntou "qual serviço?" - Se o cliente mencionou um serviço AGORA, use esse serviço!
+   - ⚠️⚠️⚠️ NUNCA responda apenas com texto pedindo confirmação - SEMPRE chame a função primeiro!
+   - ⚠️⚠️⚠️ NUNCA diga "vou agendar" ou "agendando" ou "Para agendar..." SEM chamar a função primeiro!
+   - ⚠️⚠️⚠️ NUNCA pergunte "qual serviço?" se o cliente já mencionou - USE O QUE ELE DISSE NA MENSAGEM ATUAL!
+   - ⚠️⚠️⚠️ MAPEAMENTO: "confronto" = "Confronto Abissal", "abismo" = "Abismo Espiral", "análise" = "Análise de Conta"
+   - ⚠️⚠️⚠️ Se você não chamar create_appointment, o agendamento NÃO será criado e o cliente ficará confuso!
+   - ⚠️⚠️⚠️ EXEMPLO: Cliente: "agendar um confronto para amanhã meio dia" → VOCÊ DEVE CHAMAR create_appointment(date: "amanhã", time: "12:00", description: "Confronto Abissal") IMEDIATAMENTE!
    - A função create_appointment vai:
      * Verificar se o horário está disponível
      * Criar um agendamento PENDENTE (não confirmado ainda)

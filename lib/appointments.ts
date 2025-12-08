@@ -5,6 +5,9 @@
 import { prisma } from './prisma'
 import { canFitAppointment, WorkingHoursConfig, formatTime24h } from './working-hours'
 import { getUserWorkingHours } from './user-working-hours'
+import { findAvailableSlots, roundToNextSlot, convertToValidSlot } from './appointment-slots'
+import { getUserSlotConfig } from './user-slot-config'
+import type { SlotConfig } from './appointment-slots'
 
 /**
  * Agrupa horários consecutivos em intervalos
@@ -93,6 +96,20 @@ export async function createAppointment(
   workingHours?: WorkingHoursConfig | null
 ) {
   try {
+    // Busca configuração de slots do usuário
+    const slotConfig = await getUserSlotConfig(params.userId)
+    
+    // Converte o horário para o slot mais próximo se necessário
+    const originalTime = formatTime24h(params.date)
+    const roundedTime = roundToNextSlot(params.date, slotConfig.slotSizeMinutes)
+    
+    // Se o horário foi ajustado, atualiza a data
+    if (originalTime !== roundedTime) {
+      const [hours, minutes] = roundedTime.split(':').map(Number)
+      params.date.setHours(hours, minutes, 0, 0)
+      console.log(`📅 [createAppointment] Horário ajustado para slot: ${originalTime} → ${roundedTime}`)
+    }
+    
     console.log('📅 createAppointment chamado com params:', {
       userId: params.userId,
       instanceId: params.instanceId,
@@ -101,6 +118,7 @@ export async function createAppointment(
       date: params.date,
       dateISO: params.date.toISOString(),
       description: params.description,
+      slotConfig: slotConfig,
     })
 
     // Validações robustas
@@ -716,81 +734,39 @@ export async function getAvailableTimes(
       }
     })
 
-    // CRÍTICO: Gera horários disponíveis considerando a duração do serviço
-    // Verifica se um novo agendamento com durationMinutes caberia em cada horário possível
-    const availableSlots: string[] = []
-    const slotInterval = 15 // Verifica a cada 15 minutos para maior precisão
+    // NOVO: Sistema baseado em slots fixos
+    // Busca configuração de slots do usuário
+    const slotConfig = await getUserSlotConfig(userId)
     
-    // Determina horários de funcionamento do dia
-    let dayStartHour = startHour
-    let dayEndHour = endHour
-    
-    if (finalWorkingHours) {
-      const dayOfWeek = date.getDay()
-      const dayMap: Record<number, keyof WorkingHoursConfig> = {
-        0: 'sunday',
-        1: 'monday',
-        2: 'tuesday',
-        3: 'wednesday',
-        4: 'thursday',
-        5: 'friday',
-        6: 'saturday',
-      }
-      
-      const dayKey = dayMap[dayOfWeek]
-      const dayConfig = finalWorkingHours[dayKey]
-      
-      if (dayConfig && dayConfig.isOpen && dayConfig.openTime && dayConfig.closeTime) {
-        const [openHour, openMinute] = dayConfig.openTime.split(':').map(Number)
-        const [closeHour, closeMinute] = dayConfig.closeTime.split(':').map(Number)
-        dayStartHour = openHour
-        dayEndHour = closeHour + (closeMinute > 0 ? 1 : 0) // Arredonda para cima se tiver minutos
-      } else if (dayConfig && !dayConfig.isOpen) {
-        // Dia fechado - retorna vazio
+    // Combina agendamentos confirmados e pendentes
+    const allAppointments = [
+      ...appointments,
+      ...pendingAppointments.map(pending => {
+        const [hour, minute] = pending.time.split(':').map(Number)
+        const pendingStart = new Date(date)
+        pendingStart.setHours(hour, minute, 0, 0)
+        const pendingDuration = pending.duration || 60
+        const pendingEnd = new Date(pendingStart.getTime() + pendingDuration * 60000)
+        
         return {
-          success: true,
-          availableTimes: [],
+          date: pendingStart,
+          endDate: pendingEnd,
+          duration: pendingDuration,
         }
-      }
-    }
+      })
+    ]
     
-    for (let hour = dayStartHour; hour < dayEndHour; hour++) {
-      for (let minute = 0; minute < 60; minute += slotInterval) {
-        const slotStart = new Date(date)
-        slotStart.setHours(hour, minute, 0, 0)
-        const slotEnd = new Date(slotStart.getTime() + durationMinutes * 60000)
-        
-        // Valida se o slot está dentro do horário de funcionamento usando a função de validação
-        if (finalWorkingHours) {
-          const validation = canFitAppointment(slotStart, durationMinutes, finalWorkingHours)
-          if (!validation.valid) {
-            continue
-          }
-        } else {
-          // Fallback para validação antiga
-          if (slotEnd.getHours() > dayEndHour || (slotEnd.getHours() === dayEndHour && slotEnd.getMinutes() > 0)) {
-            continue
-          }
-        }
-        
-        // Verifica se há conflito com algum agendamento existente
-        let hasConflict = false
-        for (const occupied of occupiedIntervals) {
-          // CRÍTICO: Conflito se o novo agendamento se sobrepõe com algum existente
-          // Dois intervalos se sobrepõem se: start1 < end2 && end1 > start2
-          if (slotStart < occupied.end && slotEnd > occupied.start) {
-            hasConflict = true
-            console.log(`⚠️ [getAvailableTimes] Conflito detectado: slot ${formatTime24h(slotStart)}-${formatTime24h(slotEnd)} conflita com ${formatTime24h(occupied.start)}-${formatTime24h(occupied.end)}`)
-            break
-          }
-        }
-        
-        if (!hasConflict) {
-          const timeStr = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`
-          availableSlots.push(timeStr)
-        }
-      }
-    }
+    // Usa o sistema de slots para encontrar horários disponíveis
+    const { availableTimes: availableSlots } = findAvailableSlots(
+      date,
+      durationMinutes,
+      finalWorkingHours,
+      allAppointments,
+      slotConfig
+    )
+    
+    console.log(`📅 [getAvailableTimes] Sistema de slots: slotSize=${slotConfig.slotSizeMinutes}min, buffer=${slotConfig.bufferMinutes}min`)
+    console.log(`📅 [getAvailableTimes] Horários disponíveis encontrados: ${availableSlots.length}`)
 
     console.log(`📅 [getAvailableTimes] Data: ${targetDateStr}`)
     console.log(`📅 [getAvailableTimes] Agendamentos confirmados: ${appointments.length}`)
