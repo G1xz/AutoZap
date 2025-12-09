@@ -7,6 +7,7 @@ import { z } from 'zod'
 const catalogSchema = z.object({
   name: z.string().min(1),
   description: z.string().nullable().optional(),
+  imageUrl: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
   nodes: z.array(
     z.object({
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest) {
         userId: session.user.id,
         name: data.name,
         description: data.description || null,
+        imageUrl: data.imageUrl || null,
         isActive: data.isActive ?? true,
       },
     })

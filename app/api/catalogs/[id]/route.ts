@@ -7,6 +7,7 @@ import { z } from 'zod'
 const catalogUpdateSchema = z.object({
   name: z.string().min(1).optional(),
   description: z.string().nullable().optional(),
+  imageUrl: z.string().nullable().optional(),
   isActive: z.boolean().optional(),
   nodes: z.array(
     z.object({
@@ -104,6 +105,7 @@ export async function PUT(
     const updateData: any = {}
     if (data.name) updateData.name = data.name
     if (data.description !== undefined) updateData.description = data.description
+    if (data.imageUrl !== undefined) updateData.imageUrl = data.imageUrl
     if (data.isActive !== undefined) updateData.isActive = data.isActive
 
     if (Object.keys(updateData).length > 0) {

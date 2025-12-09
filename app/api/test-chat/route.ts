@@ -226,8 +226,10 @@ export async function POST(request: NextRequest) {
 
     // Busca a resposta mais recente do banco (última mensagem enviada pela IA)
     let response = 'Nenhuma resposta gerada. Verifique os logs para mais detalhes.'
+    let mediaUrl: string | null = null
     try {
-      const recentMessage = await prisma.message.findFirst({
+      // Busca as últimas 2 mensagens (pode ter imagem + texto)
+      const recentMessages = await prisma.message.findMany({
         where: {
           instanceId,
           to: formattedPhone,
@@ -236,9 +238,26 @@ export async function POST(request: NextRequest) {
         orderBy: {
           timestamp: 'desc',
         },
-        take: 1,
+        take: 2,
       })
-      response = recentMessage?.body || response
+      
+      if (recentMessages.length > 0) {
+        // Pega a mensagem mais recente (texto)
+        const latestMessage = recentMessages[0]
+        response = latestMessage.body || response
+        
+        // Se a mensagem mais recente tem imagem, usa ela
+        // Senão, verifica se a mensagem anterior (segunda mais recente) tem imagem
+        if (latestMessage.mediaUrl) {
+          mediaUrl = latestMessage.mediaUrl
+        } else if (recentMessages.length > 1 && recentMessages[1].mediaUrl) {
+          // Se a mensagem anterior tem imagem e foi enviada há menos de 5 segundos, associa à resposta atual
+          const timeDiff = latestMessage.timestamp.getTime() - recentMessages[1].timestamp.getTime()
+          if (timeDiff < 5000) { // 5 segundos
+            mediaUrl = recentMessages[1].mediaUrl
+          }
+        }
+      }
     } catch (dbError: any) {
       console.error('Erro ao buscar resposta do banco:', dbError)
       // Continua com mensagem padrão
@@ -266,6 +285,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       response,
+      mediaUrl, // URL da imagem se houver
       logs: relevantLogs.slice(-50), // Últimos 50 logs relevantes
     })
   } catch (error) {

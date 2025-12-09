@@ -230,6 +230,7 @@ model Catalog {
   userId      String
   name        String
   description String?
+  imageUrl    String?  // URL da imagem do catálogo (cardápio/banner)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -245,7 +246,7 @@ model Catalog {
 model CatalogNode {
   id        String   @id @default(cuid())
   catalogId String
-  type      String // 'product', 'service', 'category'
+  type      String // 'product', 'service', 'category', 'catalog'
   positionX Float
   positionY Float
   data      String // JSON com configurações do nó

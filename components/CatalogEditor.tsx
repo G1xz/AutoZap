@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/hooks/use-toast'
 import {
@@ -23,11 +23,13 @@ import '@xyflow/react/dist/style.css'
 import ProductNode from './nodes/ProductNode'
 import ServiceNode from './nodes/ServiceNode'
 import CategoryNode from './nodes/CategoryNode'
+import CatalogNode from './nodes/CatalogNode'
 
 const nodeTypes: NodeTypes = {
   product: ProductNode as any,
   service: ServiceNode as any,
   category: CategoryNode as any,
+  catalog: CatalogNode as any,
 }
 
 interface CatalogEditorProps {
@@ -183,6 +185,8 @@ export default function CatalogEditor({ catalogId, onSave }: CatalogEditorProps)
 
   const getDefaultNodeData = (type: CatalogNodeType): any => {
     switch (type) {
+      case 'catalog':
+        return { label: 'Catálogo', name: '', description: '', imageUrl: '' }
       case 'product':
         return { label: 'Produto', name: '', description: '', price: undefined, imageUrl: '' }
       case 'service':
@@ -330,6 +334,19 @@ export default function CatalogEditor({ catalogId, onSave }: CatalogEditorProps)
               Adicionar Item:
             </div>
             <button
+              onClick={() => addNode('catalog')}
+              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors font-medium"
+            >
+              📋 Catálogo (Principal)
+            </button>
+            <div className="border-t border-gray-200 my-1"></div>
+            <button
+              onClick={() => addNode('category')}
+              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
+            >
+              📁 Categoria
+            </button>
+            <button
               onClick={() => addNode('product')}
               className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
             >
@@ -340,12 +357,6 @@ export default function CatalogEditor({ catalogId, onSave }: CatalogEditorProps)
               className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
             >
               🛠️ Serviço
-            </button>
-            <button
-              onClick={() => addNode('category')}
-              className="block w-full text-left px-3 py-2 hover:bg-gray-100 rounded text-sm text-gray-900 transition-colors"
-            >
-              📁 Categoria
             </button>
           </div>
         )}
@@ -362,5 +373,5 @@ export default function CatalogEditor({ catalogId, onSave }: CatalogEditorProps)
 }
 
 // Tipo auxiliar
-type CatalogNodeType = 'product' | 'service' | 'category'
+type CatalogNodeType = 'product' | 'service' | 'category' | 'catalog'
 

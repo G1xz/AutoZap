@@ -7,9 +7,10 @@ interface BusinessDetails {
   businessName?: string
   businessDescription?: string
   businessType?: string
-  products?: Array<{ name: string; description?: string; price?: number }>
-  services?: Array<{ name: string; description?: string; duration?: number; price?: number }>
+  products?: Array<{ name: string; description?: string; price?: number }> | string[]
+  services?: Array<{ name: string; description?: string; duration?: number; price?: number }> | string[]
   servicesWithAppointment?: Array<{ name: string; duration?: number; imageUrl?: string }>
+  catalogByCategory?: Array<{ category: string | null, products: string[], services: string[] }>
   pricingInfo?: string
   howToBuy?: string
   tone?: string
@@ -31,7 +32,8 @@ interface AppointmentContext {
 export function buildSystemPrompt(
   businessDetails: BusinessDetails,
   contactName: string,
-  appointmentContext?: string
+  appointmentContext?: string,
+  userMessage?: string
 ): string {
   const businessName = businessDetails.businessName || 'este negócio'
   const businessDescription = businessDetails.businessDescription || ''
@@ -48,6 +50,21 @@ export function buildSystemPrompt(
   const mainBenefits = businessDetails.mainBenefits || ''
   const businessValues = businessDetails.businessValues || ''
   const workingHours = businessDetails.workingHours || ''
+  
+  // CRÍTICO: Detecta se é contexto de agendamento baseado na mensagem do usuário
+  // Verifica se a mensagem contém palavras-chave de agendamento
+  const userMessageLower = userMessage?.toLowerCase().trim() || ''
+  const isAppointmentRequest = 
+    userMessageLower.includes('agendar') ||
+    userMessageLower.includes('marcar') ||
+    userMessageLower.includes('horário') ||
+    userMessageLower.includes('horario') ||
+    userMessageLower.includes('agendamento')
+  
+  // Considera contexto de agendamento se:
+  // 1. A mensagem do usuário é sobre agendamento OU
+  // 2. Há contexto de agendamento fornecido (agendamentos existentes) e não é apenas "Nenhum agendamento encontrado"
+  const isAppointmentContext = isAppointmentRequest || (appointmentContext && appointmentContext.trim().length > 0 && !appointmentContext.includes('Nenhum agendamento encontrado'))
 
   const toneDescriptions: Record<string, string> = {
     friendly: 'amigável, descontraído e prestativo',
@@ -128,25 +145,182 @@ export function buildSystemPrompt(
   // ==========================================
   // PRODUTOS E SERVIÇOS
   // ==========================================
-  if (products.length > 0) {
+  // isAppointmentContext já foi definido acima
+  
+  // Se há estrutura organizada por categoria, usa ela (prioridade)
+  const catalogByCategory = (businessDetails as any).catalogByCategory
+  
+  if (catalogByCategory && catalogByCategory.length > 0 && !isAppointmentContext) {
+    // Lista organizada por categoria com hierarquia completa
+    prompt += `\n\n📦 CATÁLOGO ORGANIZADO POR HIERARQUIA:\n\n`
+    
+    const formatCategory = (cat: any, indent: string = '') => {
+      // A hierarquia usa 'name' para o nome da categoria, não 'category'
+      const categoryName = cat.name || cat.category || 'Outros'
+      const hasProducts = cat.products && cat.products.length > 0
+      const hasServices = cat.services && cat.services.length > 0
+      const hasSubcategories = cat.subcategories && cat.subcategories.length > 0
+      
+      // Só mostra categoria se tiver conteúdo (produtos, serviços ou subcategorias)
+      if (hasProducts || hasServices || hasSubcategories) {
+        prompt += `${indent}📁 ${categoryName}:\n`
+        
+        // Primeiro mostra itens diretamente na categoria (se houver)
+        if (hasServices) {
+          cat.services.forEach((service: string) => {
+            prompt += `${indent}  - ${service}\n`
+          })
+        }
+        
+        if (hasProducts) {
+          cat.products.forEach((product: string) => {
+            prompt += `${indent}  - ${product}\n`
+          })
+        }
+        
+        // Depois processa subcategorias recursivamente (com mais indentação)
+        if (hasSubcategories) {
+          cat.subcategories.forEach((subcat: any) => {
+            formatCategory(subcat, indent + '  ')
+          })
+        }
+        
+        prompt += `\n`
+      }
+    }
+    
+    catalogByCategory.forEach((cat: any) => {
+      formatCategory(cat)
+    })
+    
+    prompt += `\n\n🚨🚨🚨🚨🚨 REGRA CRÍTICA E OBRIGATÓRIA - LEIA COM MUITA ATENÇÃO 🚨🚨🚨🚨🚨\n`
+    prompt += `\nQuando o cliente solicitar o catálogo (ex: "qual o seu catalogo", "me mostra o catalogo", "quais produtos voces tem"),\n`
+    prompt += `você DEVE responder EXATAMENTE no formato abaixo. COPIE E COLE ESTE FORMATO, apenas substituindo os valores:\n\n`
+    prompt += `📁 Serviços:\n`
+    prompt += `  - Missoes Diarias - R$ 2,00\n`
+    prompt += `  - Confronto Abissal - R$ 30,00\n`
+    prompt += `  - Abismo Espiral - R$ 25,00\n`
+    prompt += `  - Analise de conta - R$ 60,00\n\n`
+    prompt += `📁 Produtos:\n`
+    prompt += `  📁 Bolachas:\n`
+    prompt += `    - bolacha da nahida - R$ 20,00\n`
+    prompt += `    - Bolacha da emilie - R$ 7,00\n`
+    prompt += `  📁 Chaveiros:\n`
+    prompt += `    - Chaveiro Mavuika - R$ 10,00\n`
+    prompt += `    - Chaveiro furina - R$ 15,00\n`
+    prompt += `  📁 Figure:\n`
+    prompt += `    - Figure da furina - R$ 200,00\n`
+    prompt += `    - figure da columbina - R$ 100,00\n\n`
+    prompt += `⚠️⚠️⚠️ REGRAS ABSOLUTAS:\n`
+    prompt += `1. SEMPRE comece com "📁 Serviços:" (se houver serviços na hierarquia acima)\n`
+    prompt += `2. SEMPRE continue com "📁 Produtos:" (se houver produtos na hierarquia acima)\n`
+    prompt += `3. DENTRO de "📁 Produtos:", SEMPRE liste cada subcategoria com "  📁" (2 espaços + emoji)\n`
+    prompt += `4. DENTRO de cada subcategoria, os itens devem ter "    -" (4 espaços + hífen)\n`
+    prompt += `5. NUNCA liste todos os itens em uma única lista sem categorias\n`
+    prompt += `6. NUNCA omita as categorias principais (Serviços, Produtos)\n`
+    prompt += `7. NUNCA omita as subcategorias (Bolachas, Chaveiros, Figure)\n`
+    prompt += `8. Use EXATAMENTE os nomes e preços mostrados na hierarquia acima\n\n`
+    prompt += `Se você não seguir este formato exato, a resposta estará ERRADA!\n`
+  } else if (!isAppointmentContext && products.length > 0) {
+    // Fallback: lista simples de produtos (sem categorias)
     prompt += `\n\nPRODUTOS DISPONÍVEIS:\n`
     products.forEach((product: any) => {
-      prompt += `- ${product.name}`
-      if (product.description) prompt += `: ${product.description}`
-      if (product.price) prompt += ` (R$ ${product.price})`
-      prompt += `\n`
+      // Extrai nome e preço se estiver em formato string "Nome - R$ X,XX"
+      if (typeof product === 'string') {
+        prompt += `- ${product}\n`
+      } else {
+        prompt += `- ${product.name}`
+        if (product.description) prompt += `: ${product.description}`
+        if (product.price) {
+          const priceStr = typeof product.price === 'number' 
+            ? `R$ ${product.price.toFixed(2).replace('.', ',')}` 
+            : product.price
+          prompt += ` - ${priceStr}`
+        }
+        prompt += `\n`
+      }
     })
   }
 
-  if (services.length > 0) {
-    prompt += `\n\nSERVIÇOS DISPONÍVEIS:\n`
-    services.forEach((service: any) => {
-      prompt += `- ${service.name}`
-      if (service.description) prompt += `: ${service.description}`
-      if (service.duration) prompt += ` (duração: ${service.duration} minutos)`
-      if (service.price) prompt += ` (R$ ${service.price})`
-      prompt += `\n`
+  // Se é contexto de agendamento, mostra APENAS serviços com agendamento
+  if (isAppointmentContext && servicesWithAppointment.length > 0) {
+    prompt += `\n\n📅 SERVIÇOS DISPONÍVEIS PARA AGENDAMENTO (APENAS ESTES):\n`
+    const servicesList: string[] = []
+    servicesWithAppointment.forEach((service: any) => {
+      const serviceName = service.name
+      let serviceLine = `- ${serviceName}`
+      if (service.duration) serviceLine += ` (duração: ${service.duration} minutos)`
+      
+      // Busca preço do serviço se disponível (pode estar em formato string "Nome - R$ X,XX" ou objeto)
+      const serviceNameLower = serviceName.toLowerCase().trim()
+      
+      // Tenta encontrar o serviço na lista de serviços para obter o preço
+      const serviceWithPrice = services.find((s: any) => {
+        if (typeof s === 'string') {
+          // Se é string no formato "Nome - R$ X,XX", extrai o nome
+          const nameMatch = s.match(/^([^-]+)/)
+          return nameMatch && nameMatch[1].toLowerCase().trim() === serviceNameLower
+        } else {
+          return s.name?.toLowerCase().trim() === serviceNameLower
+        }
+      })
+      
+      if (serviceWithPrice) {
+        if (typeof serviceWithPrice === 'string') {
+          // Se já está no formato "Nome - R$ X,XX", extrai apenas o preço
+          const pricePart = serviceWithPrice.split(' - ')[1]
+          if (pricePart) {
+            serviceLine += ` - ${pricePart}`
+          }
+        } else {
+          // Extrai preço de objeto
+          if (serviceWithPrice.price) {
+            serviceLine += ` - R$ ${serviceWithPrice.price.toFixed(2).replace('.', ',')}`
+          }
+        }
+      }
+      servicesList.push(serviceLine)
     })
+    
+    // Adiciona a lista formatada
+    prompt += servicesList.join('\n')
+    prompt += `\n\n⚠️⚠️⚠️ CRÍTICO ABSOLUTO - CONTEXTO DE AGENDAMENTO:\n`
+    prompt += `- Você DEVE listar APENAS os serviços acima (${servicesWithAppointment.length} serviço(s))\n`
+    prompt += `- NUNCA liste produtos (Figure, Chaveiro, Bolacha, etc.) em contexto de agendamento\n`
+    prompt += `- NUNCA liste serviços que não estão na lista acima\n`
+    prompt += `- Se o cliente perguntar sobre produtos, informe que produtos não requerem agendamento\n`
+    prompt += `- Use EXATAMENTE a lista acima, sem adicionar ou remover itens\n`
+  } else if (!isAppointmentContext && services.length > 0) {
+    // Se não é contexto de agendamento e não há estrutura por categoria, mostra todos os serviços
+    // (Se há catalogByCategory, os serviços já foram listados acima junto com os produtos)
+    if (!catalogByCategory || catalogByCategory.length === 0) {
+      prompt += `\n\nSERVIÇOS DISPONÍVEIS:\n`
+      services.forEach((service: any) => {
+        // Se service é string (formato do catálogo: "Nome - R$ X,XX"), usa direto
+        if (typeof service === 'string') {
+          prompt += `- ${service}\n`
+        } else {
+          // Se service é objeto, formata
+          prompt += `- ${service.name}`
+          if (service.description) prompt += `: ${service.description}`
+          if (service.duration) prompt += ` (duração: ${service.duration} minutos)`
+          if (service.price) prompt += ` (R$ ${service.price})`
+          prompt += `\n`
+        }
+      })
+    }
+  }
+  
+  // CRÍTICO: Se é contexto de agendamento, garante que nenhum produto seja listado
+  if (isAppointmentContext) {
+    prompt += `\n\n⚠️⚠️⚠️ REGRAS CRÍTICAS PARA CONTEXTO DE AGENDAMENTO:\n`
+    prompt += `1. Você DEVE listar APENAS os serviços que foram mostrados acima na seção "SERVIÇOS DISPONÍVEIS PARA AGENDAMENTO"\n`
+    prompt += `2. NUNCA liste produtos (Figure, Chaveiro, Bolacha, etc.) - produtos NÃO requerem agendamento\n`
+    prompt += `3. NUNCA liste serviços que não estão na lista acima\n`
+    prompt += `4. Se o cliente perguntar sobre produtos, informe: "Produtos não requerem agendamento. Para agendar, escolha um dos serviços listados acima."\n`
+    prompt += `5. Use EXATAMENTE a lista de serviços mostrada acima, sem adicionar, remover ou modificar itens\n`
+    prompt += `6. Se você ver produtos na lista de "serviços", IGNORE-OS - eles não devem aparecer em contexto de agendamento\n`
+    prompt += `7. IMPORTANTE: No catálogo, produtos têm type="product" e serviços têm type="service". Em contexto de agendamento, liste APENAS serviços (type="service" com requiresAppointment=true)\n`
   }
 
   // ==========================================
@@ -206,6 +380,13 @@ export function buildSystemPrompt(
   prompt += `  - Item 1\n`
   prompt += `  - Item 2\n`
   prompt += `  - Item 3\n`
+  // Instruções sobre formatação do catálogo (será sobrescrito abaixo se houver categorias)
+  if (!catalogByCategory || catalogByCategory.length === 0) {
+    prompt += `- ⚠️ CRÍTICO: Quando listar o catálogo completo (produtos E serviços), SEMPRE separe com títulos:\n`
+    prompt += `  * Primeiro: "Serviços:" seguido da lista de serviços\n`
+    prompt += `  * Depois: "Produtos:" seguido da lista de produtos\n`
+    prompt += `  * NUNCA misture serviços e produtos na mesma lista sem separação\n`
+  }
 
   // Instruções sobre promoções
   prompt += `\n\n🎯 SISTEMA DE PROMOÇÕES E DESCONTOS:\n`
@@ -362,22 +543,38 @@ export function buildSystemPrompt(
     prompt += `- Depois dessa mensagem inicial, continue apresentando os produtos/serviços\n`
   }
 
-  if (sellsProducts && products.length > 0) {
-    prompt += `- Na primeira mensagem, SEMPRE mencione os produtos em formato de lista com marcadores:\n`
-    products.forEach((p: any) => {
-      prompt += `  - ${p.name}\n`
+  // CRÍTICO: Se é contexto de agendamento, instrui a IA a listar apenas serviços com agendamento
+  if (isAppointmentContext && servicesWithAppointment.length > 0) {
+    prompt += `- ⚠️ CONTEXTO DE AGENDAMENTO: Quando o cliente pedir para agendar ou perguntar sobre horários, liste APENAS os serviços que requerem agendamento:\n`
+    servicesWithAppointment.forEach((s: any) => {
+      prompt += `  - ${s.name}`
+      // Busca preço do serviço se disponível
+      const serviceWithPrice = services.find((serv: any) => serv.name === s.name)
+      if (serviceWithPrice?.price) {
+        prompt += ` (R$ ${serviceWithPrice.price})`
+      }
+      prompt += `\n`
     })
-    prompt += `- Quando perguntarem sobre produtos, SEMPRE liste-os em formato de lista com marcadores (-), um por linha\n`
-    prompt += `- Seja detalhado e persuasivo ao apresentar produtos\n`
-  }
+    prompt += `- ⚠️ CRÍTICO: Em contexto de agendamento, NÃO liste produtos - apenas serviços com agendamento!\n`
+    prompt += `- Quando perguntarem sobre agendamento ou horários, SEMPRE liste apenas os serviços em formato de lista com marcadores (-), um por linha\n`
+  } else {
+    if (sellsProducts && products.length > 0) {
+      prompt += `- Na primeira mensagem, SEMPRE mencione os produtos em formato de lista com marcadores:\n`
+      products.forEach((p: any) => {
+        prompt += `  - ${p.name}\n`
+      })
+      prompt += `- Quando perguntarem sobre produtos, SEMPRE liste-os em formato de lista com marcadores (-), um por linha\n`
+      prompt += `- Seja detalhado e persuasivo ao apresentar produtos\n`
+    }
 
-  if (sellsServices && services.length > 0) {
-    prompt += `- Na primeira mensagem, SEMPRE mencione os serviços em formato de lista com marcadores:\n`
-    services.forEach((s: any) => {
-      prompt += `  - ${s.name}\n`
-    })
-    prompt += `- Quando perguntarem sobre serviços, SEMPRE liste-os em formato de lista com marcadores (-), um por linha\n`
-    prompt += `- Seja detalhado e persuasivo ao apresentar serviços\n`
+    if (sellsServices && services.length > 0) {
+      prompt += `- Na primeira mensagem, SEMPRE mencione os serviços em formato de lista com marcadores:\n`
+      services.forEach((s: any) => {
+        prompt += `  - ${s.name}\n`
+      })
+      prompt += `- Quando perguntarem sobre serviços, SEMPRE liste-os em formato de lista com marcadores (-), um por linha\n`
+      prompt += `- Seja detalhado e persuasivo ao apresentar serviços\n`
+    }
   }
 
   if (pricingInfo) {
@@ -396,6 +593,31 @@ export function buildSystemPrompt(
   prompt += `- Mantenha o foco em VENDER e APRESENTAR ${businessName} de forma positiva\n`
   prompt += `- Você está conversando com ${contactName}\n`
   prompt += `- Lembre-se: você é um VENDEDOR, não um assistente genérico\n`
+  
+  // Instruções de formatação para respostas organizadas com separação clara
+  prompt += `\n\n📋 FORMATO DE RESPOSTAS - ORGANIZE COM TÍTULOS CLAROS:\n`
+  prompt += `- Quando listar o catálogo completo, SEMPRE separe em duas seções:\n`
+  prompt += `  1. "Serviços:" (se houver serviços)\n`
+  prompt += `  2. "Produtos:" (se houver produtos)\n`
+  prompt += `- Use títulos claros "Serviços:" e "Produtos:" para separar as seções\n`
+  prompt += `- Formato: uma linha por item com hífen (-), nome e preço\n`
+  prompt += `- Seja breve na introdução e conclusão\n`
+  prompt += `- Exemplo de formato ideal:\n`
+  prompt += `  "Aqui está o catálogo de nossos produtos e serviços:\n\n`
+  prompt += `  Serviços:\n`
+  prompt += `  - Confronto Abissal - R$ 30,00\n`
+  prompt += `  - Missoes Diarias - R$ 2,00\n`
+  prompt += `  - Abismo Espiral - R$ 25,00\n`
+  prompt += `  - Analise de conta - R$ 60,00\n\n`
+  prompt += `  Produtos:\n`
+  prompt += `  - Figure da Furina - R$ 200,00\n`
+  prompt += `  - Chaveiro Furina - R$ 15,00\n`
+  prompt += `  - Chaveiro Mavuika - R$ 10,00\n`
+  prompt += `  - Figure da Columbina - R$ 100,00\n`
+  prompt += `  - Bolacha da Emilie - R$ 7,00\n`
+  prompt += `  - Bolacha da Nahida - R$ 20,00\n\n`
+  prompt += `  Posso te ajudar com mais alguma informação sobre os produtos ou serviços?"\n`
+  prompt += `- ⚠️ IMPORTANTE: SEMPRE separe Serviços e Produtos com títulos claros\n`
 
   // ==========================================
   // FUNCIONALIDADE DE AGENDAMENTO DETALHADA

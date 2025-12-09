@@ -9,6 +9,7 @@ interface Message {
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
+  mediaUrl?: string | null // URL da imagem se houver
 }
 
 export default function TestChatPage() {
@@ -89,6 +90,7 @@ export default function TestChatPage() {
           role: 'assistant',
           content: data.response,
           timestamp: new Date(),
+          mediaUrl: data.mediaUrl || null, // Inclui URL da imagem se houver
         }
         setMessages(prev => [...prev, assistantMessage])
 
@@ -201,6 +203,20 @@ export default function TestChatPage() {
                         : 'bg-gray-100 text-gray-900'
                     }`}
                   >
+                    {/* Exibe imagem se houver */}
+                    {message.mediaUrl && (
+                      <div className="mb-2 rounded overflow-hidden">
+                        <img
+                          src={message.mediaUrl}
+                          alt="Anexo"
+                          className="max-w-full h-auto max-h-64 object-contain rounded"
+                          onError={(e) => {
+                            // Se a imagem falhar ao carregar, esconde o elemento
+                            e.currentTarget.style.display = 'none'
+                          }}
+                        />
+                      </div>
+                    )}
                     <p className="text-sm whitespace-pre-wrap">{message.content}</p>
                     <p className="text-xs mt-1 opacity-70">
                       {message.timestamp.toLocaleTimeString('pt-BR')}

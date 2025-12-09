@@ -2008,7 +2008,10 @@ export async function executeAIOnlyWorkflow(
 
     console.log(`📝 [executeAIOnlyWorkflow] Continuando com processamento normal da IA`)
 
-    // Busca histórico recente da conversa
+    // Busca histórico recente da conversa (reduzido para evitar overflow de tokens)
+    // gpt-3.5-turbo tem limite de 16385 tokens, então precisamos ser conservadores
+    const maxHistoryMessages = 10 // Reduzido de 20 para 10 para evitar overflow
+    
     const recentMessages = await prisma.message.findMany({
       where: {
         instanceId,
@@ -2018,7 +2021,7 @@ export async function executeAIOnlyWorkflow(
         ],
       },
       orderBy: { timestamp: 'desc' },
-      take: 20, // Últimas 20 mensagens para contexto
+      take: maxHistoryMessages,
     })
 
     console.log(`📊 [executeAIOnlyWorkflow] Mensagens recentes encontradas: ${recentMessages.length}`)
@@ -2043,11 +2046,15 @@ export async function executeAIOnlyWorkflow(
         content: msg.body,
       }))
     
-    // Se é solicitação explícita de agendamento, limita histórico para evitar confusão
+    // Limita histórico baseado no contexto:
+    // - Se é solicitação de agendamento: máximo 5 mensagens
+    // - Caso contrário: máximo 8 mensagens (para deixar espaço para system prompt e funções)
     if (isExplicitAppointmentRequest && conversationHistory.length > 5) {
       console.log(`📅 [executeAIOnlyWorkflow] Solicitação explícita de agendamento detectada, limitando histórico de ${conversationHistory.length} para 5 mensagens`)
-      // Mantém apenas as últimas 5 mensagens (incluindo a atual)
       conversationHistory = conversationHistory.slice(-5)
+    } else if (!isExplicitAppointmentRequest && conversationHistory.length > 8) {
+      console.log(`📊 [executeAIOnlyWorkflow] Histórico muito longo (${conversationHistory.length} mensagens), limitando para 8 para evitar overflow de tokens`)
+      conversationHistory = conversationHistory.slice(-8)
     }
 
     // Parse dos detalhes do negócio
@@ -2076,133 +2083,255 @@ export async function executeAIOnlyWorkflow(
           },
           include: {
             nodes: true,
+            connections: {
+              include: {
+                sourceNode: true,
+                targetNode: true,
+              },
+            },
           },
         })
 
         if (catalog) {
-          console.log(`📚 Catálogo encontrado: "${catalog.name}" com ${catalog.nodes.length} nós`)
+          console.log(`📚 Catálogo encontrado: "${catalog.name}" com ${catalog.nodes.length} nós e ${catalog.connections.length} conexões`)
+          
+          // Busca o nó principal "catalog" para obter a imagem
+          let catalogImageUrl: string | null = null
+          for (const node of catalog.nodes) {
+            if (node.type === 'catalog') {
+              try {
+                const nodeData = JSON.parse(node.data)
+                if (nodeData.imageUrl) {
+                  catalogImageUrl = nodeData.imageUrl
+                  console.log(`📋 Imagem do catálogo encontrada no nó principal: ${catalogImageUrl}`)
+                  break
+                }
+              } catch (e) {
+                console.error('❌ Erro ao parsear dados do nó catalog:', e)
+              }
+            }
+          }
+          
+          // Armazena imageUrl do catálogo para envio quando solicitado
+          businessDetails.catalogImageUrl = catalogImageUrl
 
-          // Extrair produtos e serviços do catálogo
-          const catalogProducts: string[] = []
-          const catalogServices: string[] = []
+          // Estrutura hierárquica completa do catálogo
+          interface CatalogHierarchyNode {
+            id: string
+            name: string
+            type: 'category' | 'subcategory'
+            products: string[]
+            services: string[]
+            subcategories?: CatalogHierarchyNode[]
+          }
+          
           const servicesWithAppointment: ServiceWithAppointment[] = []
-
-          // Processa nós do catálogo de forma assíncrona
+          
+          // Mapeia todos os nós por ID para acesso rápido
+          const nodesMap = new Map<string, { id: string, type: string, data: any }>()
           for (const node of catalog.nodes) {
             try {
               const nodeData = JSON.parse(node.data)
-              console.log(`🔍 Processando nó do catálogo:`, {
-                type: node.type,
-                name: nodeData.name,
-                hasPrice: !!nodeData.price,
-                price: nodeData.price,
-                requiresAppointment: nodeData.requiresAppointment,
-                appointmentDuration: nodeData.appointmentDuration
-              })
-
-              if (node.type === 'product' && nodeData.name) {
-                let productName = nodeData.name
-                if (nodeData.price) {
-                  productName += ` - R$ ${nodeData.price.toFixed(2).replace('.', ',')}`
-                }
-                catalogProducts.push(productName)
-                console.log(`✅ Produto adicionado: ${productName}`)
-
-                // Registra interesse se cliente visualizou produto
-                if (contactNumber) {
-                  try {
-                    const { registerProductInterest } = await import('./promotions')
-                    await registerProductInterest({
-                      userId,
-                      instanceId,
-                      contactNumber,
-                      productId: node.id,
-                      productType: 'catalog',
-                      productName: nodeData.name,
-                      interestType: 'viewed',
-                    })
-                  } catch (error) {
-                    // Ignora erros de registro de interesse
-                    console.error('Erro ao registrar interesse do produto:', error)
-                  }
-                }
-              } else if (node.type === 'service' && nodeData.name) {
-                let serviceName = nodeData.name
-                if (nodeData.price) {
-                  serviceName += ` - R$ ${nodeData.price.toFixed(2).replace('.', ',')}`
-                }
-                catalogServices.push(serviceName)
-
-                // Coleta informações de agendamento do serviço
-                if (nodeData.requiresAppointment) {
-                  servicesWithAppointment.push({
-                    name: nodeData.name,
-                    duration: nodeData.appointmentDuration,
-                    imageUrl: nodeData.imageUrl,
-                  })
-                  console.log(`📅 Serviço com agendamento: ${nodeData.name} (duração: ${nodeData.appointmentDuration || 'não especificada'} min)`)
-                }
-
-                // Coleta informações de agendamento do serviço
-                if (nodeData.requiresAppointment) {
-                  servicesWithAppointment.push({
-                    name: nodeData.name,
-                    duration: nodeData.appointmentDuration,
-                    imageUrl: nodeData.imageUrl,
-                  })
-                  console.log(`📅 Serviço com agendamento: ${nodeData.name} (duração: ${nodeData.appointmentDuration || 'não especificada'} min)`)
-                }
-
-                console.log(`✅ Serviço adicionado: ${serviceName}`)
-
-                // Registra interesse se cliente visualizou serviço
-                if (contactNumber) {
-                  try {
-                    const { registerProductInterest } = await import('./promotions')
-                    await registerProductInterest({
-                      userId,
-                      instanceId,
-                      contactNumber,
-                      productId: node.id,
-                      productType: 'catalog',
-                      productName: nodeData.name,
-                      interestType: 'viewed',
-                    })
-                  } catch (error) {
-                    // Ignora erros de registro de interesse
-                    console.error('Erro ao registrar interesse do serviço:', error)
-                  }
-                }
-              } else {
-                console.log(`⚠️ Nó ignorado: tipo=${node.type}, tem nome=${!!nodeData.name}`)
-              }
+              nodesMap.set(node.id, { id: node.id, type: node.type, data: nodeData })
             } catch (e) {
-              console.error('❌ Erro ao parsear dados do nó do catálogo:', e, 'Node data:', node.data)
+              console.error('❌ Erro ao parsear nó:', e)
+            }
+          }
+          
+          // Mapeia conexões: source -> target[]
+          const connectionsMap = new Map<string, string[]>() // sourceId -> targetIds[]
+          for (const connection of catalog.connections) {
+            if (!connectionsMap.has(connection.sourceNodeId)) {
+              connectionsMap.set(connection.sourceNodeId, [])
+            }
+            connectionsMap.get(connection.sourceNodeId)!.push(connection.targetNodeId)
+          }
+          
+          // Encontra o nó principal "catalog"
+          let catalogMainNodeId: string | null = null
+          Array.from(nodesMap.values()).forEach((node) => {
+            if (node.type === 'catalog' && !catalogMainNodeId) {
+              catalogMainNodeId = node.id
+            }
+          })
+          
+          // Função recursiva para construir a hierarquia
+          const buildHierarchy = (parentNodeId: string, depth: number = 0): CatalogHierarchyNode[] => {
+            const children: CatalogHierarchyNode[] = []
+            const childIds = connectionsMap.get(parentNodeId) || []
+            
+            for (const childId of childIds) {
+              const childNode = nodesMap.get(childId)
+              if (!childNode) continue
+              
+              if (childNode.type === 'category') {
+                // É uma categoria ou subcategoria
+                const categoryName = childNode.data.name || childNode.data.label || 'Sem nome'
+                const hierarchyNode: CatalogHierarchyNode = {
+                  id: childId,
+                  name: categoryName,
+                  type: depth === 0 ? 'category' : 'subcategory',
+                  products: [],
+                  services: [],
+                  subcategories: buildHierarchy(childId, depth + 1),
+                }
+                
+                // Busca produtos e serviços diretamente conectados a esta categoria
+                const directChildren = connectionsMap.get(childId) || []
+                console.log(`🔍 [buildHierarchy] Categoria "${categoryName}" (${childId}): ${directChildren.length} conexões diretas`)
+                for (const directChildId of directChildren) {
+                  const directChild = nodesMap.get(directChildId)
+                  if (!directChild) {
+                    console.log(`⚠️ [buildHierarchy] Nó ${directChildId} não encontrado no nodesMap`)
+                    continue
+                  }
+                  
+                  console.log(`  → Nó conectado: tipo=${directChild.type}, nome=${directChild.data.name || 'sem nome'}`)
+                  
+                  if (directChild.type === 'product' && directChild.data.name) {
+                    let productName = directChild.data.name
+                    if (directChild.data.price) {
+                      productName += ` - R$ ${directChild.data.price.toFixed(2).replace('.', ',')}`
+                    }
+                    hierarchyNode.products.push(productName)
+                    
+                    // NOTA: Não registramos interesse aqui durante a construção da hierarquia
+                    // pois isso causa erros de foreign key (CatalogNode.id não existe em Service)
+                    // O interesse será registrado quando o usuário realmente interagir com o produto
+                  } else if (directChild.type === 'service' && directChild.data.name) {
+                    let serviceName = directChild.data.name
+                    if (directChild.data.price) {
+                      serviceName += ` - R$ ${directChild.data.price.toFixed(2).replace('.', ',')}`
+                    }
+                    hierarchyNode.services.push(serviceName)
+                    
+                    // Coleta informações de agendamento
+                    if (directChild.data.requiresAppointment) {
+                      const alreadyAdded = servicesWithAppointment.some((s: any) => s.name === directChild.data.name)
+                      if (!alreadyAdded) {
+                        servicesWithAppointment.push({
+                          name: directChild.data.name,
+                          duration: directChild.data.appointmentDuration,
+                          imageUrl: directChild.data.imageUrl,
+                        })
+                      }
+                    }
+                    
+                    // NOTA: Não registramos interesse aqui durante a construção da hierarquia
+                    // pois isso causa erros de foreign key (CatalogNode.id não existe em Service)
+                    // O interesse será registrado quando o usuário realmente interagir com o serviço
+                  }
+                }
+                
+                // Só adiciona se tiver conteúdo (produtos, serviços ou subcategorias)
+                // IMPORTANTE: Não agrega produtos das subcategorias - mantém hierarquia separada
+                if (hierarchyNode.products.length > 0 || hierarchyNode.services.length > 0 || (hierarchyNode.subcategories && hierarchyNode.subcategories.length > 0)) {
+                  children.push(hierarchyNode)
+                  console.log(`📁 Categoria "${hierarchyNode.name}" adicionada: ${hierarchyNode.products.length} produtos diretos, ${hierarchyNode.services.length} serviços diretos, ${hierarchyNode.subcategories?.length || 0} subcategorias`)
+                }
+              }
+            }
+            
+            return children
+          }
+          
+          // Constrói a hierarquia a partir do nó principal
+          let catalogByCategory: Array<{ category: string | null, products: string[], services: string[], subcategories?: Array<{ category: string, products: string[], services: string[] }> }> = []
+          
+          if (catalogMainNodeId) {
+            const hierarchy = buildHierarchy(catalogMainNodeId)
+            catalogByCategory = hierarchy.map((cat: CatalogHierarchyNode) => ({
+              category: cat.name,
+              products: cat.products,
+              services: cat.services,
+              subcategories: cat.subcategories?.map((subcat: CatalogHierarchyNode) => ({
+                category: subcat.name,
+                products: subcat.products,
+                services: subcat.services,
+              })),
+            }))
+          } else {
+            // Fallback: se não houver nó principal, processa sem hierarquia
+            console.log(`⚠️ Nó principal "catalog" não encontrado, usando processamento simples`)
+            const itemsWithoutCategory: { products: string[], services: string[] } = { products: [], services: [] }
+            
+            Array.from(nodesMap.values()).forEach((node) => {
+              if (node.type === 'product' && node.data.name) {
+                let productName = node.data.name
+                if (node.data.price) {
+                  productName += ` - R$ ${node.data.price.toFixed(2).replace('.', ',')}`
+                }
+                itemsWithoutCategory.products.push(productName)
+              } else if (node.type === 'service' && node.data.name) {
+                let serviceName = node.data.name
+                if (node.data.price) {
+                  serviceName += ` - R$ ${node.data.price.toFixed(2).replace('.', ',')}`
+                }
+                itemsWithoutCategory.services.push(serviceName)
+                
+                if (node.data.requiresAppointment) {
+                  const alreadyAdded = servicesWithAppointment.some((s: any) => s.name === node.data.name)
+                  if (!alreadyAdded) {
+                    servicesWithAppointment.push({
+                      name: node.data.name,
+                      duration: node.data.appointmentDuration,
+                      imageUrl: node.data.imageUrl,
+                    })
+                  }
+                }
+              }
+            })
+            
+            if (itemsWithoutCategory.products.length > 0 || itemsWithoutCategory.services.length > 0) {
+              catalogByCategory.push({
+                category: null,
+                products: itemsWithoutCategory.products,
+                services: itemsWithoutCategory.services,
+              })
             }
           }
 
+          // Mantém listas simples para compatibilidade (mas organizadas por categoria)
+          // Função recursiva para coletar todos os produtos/serviços (incluindo das subcategorias)
+          const collectAllItems = (cats: any[], products: string[], services: string[]) => {
+            cats.forEach((cat: any) => {
+              products.push(...cat.products)
+              services.push(...cat.services)
+              if (cat.subcategories && cat.subcategories.length > 0) {
+                collectAllItems(cat.subcategories, products, services)
+              }
+            })
+          }
+          
+          const catalogProducts: string[] = []
+          const catalogServices: string[] = []
+          collectAllItems(catalogByCategory, catalogProducts, catalogServices)
+
           // Se há catalogId, SEMPRE usar produtos/serviços do catálogo (substitui os manuais)
-          // Limpa produtos/serviços manuais quando há catálogo
           businessDetails.products = catalogProducts.length > 0 ? catalogProducts : []
           businessDetails.services = catalogServices.length > 0 ? catalogServices : []
-
-          // Armazena informações de agendamento dos serviços
           businessDetails.servicesWithAppointment = servicesWithAppointment
+          
+          // NOVO: Armazena estrutura organizada por categoria
+          businessDetails.catalogByCategory = catalogByCategory
 
-          console.log(`📦 Produtos do catálogo carregados: ${catalogProducts.length} produtos`, catalogProducts)
-          console.log(`🛠️ Serviços do catálogo carregados: ${catalogServices.length} serviços`, catalogServices)
+          // Log detalhado da hierarquia
+          const logHierarchy = (cats: any[], depth: number = 0): void => {
+            cats.forEach((cat: any) => {
+              const indent = '  '.repeat(depth)
+              console.log(`${indent}📁 ${cat.category || '(sem categoria)'}: ${cat.products.length} produtos, ${cat.services.length} serviços`)
+              if (cat.subcategories && cat.subcategories.length > 0) {
+                console.log(`${indent}  Subcategorias: ${cat.subcategories.length}`)
+                logHierarchy(cat.subcategories, depth + 1)
+              }
+            })
+          }
+          
+          console.log(`📦 Produtos do catálogo carregados: ${catalogProducts.length} produtos em ${catalogByCategory.length} categorias`)
+          console.log(`🛠️ Serviços do catálogo carregados: ${catalogServices.length} serviços em ${catalogByCategory.length} categorias`)
+          console.log(`📁 Estrutura hierárquica completa:`)
+          logHierarchy(catalogByCategory)
           console.log(`🔄 Produtos/Serviços manuais foram SUBSTITUÍDOS pelos do catálogo`)
-
-          // Log para debug
-          console.log(`📊 Catálogo processado:`, {
-            catalogId: businessDetails.catalogId,
-            catalogName: catalog.name,
-            nodesCount: catalog.nodes.length,
-            productsFound: catalogProducts.length,
-            servicesFound: catalogServices.length,
-            products: catalogProducts,
-            services: catalogServices
-          })
         } else {
           console.error(`❌ Catálogo não encontrado: catalogId=${businessDetails.catalogId}, userId=${userId}`)
           console.error(`⚠️ Usando produtos/serviços manuais porque catálogo não foi encontrado`)
@@ -2229,6 +2358,81 @@ export async function executeAIOnlyWorkflow(
       hasPricing: !!businessDetails.pricingInfo
     })
 
+    // CRÍTICO: Detecta se é contexto de agendamento baseado na mensagem do usuário
+    // userMessageLower já foi declarado anteriormente, então reutilizamos
+    const isAppointmentRequest = 
+      userMessageLower.includes('agendar') ||
+      userMessageLower.includes('marcar') ||
+      userMessageLower.includes('horário') ||
+      userMessageLower.includes('horario') ||
+      userMessageLower.includes('agendamento')
+    
+    // Se é contexto de agendamento, filtra para mostrar APENAS serviços com agendamento
+    const businessDetailsForPrompt = { ...businessDetails }
+    if (isAppointmentRequest) {
+      console.log(`📅 [executeAIOnlyWorkflow] Contexto de agendamento detectado - filtrando apenas serviços com agendamento`)
+      
+      // Remove TODOS os produtos
+      businessDetailsForPrompt.products = []
+      
+      // Remove estrutura por categoria em contexto de agendamento (não precisa de categorias para agendamento)
+      if (businessDetailsForPrompt.catalogByCategory) {
+        delete businessDetailsForPrompt.catalogByCategory
+      }
+      
+      // Filtra serviços para mostrar APENAS os que requerem agendamento
+      const servicesWithAppointment = businessDetails.servicesWithAppointment || []
+      if (servicesWithAppointment.length > 0) {
+        // Remove duplicatas do servicesWithAppointment baseado no nome
+        const uniqueServicesWithAppointment = servicesWithAppointment.filter((service: any, index: number, self: any[]) => 
+          index === self.findIndex((s: any) => s.name === service.name)
+        )
+        
+        // Cria lista de serviços filtrados (apenas os que requerem agendamento)
+        const filteredServices: string[] = []
+        const allServices = businessDetails.services || []
+        
+        // Para cada serviço com agendamento, busca na lista completa de serviços para manter o formato com preço
+        uniqueServicesWithAppointment.forEach((serviceWithAppt: any) => {
+          const serviceName = serviceWithAppt.name
+          // Busca o serviço na lista completa (pode estar como string "Nome - R$ X,XX")
+          const fullService = allServices.find((s: any) => {
+            if (typeof s === 'string') {
+              // Se é string, extrai o nome antes do " - "
+              const nameMatch = s.match(/^([^-]+)/)
+              return nameMatch && nameMatch[1].trim() === serviceName
+            } else {
+              return s.name === serviceName
+            }
+          })
+          
+          if (fullService) {
+            const serviceString = typeof fullService === 'string' ? fullService : `${fullService.name}${fullService.price ? ` - R$ ${fullService.price.toFixed(2).replace('.', ',')}` : ''}`
+            // Evita duplicatas na lista final
+            if (!filteredServices.includes(serviceString)) {
+              filteredServices.push(serviceString)
+            }
+          } else {
+            // Se não encontrou na lista completa, adiciona apenas o nome (se ainda não foi adicionado)
+            if (!filteredServices.some((s: string) => s.includes(serviceName))) {
+              filteredServices.push(serviceName)
+            }
+          }
+        })
+        
+        businessDetailsForPrompt.services = filteredServices
+        console.log(`📅 [executeAIOnlyWorkflow] Produtos removidos. Serviços filtrados: ${filteredServices.length} (apenas com agendamento, sem duplicatas)`)
+        console.log(`📅 [executeAIOnlyWorkflow] Serviços com agendamento:`, filteredServices)
+        console.log(`📅 [executeAIOnlyWorkflow] servicesWithAppointment (nomes únicos):`, uniqueServicesWithAppointment.map((s: any) => s.name))
+        console.log(`📅 [executeAIOnlyWorkflow] businessDetails.services (todos):`, businessDetails.services)
+        console.log(`📅 [executeAIOnlyWorkflow] businessDetails.products (deve estar vazio):`, businessDetailsForPrompt.products)
+      } else {
+        // Se não há serviços com agendamento, remove todos os serviços também
+        businessDetailsForPrompt.services = []
+        console.log(`📅 [executeAIOnlyWorkflow] Nenhum serviço com agendamento encontrado. Removendo todos os serviços.`)
+      }
+    }
+
     // Gera contexto aprimorado de agendamentos (similar ao Midas)
     let appointmentContext = ''
     try {
@@ -2244,9 +2448,10 @@ export async function executeAIOnlyWorkflow(
 
     // Monta o prompt do sistema com os detalhes do negócio usando a nova estrutura modular
     const systemPrompt = buildSystemPrompt(
-      businessDetails,
+      businessDetailsForPrompt, // Usa versão filtrada (sem produtos se for agendamento)
       contactNameFinal || formattedPhoneFormatted,
-      appointmentContext
+      appointmentContext,
+      userMessage // Passa a mensagem do usuário para detectar contexto de agendamento
     )
 
     // Verifica se é a primeira interação
@@ -2412,13 +2617,19 @@ export async function executeAIOnlyWorkflow(
     const finalConversationHistory = isFirstInteraction ? [] : conversationHistory
     const temperature = isFirstInteraction ? 0.9 : 0.8 // Mais criativo e natural
 
-    console.log(`🤖 Gerando resposta IA-only. Primeira interação: ${isFirstInteraction}, Histórico: ${finalConversationHistory.length} mensagens`)
+    // Detecta se é solicitação de catálogo para desabilitar cache (garantir hierarquia correta)
+    const userMessageLowerForCache = userMessage.toLowerCase()
+    const catalogKeywordsForCache = ['catálogo', 'catalogo', 'cardápio', 'cardapio', 'menu', 'produtos', 'serviços', 'servicos', 'itens']
+    const isCatalogRequestForCache = catalogKeywordsForCache.some(keyword => userMessageLowerForCache.includes(keyword))
+    const useCache = !isCatalogRequestForCache // Desabilita cache para solicitações de catálogo
+
+    console.log(`🤖 Gerando resposta IA-only. Primeira interação: ${isFirstInteraction}, Histórico: ${finalConversationHistory.length} mensagens, Cache: ${useCache ? 'habilitado' : 'desabilitado (solicitação de catálogo)'}`)
 
     // Define funções de agendamento para a IA usar quando necessário
     // Função principal: criar agendamento
     const appointmentFunction = {
       name: 'create_appointment',
-      description: '⚠️⚠️⚠️⚠️⚠️ CRÍTICO ABSOLUTO - LEIA COM ATENÇÃO: Cria um agendamento na agenda quando o cliente quer marcar um horário. ⚠️⚠️⚠️ REGRA DE OURO: Quando o cliente pedir para agendar e você tiver DATA E HORA, você DEVE CHAMAR ESTA FUNÇÃO IMEDIATAMENTE, SEM EXCEÇÃO! ⚠️⚠️⚠️ IGNORE mensagens anteriores onde você perguntou "qual serviço?" - Se o cliente mencionou um serviço na MENSAGEM ATUAL, use esse serviço! ⚠️⚠️⚠️ NUNCA responda apenas com texto pedindo confirmação - SEMPRE chame a função primeiro! ⚠️⚠️⚠️ SE VOCÊ NÃO CHAMAR ESTA FUNÇÃO, O AGENDAMENTO NÃO SERÁ CRIADO E O CLIENTE FICARÁ CONFUSO! MAPEAMENTO DE SERVIÇOS: Se o cliente disser "confronto" ou "um confronto", mapeie para "Confronto Abissal". Se disser "abismo", mapeie para "Abismo Espiral". Se disser "análise" ou "analise", mapeie para "Análise de Conta". Use o nome COMPLETO do serviço na descrição. EXEMPLOS OBRIGATÓRIOS: Cliente: "agendar um confronto para amanhã meio dia" → VOCÊ DEVE CHAMAR IMEDIATAMENTE: create_appointment(date: "amanhã", time: "12:00", description: "Confronto Abissal"). Cliente: "quero marcar para terça às 14h" → VOCÊ DEVE CHAMAR IMEDIATAMENTE: create_appointment(date: "terça-feira", time: "14:00", description: "serviço solicitado"). ⚠️⚠️⚠️ SE O CLIENTE DISSER "AGENDAR" E VOCÊ TIVER DATA E HORA, CHAME A FUNÇÃO AGORA! NÃO PERGUNTE QUAL SERVIÇO - USE O QUE O CLIENTE MENCIONOU NA MENSAGEM ATUAL OU "serviço solicitado"! NÃO PEÇA CONFIRMAÇÃO ANTES - CHAME A FUNÇÃO E ELA VAI PEDIR CONFIRMAÇÃO! A função aceita linguagem natural para data (ex: "amanhã", "próxima segunda") e converte automaticamente. A função verifica automaticamente se o horário está disponível antes de criar.',
+      description: '⚠️⚠️⚠️⚠️⚠️ CRÍTICO ABSOLUTO - LEIA COM ATENÇÃO: Cria um agendamento na agenda quando o cliente quer marcar um horário. ⚠️⚠️⚠️ REGRA DE OURO: Você SÓ PODE chamar esta função quando o cliente mencionar EXPLICITAMENTE tanto a DATA quanto a HORA na mensagem atual. ⚠️⚠️⚠️ NUNCA INVENTE DATA OU HORA - Se o cliente não mencionou data e/ou hora, você DEVE PERGUNTAR antes de chamar esta função! ⚠️⚠️⚠️ EXEMPLOS CORRETOS: Cliente: "quero agendar um abismo espiral" → NÃO CHAME A FUNÇÃO! Pergunte: "Qual data e horário você prefere?" Cliente: "agendar um confronto para amanhã meio dia" → CHAME: create_appointment(date: "amanhã", time: "12:00", description: "Confronto Abissal") Cliente: "quero marcar para terça às 14h" → CHAME: create_appointment(date: "terça-feira", time: "14:00", description: "serviço solicitado") ⚠️⚠️⚠️ SE O CLIENTE NÃO MENCIONOU DATA E/OU HORA, PERGUNTE! NÃO INVENTE VALORES! MAPEAMENTO DE SERVIÇOS: Se o cliente disser "confronto" ou "um confronto", mapeie para "Confronto Abissal". Se disser "abismo", mapeie para "Abismo Espiral". Se disser "análise" ou "analise", mapeie para "Análise de Conta". Use o nome COMPLETO do serviço na descrição. A função aceita linguagem natural para data (ex: "amanhã", "próxima segunda") e converte automaticamente. A função verifica automaticamente se o horário está disponível antes de criar.',
       parameters: {
         type: 'object',
         properties: {
@@ -2587,6 +2798,79 @@ export async function executeAIOnlyWorkflow(
       return null
     }
 
+    // Função auxiliar para formatar data de forma clara (com nome do mês por extenso)
+    // Detecta datas relativas (hoje, amanhã) e mantém a descrição, ou converte para formato por extenso
+    const formatDateLong = (dateStr: string, parsedDate?: Date, originalDateStr?: string): string => {
+      const nowBrazilian = getBrazilDate()
+      
+      // Se temos a data parseada, verifica se é uma data relativa
+      if (parsedDate) {
+        const parsedDay = parsedDate.getDate()
+        const parsedMonth = parsedDate.getMonth()
+        const parsedYear = parsedDate.getFullYear()
+        
+        const todayDay = nowBrazilian.getDate()
+        const todayMonth = nowBrazilian.getMonth()
+        const todayYear = nowBrazilian.getFullYear()
+        
+        // Verifica se é hoje
+        if (parsedDay === todayDay && parsedMonth === todayMonth && parsedYear === todayYear) {
+          return 'hoje'
+        }
+        
+        // Verifica se é amanhã
+        const tomorrow = new Date(nowBrazilian)
+        tomorrow.setDate(tomorrow.getDate() + 1)
+        if (parsedDay === tomorrow.getDate() && parsedMonth === tomorrow.getMonth() && parsedYear === tomorrow.getFullYear()) {
+          return 'amanhã'
+        }
+        
+        // Verifica se é depois de amanhã
+        const dayAfterTomorrow = new Date(nowBrazilian)
+        dayAfterTomorrow.setDate(dayAfterTomorrow.getDate() + 2)
+        if (parsedDay === dayAfterTomorrow.getDate() && parsedMonth === dayAfterTomorrow.getMonth() && parsedYear === dayAfterTomorrow.getFullYear()) {
+          return 'depois de amanhã'
+        }
+        
+        // Verifica se é ontem
+        const yesterday = new Date(nowBrazilian)
+        yesterday.setDate(yesterday.getDate() - 1)
+        if (parsedDay === yesterday.getDate() && parsedMonth === yesterday.getMonth() && parsedYear === yesterday.getFullYear()) {
+          return 'ontem'
+        }
+      }
+      
+      // Se a string original era uma data relativa conhecida, mantém ela
+      if (originalDateStr) {
+        const lower = originalDateStr.toLowerCase().trim()
+        if (lower === 'hoje' || lower === 'amanhã' || lower === 'amanha' || 
+            lower === 'depois de amanhã' || lower === 'depois de amanha' || 
+            lower === 'ontem') {
+          return originalDateStr
+        }
+      }
+      
+      // Tenta parsear a data no formato DD/MM/YYYY e converter para extenso
+      const dateMatch = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+      if (dateMatch) {
+        const day = parseInt(dateMatch[1])
+        const month = parseInt(dateMatch[2])
+        const year = parseInt(dateMatch[3])
+        
+        const monthNames = [
+          'janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
+          'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'
+        ]
+        
+        if (month >= 1 && month <= 12) {
+          return `${day} de ${monthNames[month - 1]} de ${year}`
+        }
+      }
+      
+      // Se não conseguir parsear, retorna a data original
+      return dateStr
+    }
+
     // Handler para quando a IA chamar a função de agendamento
     // Agora recebe data e hora separadamente para processamento mais simples e confiável
     const handleFunctionCall = async (functionName: string, args: any) => {
@@ -2699,6 +2983,110 @@ export async function executeAIOnlyWorkflow(
               success: false,
               error: 'É necessário informar tanto a data quanto a hora do agendamento.',
             }
+          }
+
+          // CRÍTICO: Valida se a data e hora foram mencionadas pelo usuário na mensagem original
+          // Se não foram mencionadas, a IA não deve inventar - deve perguntar ao usuário
+          if (userMessage) {
+            const userMessageLower = userMessage.toLowerCase().trim()
+            const argsDateLower = args.date.toLowerCase().trim()
+            const argsTimeLower = args.time.toLowerCase().trim()
+            
+            // Verifica se a data mencionada pela IA aparece na mensagem do usuário
+            // Remove espaços e caracteres especiais para comparação mais flexível
+            const userMessageNormalized = userMessageLower.replace(/[^\w\s]/g, ' ')
+            const argsDateNormalized = argsDateLower.replace(/[^\w\s]/g, ' ')
+            
+            // Lista de datas relativas que são válidas mesmo se não aparecerem literalmente
+            const validRelativeDates = ['hoje', 'amanhã', 'amanha', 'depois de amanhã', 'depois de amanha', 'ontem']
+            const isRelativeDate = validRelativeDates.some(rel => argsDateLower.includes(rel))
+            
+            // Verifica se a data é numérica (DD/MM/YYYY ou MM/DD/YYYY)
+            const isNumericDate = /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(args.date)
+            
+            // Verifica se a data foi mencionada pelo usuário
+            let dateMentioned = false
+            if (isRelativeDate) {
+              // Para datas relativas, verifica se alguma palavra-chave aparece na mensagem
+              dateMentioned = validRelativeDates.some(rel => userMessageLower.includes(rel))
+            } else if (isNumericDate) {
+              // Para datas numéricas, verifica se a data completa ou partes aparecem na mensagem
+              dateMentioned = userMessageLower.includes(args.date) ||
+                             args.date.split('/').some((part: string) => {
+                               // Verifica se a parte é significativa (não apenas números de 1 dígito)
+                               return part.length >= 2 && userMessageLower.includes(part)
+                             })
+            } else {
+              // Para outras formas (dias da semana, etc), verifica se aparece na mensagem
+              // Remove pontuação e normaliza para comparação
+              const dateWords = argsDateNormalized.split(/\s+/).filter((w: string) => w.length > 2)
+              dateMentioned = dateWords.length > 0 && dateWords.some((word: string) => userMessageNormalized.includes(word))
+            }
+            
+            // Verifica se a hora foi mencionada pelo usuário
+            // Remove ":" e espaços para comparação mais flexível
+            const userMessageTime = userMessageLower.replace(/[:\s]/g, '')
+            const argsTimeNormalized = argsTimeLower.replace(/[:\s]/g, '')
+            
+            // Extrai apenas os números da hora
+            const timeNumbers = argsTimeNormalized.match(/\d+/g)
+            let timeMentioned = false
+            
+            // Verifica se há indicações de hora na mensagem
+            const hasTimeIndicators = userMessageLower.includes('meio-dia') || 
+                                     userMessageLower.includes('meio dia') ||
+                                     userMessageLower.includes('tarde') ||
+                                     userMessageLower.includes('manhã') ||
+                                     userMessageLower.includes('manha') ||
+                                     userMessageLower.includes('noite') ||
+                                     userMessageLower.includes('hora') ||
+                                     userMessageLower.includes('horário') ||
+                                     userMessageLower.includes('horario')
+            
+            if (timeNumbers && timeNumbers.length > 0) {
+              // Verifica se os números da hora aparecem na mensagem
+              const hourNumber = timeNumbers[0] // Primeiro número geralmente é a hora
+              timeMentioned = userMessageTime.includes(hourNumber) || hasTimeIndicators
+            } else {
+              // Se não há números, verifica apenas indicadores
+              timeMentioned = hasTimeIndicators
+            }
+            
+            // Se nem data nem hora foram mencionadas pelo usuário, retorna erro
+            if (!dateMentioned && !timeMentioned) {
+              console.log(`⚠️ [handleFunctionCall] Data e hora não foram mencionadas pelo usuário`)
+              console.log(`   Mensagem do usuário: "${userMessage}"`)
+              console.log(`   Data fornecida pela IA: "${args.date}"`)
+              console.log(`   Hora fornecida pela IA: "${args.time}"`)
+              return {
+                success: false,
+                error: 'O cliente não informou data e hora para o agendamento. Você DEVE perguntar ao cliente qual data e horário ele prefere antes de criar o agendamento. NÃO invente data e hora - sempre pergunte ao cliente.',
+              }
+            }
+            
+            // Se apenas a data não foi mencionada
+            if (!dateMentioned) {
+              console.log(`⚠️ [handleFunctionCall] Data não foi mencionada pelo usuário`)
+              console.log(`   Mensagem do usuário: "${userMessage}"`)
+              console.log(`   Data fornecida pela IA: "${args.date}"`)
+              return {
+                success: false,
+                error: 'O cliente não informou a data para o agendamento. Você DEVE perguntar ao cliente qual data ele prefere antes de criar o agendamento. NÃO invente uma data - sempre pergunte ao cliente.',
+              }
+            }
+            
+            // Se apenas a hora não foi mencionada
+            if (!timeMentioned) {
+              console.log(`⚠️ [handleFunctionCall] Hora não foi mencionada pelo usuário`)
+              console.log(`   Mensagem do usuário: "${userMessage}"`)
+              console.log(`   Hora fornecida pela IA: "${args.time}"`)
+              return {
+                success: false,
+                error: 'O cliente não informou o horário para o agendamento. Você DEVE perguntar ao cliente qual horário ele prefere antes de criar o agendamento. NÃO invente um horário - sempre pergunte ao cliente.',
+              }
+            }
+            
+            console.log(`✅ [handleFunctionCall] Data e hora foram mencionadas pelo usuário`)
           }
 
           // Processa a hora primeiro - MELHORADO para aceitar mais formatos
@@ -3708,16 +4096,19 @@ export async function executeAIOnlyWorkflow(
           console.log(`📊 [check_availability] Resultado:`, result)
 
           if (result.success) {
-            const formattedDate = parsedDate.toLocaleDateString('pt-BR', {
+            // Formata a data para busca no banco (DD/MM/YYYY)
+            const dateStrFormatted = parsedDate.toLocaleDateString('pt-BR', {
               day: '2-digit',
               month: '2-digit',
               year: 'numeric',
             })
+            // Formata a data de forma clara para exibição (com nome do mês por extenso ou mantém descrição relativa)
+            const formattedDate = formatDateLong(dateStrFormatted, parsedDate, dateStr)
 
             // CRÍTICO: Também verifica agendamentos pendentes para dar informação completa
             let pendingInfo = ''
             try {
-              const formattedDateStr = formattedDate
+              const formattedDateStr = dateStrFormatted // Usa a versão numérica para busca no banco
               const pendingAppointments = await prisma.pendingAppointment.findMany({
                 where: {
                   userId,
@@ -3838,14 +4229,27 @@ export async function executeAIOnlyWorkflow(
                 timesList = groupedTimes.join('\n')
               }
 
+              // Formata a data de forma clara (com nome do mês por extenso ou mantém descrição relativa)
+              const formattedDate = result.date ? formatDateLong(result.date, parsedDate, dateStr) : parsedDate.toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric',
+              })
+
               return {
                 success: true,
-                message: `📅 Horários disponíveis em ${result.date}:\n\n${timesList}\n\nQual horário você prefere?`,
+                message: `📅 Horários disponíveis em ${formattedDate}:\n\n${timesList}\n\nQual horário você prefere?`,
               }
             } else {
+              // Formata a data de forma clara (com nome do mês por extenso ou mantém descrição relativa)
+              const formattedDate = result.date ? formatDateLong(result.date, parsedDate, dateStr) : parsedDate.toLocaleDateString('pt-BR', {
+                day: '2-digit',
+                month: 'long',
+                year: 'numeric',
+              })
               return {
                 success: true,
-                message: `❌ Não há horários disponíveis em ${result.date}. Por favor, escolha outra data.`,
+                message: `❌ Não há horários disponíveis em ${formattedDate}. Por favor, escolha outra data.`,
               }
             }
           } else {
@@ -6188,6 +6592,9 @@ export async function executeAIOnlyWorkflow(
       },
       temperature,
       maxTokens: 600,
+      userId: workflow.userId, // CRÍTICO: Passa userId para registrar métricas
+      instanceId: instanceId, // CRÍTICO: Passa instanceId para registrar métricas
+      useCache: useCache, // Desabilita cache para solicitações de catálogo (garante hierarquia correta)
       functions: [
         appointmentFunction,
         {
@@ -6455,6 +6862,200 @@ export async function executeAIOnlyWorkflow(
         await sendWhatsAppMessage(instanceId, contactNumber, pendingAppointmentResponse!, 'service')
       })
       console.log(`📅 Mensagem de confirmação de agendamento enviada`)
+      return
+    }
+
+    // Detecta se o usuário solicitou o catálogo e envia imagem se disponível
+    const userMessageLowerForCatalog = userMessage.toLowerCase().trim()
+    const isCatalogRequest = 
+      userMessageLowerForCatalog.includes('catalogo') ||
+      userMessageLowerForCatalog.includes('catálogo') ||
+      userMessageLowerForCatalog.includes('cardapio') ||
+      userMessageLowerForCatalog.includes('cardápio') ||
+      userMessageLowerForCatalog.includes('menu') ||
+      userMessageLowerForCatalog.includes('produtos') ||
+      userMessageLowerForCatalog.includes('servicos') ||
+      userMessageLowerForCatalog.includes('serviços') ||
+      (userMessageLowerForCatalog.includes('qual') && (userMessageLowerForCatalog.includes('tem') || userMessageLowerForCatalog.includes('voces') || userMessageLowerForCatalog.includes('vocês')))
+    
+    const catalogImageUrl = (businessDetails as any).catalogImageUrl
+    const catalogByCategory = (businessDetails as any).catalogByCategory
+    
+    if (isCatalogRequest && catalogByCategory && catalogByCategory.length > 0) {
+      console.log(`📋 [executeAIOnlyWorkflow] Solicitação de catálogo detectada - gerando resposta formatada`)
+      const contactKey = `${instanceId}-${contactNumber}`
+      
+      // Função para buscar categoria por nome (busca recursiva)
+      const findCategoryByName = (cats: any[], searchTerm: string): any | null => {
+        const normalizedSearch = searchTerm.toLowerCase().trim()
+        
+        for (const cat of cats) {
+          const categoryName = (cat.name || cat.category || '').toLowerCase()
+          
+          // Verifica se o nome da categoria contém o termo de busca ou vice-versa
+          if (categoryName.includes(normalizedSearch) || normalizedSearch.includes(categoryName)) {
+            return cat
+          }
+          
+          // Busca nas subcategorias
+          if (cat.subcategories && cat.subcategories.length > 0) {
+            const found = findCategoryByName(cat.subcategories, searchTerm)
+            if (found) return found
+          }
+        }
+        
+        return null
+      }
+      
+      // Detecta se o usuário está perguntando sobre uma categoria específica
+      const detectCategoryQuery = (message: string, cats: any[]): string | null => {
+        const messageLower = message.toLowerCase()
+        
+        // Lista de palavras-chave comuns para categorias
+        const categoryKeywords: { [key: string]: string[] } = {}
+        
+        // Coleta todas as categorias e subcategorias para criar palavras-chave
+        const collectCategoryNames = (categories: any[], keywords: { [key: string]: string[] }) => {
+          categories.forEach((cat: any) => {
+            const catName = (cat.name || cat.category || '').toLowerCase()
+            if (catName) {
+              // Adiciona o nome completo e palavras individuais
+              const words = catName.split(/\s+/)
+              words.forEach((word: string) => {
+                if (word.length > 2) { // Ignora palavras muito curtas
+                  if (!keywords[word]) keywords[word] = []
+                  if (!keywords[word].includes(catName)) {
+                    keywords[word].push(catName)
+                  }
+                }
+              })
+              // Adiciona o nome completo
+              if (!keywords[catName]) keywords[catName] = []
+              if (!keywords[catName].includes(catName)) {
+                keywords[catName].push(catName)
+              }
+            }
+            
+            // Processa subcategorias
+            if (cat.subcategories && cat.subcategories.length > 0) {
+              collectCategoryNames(cat.subcategories, keywords)
+            }
+          })
+        }
+        
+        collectCategoryNames(cats, categoryKeywords)
+        
+        // Verifica se a mensagem contém alguma palavra-chave de categoria
+        for (const [keyword, categoryNames] of Object.entries(categoryKeywords)) {
+          if (messageLower.includes(keyword)) {
+            // Retorna a primeira categoria correspondente
+            return categoryNames[0]
+          }
+        }
+        
+        return null
+      }
+      
+      // Gera resposta formatada diretamente do código (garante hierarquia correta)
+      const formatCatalogResponse = (cats: any[], filterCategory?: string | null): string => {
+        let response = filterCategory 
+          ? `Aqui estão os itens de ${filterCategory}:\n\n`
+          : 'Aqui está nosso catálogo completo:\n\n'
+        
+        const formatCategory = (cat: any, indent: string = '', shouldInclude: boolean = true): string => {
+          let result = ''
+          const categoryName = cat.name || cat.category || 'Outros'
+          const hasProducts = cat.products && cat.products.length > 0
+          const hasServices = cat.services && cat.services.length > 0
+          const hasSubcategories = cat.subcategories && cat.subcategories.length > 0
+          
+          // Se há filtro, verifica se esta categoria deve ser incluída
+          const isTargetCategory = filterCategory && 
+            (categoryName.toLowerCase().includes(filterCategory.toLowerCase()) || 
+             filterCategory.toLowerCase().includes(categoryName.toLowerCase()))
+          
+          const includeThis = shouldInclude || isTargetCategory
+          
+          if (includeThis && (hasProducts || hasServices || hasSubcategories)) {
+            result += `${indent}📁 ${categoryName}:\n`
+            
+            if (hasServices) {
+              cat.services.forEach((service: string) => {
+                result += `${indent}  - ${service}\n`
+              })
+            }
+            
+            if (hasProducts) {
+              cat.products.forEach((product: string) => {
+                result += `${indent}  - ${product}\n`
+              })
+            }
+            
+            if (hasSubcategories) {
+              cat.subcategories.forEach((subcat: any) => {
+                // Se há filtro, só inclui subcategorias que correspondem ou são filhas da categoria filtrada
+                const shouldIncludeSubcat = !filterCategory || isTargetCategory || 
+                  (subcat.name || subcat.category || '').toLowerCase().includes(filterCategory.toLowerCase())
+                result += formatCategory(subcat, indent + '  ', shouldIncludeSubcat)
+              })
+            }
+            
+            result += `\n`
+          }
+          
+          return result
+        }
+        
+        if (filterCategory) {
+          // Busca a categoria específica
+          const foundCategory = findCategoryByName(cats, filterCategory)
+          if (foundCategory) {
+            response += formatCategory(foundCategory, '', true)
+          } else {
+            // Se não encontrou exatamente, tenta filtrar por nome parcial
+            cats.forEach((cat: any) => {
+              response += formatCategory(cat, '', false)
+            })
+          }
+        } else {
+          // Mostra tudo
+          cats.forEach((cat: any) => {
+            response += formatCategory(cat)
+          })
+        }
+        
+        response += 'Como posso te ajudar mais hoje?'
+        return response
+      }
+      
+      // Detecta se é uma consulta de categoria específica
+      const requestedCategory = detectCategoryQuery(userMessage, catalogByCategory)
+      
+      const catalogResponse = formatCatalogResponse(
+        catalogByCategory, 
+        requestedCategory || undefined
+      )
+      
+      console.log(`📋 [executeAIOnlyWorkflow] ${requestedCategory ? `Categoria filtrada: "${requestedCategory}"` : 'Catálogo completo'} - gerando resposta formatada`)
+      
+      // Envia imagem primeiro (se disponível e for catálogo completo)
+      if (catalogImageUrl && !requestedCategory) {
+        await queueMessage(contactKey, async () => {
+          await sendWhatsAppImage(
+            instanceId,
+            contactNumber,
+            catalogImageUrl,
+            '📋 Aqui está nosso catálogo completo!'
+          )
+        })
+      }
+      
+      // Depois envia a resposta formatada
+      await queueMessage(contactKey, async () => {
+        await sendWhatsAppMessage(instanceId, contactNumber, catalogResponse, 'service')
+      })
+      
+      console.log(`📋 [executeAIOnlyWorkflow] Resposta do catálogo enviada (formato hierárquico${requestedCategory ? `, filtrado por: ${requestedCategory}` : ''})`)
       return
     }
 
