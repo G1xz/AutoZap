@@ -21,6 +21,11 @@ model User {
   businessAddress String? // Endereço completo do estabelecimento (rua, número, bairro, cidade, CEP)
   deliveryPricePerKm Float? // Preço por quilômetro para cálculo de frete
   messageRetentionDays Int? // Número de dias para manter mensagens (padrão: 90 dias)
+  isAdmin   Boolean  @default(false) // Se o usuário é administrador do sistema
+  planName  String?  // Nome do plano (ex: "Básico", "Premium", "Enterprise")
+  pointsAvailable Int @default(0) // Pontos disponíveis no plano atual
+  pointsConsumedThisMonth Int @default(0) // Pontos consumidos no mês atual
+  planRenewalDate DateTime? // Data de renovação do plano
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -36,6 +41,7 @@ model User {
   orders              Order[]
   carts               Cart[]
   aiMetrics           AIMetric[]
+  planSubscriptions   PlanSubscription[]
 }
 
 model WhatsAppInstance {
@@ -468,7 +474,8 @@ model AIMetric {
   promptTokens    Int      @default(0)
   completionTokens Int    @default(0)
   totalTokens     Int      @default(0)
-  cost            Float    @default(0) // Custo em USD
+  cost            Float    @default(0) // Custo em USD (apenas para administrador)
+  pointsConsumed  Int      @default(0) // Pontos consumidos nesta requisição
   duration        Int      @default(0) // Duração em milissegundos
   cached          Boolean  @default(false)
   endpoint        String?  // Ex: chat, transcribe, vision
@@ -482,5 +489,44 @@ model AIMetric {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@index([model])
+}
+
+// Planos disponíveis para os usuários
+model Plan {
+  id              String   @id @default(cuid())
+  name            String   @unique // "Básico", "Pro", "Business", "Enterprise"
+  displayName     String   // Nome de exibição
+  price           Float    // Preço em R$
+  adminPercentage Float    // Porcentagem que fica para o admin (ex: 0.30 = 30%)
+  pointsAmount    Int      // Quantidade de pontos que o cliente recebe
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  subscriptions   PlanSubscription[]
+
+  @@index([isActive])
+}
+
+// Assinaturas de planos dos usuários
+model PlanSubscription {
+  id              String   @id @default(cuid())
+  userId          String
+  planId          String
+  status          String   @default("active") // "active", "cancelled", "expired"
+  startDate       DateTime @default(now())
+  endDate         DateTime // Data de renovação
+  pointsReceived  Int      // Pontos recebidos nesta assinatura
+  pricePaid       Float    // Valor pago nesta assinatura
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan            Plan     @relation(fields: [planId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([userId, status])
+  @@index([status])
+  @@index([endDate])
 }
 

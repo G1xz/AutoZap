@@ -163,7 +163,7 @@ export function buildSystemPrompt(
       
       // Só mostra categoria se tiver conteúdo (produtos, serviços ou subcategorias)
       if (hasProducts || hasServices || hasSubcategories) {
-        prompt += `${indent}📁 ${categoryName}:\n`
+        prompt += `${indent}*${categoryName}*:\n`
         
         // Primeiro mostra itens diretamente na categoria (se houver)
         if (hasServices) {
@@ -196,25 +196,25 @@ export function buildSystemPrompt(
     prompt += `\n\n🚨🚨🚨🚨🚨 REGRA CRÍTICA E OBRIGATÓRIA - LEIA COM MUITA ATENÇÃO 🚨🚨🚨🚨🚨\n`
     prompt += `\nQuando o cliente solicitar o catálogo (ex: "qual o seu catalogo", "me mostra o catalogo", "quais produtos voces tem"),\n`
     prompt += `você DEVE responder EXATAMENTE no formato abaixo. COPIE E COLE ESTE FORMATO, apenas substituindo os valores:\n\n`
-    prompt += `📁 Serviços:\n`
+    prompt += `*Serviços*:\n`
     prompt += `  - Missoes Diarias - R$ 2,00\n`
     prompt += `  - Confronto Abissal - R$ 30,00\n`
     prompt += `  - Abismo Espiral - R$ 25,00\n`
     prompt += `  - Analise de conta - R$ 60,00\n\n`
-    prompt += `📁 Produtos:\n`
-    prompt += `  📁 Bolachas:\n`
+    prompt += `*Produtos*:\n`
+    prompt += `  *Bolachas*:\n`
     prompt += `    - bolacha da nahida - R$ 20,00\n`
     prompt += `    - Bolacha da emilie - R$ 7,00\n`
-    prompt += `  📁 Chaveiros:\n`
+    prompt += `  *Chaveiros*:\n`
     prompt += `    - Chaveiro Mavuika - R$ 10,00\n`
     prompt += `    - Chaveiro furina - R$ 15,00\n`
-    prompt += `  📁 Figure:\n`
+    prompt += `  *Figure*:\n`
     prompt += `    - Figure da furina - R$ 200,00\n`
     prompt += `    - figure da columbina - R$ 100,00\n\n`
     prompt += `⚠️⚠️⚠️ REGRAS ABSOLUTAS:\n`
-    prompt += `1. SEMPRE comece com "📁 Serviços:" (se houver serviços na hierarquia acima)\n`
-    prompt += `2. SEMPRE continue com "📁 Produtos:" (se houver produtos na hierarquia acima)\n`
-    prompt += `3. DENTRO de "📁 Produtos:", SEMPRE liste cada subcategoria com "  📁" (2 espaços + emoji)\n`
+    prompt += `1. SEMPRE comece com "*Serviços*:" (se houver serviços na hierarquia acima)\n`
+    prompt += `2. SEMPRE continue com "*Produtos*:" (se houver produtos na hierarquia acima)\n`
+    prompt += `3. DENTRO de "*Produtos*:", SEMPRE liste cada subcategoria com "  *" (2 espaços + asterisco para negrito)\n`
     prompt += `4. DENTRO de cada subcategoria, os itens devem ter "    -" (4 espaços + hífen)\n`
     prompt += `5. NUNCA liste todos os itens em uma única lista sem categorias\n`
     prompt += `6. NUNCA omita as categorias principais (Serviços, Produtos)\n`

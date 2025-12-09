@@ -1,10 +1,11 @@
 'use client'
 
 import { usePathname } from 'next/navigation'
-import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings, ShoppingBag, Bug, TestTube } from 'lucide-react'
+import { MessageSquare, Calendar, Package, Users, Workflow, BarChart, Settings, ShoppingBag, Bug, TestTube, CreditCard } from 'lucide-react'
 import StaggeredMenu, { StaggeredMenuSocialItem } from './StaggeredMenu'
 import SlotCompatibilityBanner from './SlotCompatibilityBanner'
 import Navbar from './Navbar'
+import PointsIndicator from './PointsIndicator'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -25,6 +26,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     if (pathname?.startsWith('/dashboard/fluxos')) return 'Fluxos'
     if (pathname?.startsWith('/dashboard/relatorios')) return 'Relatórios'
     if (pathname?.startsWith('/dashboard/configuracoes')) return 'Configurações'
+    if (pathname?.startsWith('/dashboard/plans')) return 'Planos'
     if (pathname?.startsWith('/dashboard/debug')) return 'Debug'
     if (pathname?.startsWith('/dashboard/test-chat')) return 'Test Chat'
     return undefined
@@ -74,6 +76,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       icon: <BarChart size={28} strokeWidth={2} />
     },
     { 
+      label: 'Planos', 
+      ariaLabel: 'Ver e assinar planos',
+      link: '/dashboard/plans',
+      icon: <CreditCard size={28} strokeWidth={2} />
+    },
+    { 
       label: 'Configurações', 
       ariaLabel: 'Configurações do sistema',
       link: '/dashboard/configuracoes',
@@ -101,13 +109,38 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     <div className="min-h-screen bg-gray-50 relative">
       {/* Navbar no topo */}
       {!isEditorPage && (
-        <div className="fixed top-0 left-0 right-0 z-50 flex justify-center pt-3 pb-2">
-          <div className="w-full max-w-7xl px-2 sm:px-4 lg:px-8">
-            <div className="bg-white/70 backdrop-blur-md rounded-full border-2 border-gray-300/50 shadow-sm">
-              <Navbar />
+        <>
+          <div className="fixed top-0 left-0 right-0 z-50 flex justify-center pt-3 pb-2">
+            <div className="w-full max-w-7xl px-2 sm:px-4 lg:px-8">
+              <div className="bg-white/70 backdrop-blur-md rounded-full border-2 border-gray-300/50 shadow-sm">
+                <Navbar />
+              </div>
             </div>
           </div>
-        </div>
+          
+          {/* Indicador de pontos à direita (fora da navbar, centralizado no espaço restante) */}
+          <div className="fixed z-50 flex items-center" style={{ 
+            top: '0.75rem', // Mesmo top da navbar (pt-3 = 0.75rem)
+            left: 'calc((100vw - 1280px) / 2 + 1280px + 1rem)',
+            right: '1rem',
+            height: '3.5rem' // Mesma altura da navbar (56px = 3.5rem)
+          }}>
+            <div className="w-full h-full flex items-center justify-center">
+              <div className="hidden md:block">
+                <div className="bg-white/70 backdrop-blur-md rounded-full border-2 border-gray-300/50 shadow-sm px-4 py-3 h-[3.5rem] flex items-center">
+                  <PointsIndicator />
+                </div>
+              </div>
+              
+              {/* Indicador de pontos mobile */}
+              <div className="md:hidden">
+                <div className="bg-white/70 backdrop-blur-md rounded-full border-2 border-gray-300/50 shadow-sm px-3 py-2.5 h-[3rem] flex items-center">
+                  <PointsIndicator compact />
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {!isEditorPage && (

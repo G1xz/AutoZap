@@ -2009,7 +2009,7 @@ export async function executeAIOnlyWorkflow(
     console.log(`📝 [executeAIOnlyWorkflow] Continuando com processamento normal da IA`)
 
     // Busca histórico recente da conversa (reduzido para evitar overflow de tokens)
-    // gpt-3.5-turbo tem limite de 16385 tokens, então precisamos ser conservadores
+    // gpt-4o-mini tem limite de 128K tokens, mas precisamos ser conservadores para evitar custos altos
     const maxHistoryMessages = 10 // Reduzido de 20 para 10 para evitar overflow
     
     const recentMessages = await prisma.message.findMany({
@@ -6865,7 +6865,98 @@ export async function executeAIOnlyWorkflow(
       return
     }
 
-    // Detecta se o usuário solicitou o catálogo e envia imagem se disponível
+    // Verifica se há catálogo disponível
+    const catalogImageUrl = (businessDetails as any).catalogImageUrl
+    const catalogByCategory = (businessDetails as any).catalogByCategory
+    
+    // Função para buscar categoria por nome (busca recursiva)
+    const findCategoryByName = (cats: any[], searchTerm: string): any | null => {
+      const normalizedSearch = searchTerm.toLowerCase().trim()
+      
+      for (const cat of cats) {
+        const categoryName = (cat.name || cat.category || '').toLowerCase()
+        
+        // Verifica se o nome da categoria contém o termo de busca ou vice-versa
+        if (categoryName.includes(normalizedSearch) || normalizedSearch.includes(categoryName)) {
+          return cat
+        }
+        
+        // Busca nas subcategorias
+        if (cat.subcategories && cat.subcategories.length > 0) {
+          const found = findCategoryByName(cat.subcategories, searchTerm)
+          if (found) return found
+        }
+      }
+      
+      return null
+    }
+    
+    // Detecta se o usuário está perguntando sobre uma categoria específica
+    // Esta função deve ser executada ANTES de verificar se é solicitação de catálogo completo
+    const detectCategoryQuery = (message: string, cats: any[]): string | null => {
+      if (!cats || cats.length === 0) return null
+      
+      const messageLower = message.toLowerCase()
+      
+      // Lista de palavras-chave comuns para categorias
+      const categoryKeywords: { [key: string]: string[] } = {}
+      
+      // Coleta todas as categorias e subcategorias para criar palavras-chave
+      const collectCategoryNames = (categories: any[], keywords: { [key: string]: string[] }) => {
+        categories.forEach((cat: any) => {
+          const catName = (cat.name || cat.category || '').toLowerCase()
+          if (catName) {
+            // Adiciona o nome completo e palavras individuais
+            const words = catName.split(/\s+/)
+            words.forEach((word: string) => {
+              if (word.length > 2) { // Ignora palavras muito curtas
+                if (!keywords[word]) keywords[word] = []
+                if (!keywords[word].includes(catName)) {
+                  keywords[word].push(catName)
+                }
+              }
+            })
+            // Adiciona o nome completo
+            if (!keywords[catName]) keywords[catName] = []
+            if (!keywords[catName].includes(catName)) {
+              keywords[catName].push(catName)
+            }
+          }
+          
+          // Processa subcategorias
+          if (cat.subcategories && cat.subcategories.length > 0) {
+            collectCategoryNames(cat.subcategories, keywords)
+          }
+        })
+      }
+      
+      collectCategoryNames(cats, categoryKeywords)
+      
+      // Verifica se a mensagem contém alguma palavra-chave de categoria
+      // Prioriza correspondências mais longas (nomes completos) sobre palavras individuais
+      const matches: Array<{ keyword: string; categoryName: string; priority: number }> = []
+      
+      for (const [keyword, categoryNames] of Object.entries(categoryKeywords)) {
+        if (messageLower.includes(keyword)) {
+          const categoryName = categoryNames[0]
+          // Prioridade: nomes completos têm prioridade maior que palavras individuais
+          const priority = keyword === categoryName ? 10 : keyword.length
+          matches.push({ keyword, categoryName, priority })
+        }
+      }
+      
+      if (matches.length > 0) {
+        // Ordena por prioridade (maior primeiro) e retorna a categoria mais relevante
+        matches.sort((a, b) => b.priority - a.priority)
+        const bestMatch = matches[0]
+        console.log(`🔍 [executeAIOnlyWorkflow] Categoria detectada na mensagem: "${bestMatch.keyword}" → "${bestMatch.categoryName}" (prioridade: ${bestMatch.priority})`)
+        return bestMatch.categoryName
+      }
+      
+      return null
+    }
+    
+    // Detecta se o usuário solicitou o catálogo completo
     const userMessageLowerForCatalog = userMessage.toLowerCase().trim()
     const isCatalogRequest = 
       userMessageLowerForCatalog.includes('catalogo') ||
@@ -6878,83 +6969,15 @@ export async function executeAIOnlyWorkflow(
       userMessageLowerForCatalog.includes('serviços') ||
       (userMessageLowerForCatalog.includes('qual') && (userMessageLowerForCatalog.includes('tem') || userMessageLowerForCatalog.includes('voces') || userMessageLowerForCatalog.includes('vocês')))
     
-    const catalogImageUrl = (businessDetails as any).catalogImageUrl
-    const catalogByCategory = (businessDetails as any).catalogByCategory
+    // Detecta se é uma consulta de categoria específica (ANTES de verificar se é catálogo completo)
+    const requestedCategory = catalogByCategory && catalogByCategory.length > 0
+      ? detectCategoryQuery(userMessage, catalogByCategory)
+      : null
     
-    if (isCatalogRequest && catalogByCategory && catalogByCategory.length > 0) {
-      console.log(`📋 [executeAIOnlyWorkflow] Solicitação de catálogo detectada - gerando resposta formatada`)
+    // Se detectou categoria específica OU se é solicitação de catálogo completo, mostra o catálogo
+    if ((requestedCategory || isCatalogRequest) && catalogByCategory && catalogByCategory.length > 0) {
+      console.log(`📋 [executeAIOnlyWorkflow] ${requestedCategory ? `Categoria específica detectada: "${requestedCategory}"` : 'Solicitação de catálogo completo detectada'} - gerando resposta formatada`)
       const contactKey = `${instanceId}-${contactNumber}`
-      
-      // Função para buscar categoria por nome (busca recursiva)
-      const findCategoryByName = (cats: any[], searchTerm: string): any | null => {
-        const normalizedSearch = searchTerm.toLowerCase().trim()
-        
-        for (const cat of cats) {
-          const categoryName = (cat.name || cat.category || '').toLowerCase()
-          
-          // Verifica se o nome da categoria contém o termo de busca ou vice-versa
-          if (categoryName.includes(normalizedSearch) || normalizedSearch.includes(categoryName)) {
-            return cat
-          }
-          
-          // Busca nas subcategorias
-          if (cat.subcategories && cat.subcategories.length > 0) {
-            const found = findCategoryByName(cat.subcategories, searchTerm)
-            if (found) return found
-          }
-        }
-        
-        return null
-      }
-      
-      // Detecta se o usuário está perguntando sobre uma categoria específica
-      const detectCategoryQuery = (message: string, cats: any[]): string | null => {
-        const messageLower = message.toLowerCase()
-        
-        // Lista de palavras-chave comuns para categorias
-        const categoryKeywords: { [key: string]: string[] } = {}
-        
-        // Coleta todas as categorias e subcategorias para criar palavras-chave
-        const collectCategoryNames = (categories: any[], keywords: { [key: string]: string[] }) => {
-          categories.forEach((cat: any) => {
-            const catName = (cat.name || cat.category || '').toLowerCase()
-            if (catName) {
-              // Adiciona o nome completo e palavras individuais
-              const words = catName.split(/\s+/)
-              words.forEach((word: string) => {
-                if (word.length > 2) { // Ignora palavras muito curtas
-                  if (!keywords[word]) keywords[word] = []
-                  if (!keywords[word].includes(catName)) {
-                    keywords[word].push(catName)
-                  }
-                }
-              })
-              // Adiciona o nome completo
-              if (!keywords[catName]) keywords[catName] = []
-              if (!keywords[catName].includes(catName)) {
-                keywords[catName].push(catName)
-              }
-            }
-            
-            // Processa subcategorias
-            if (cat.subcategories && cat.subcategories.length > 0) {
-              collectCategoryNames(cat.subcategories, keywords)
-            }
-          })
-        }
-        
-        collectCategoryNames(cats, categoryKeywords)
-        
-        // Verifica se a mensagem contém alguma palavra-chave de categoria
-        for (const [keyword, categoryNames] of Object.entries(categoryKeywords)) {
-          if (messageLower.includes(keyword)) {
-            // Retorna a primeira categoria correspondente
-            return categoryNames[0]
-          }
-        }
-        
-        return null
-      }
       
       // Gera resposta formatada diretamente do código (garante hierarquia correta)
       const formatCatalogResponse = (cats: any[], filterCategory?: string | null): string => {
@@ -6977,7 +7000,7 @@ export async function executeAIOnlyWorkflow(
           const includeThis = shouldInclude || isTargetCategory
           
           if (includeThis && (hasProducts || hasServices || hasSubcategories)) {
-            result += `${indent}📁 ${categoryName}:\n`
+            result += `${indent}*${categoryName}*:\n`
             
             if (hasServices) {
               cat.services.forEach((service: string) => {
@@ -7027,9 +7050,6 @@ export async function executeAIOnlyWorkflow(
         response += 'Como posso te ajudar mais hoje?'
         return response
       }
-      
-      // Detecta se é uma consulta de categoria específica
-      const requestedCategory = detectCategoryQuery(userMessage, catalogByCategory)
       
       const catalogResponse = formatCatalogResponse(
         catalogByCategory, 

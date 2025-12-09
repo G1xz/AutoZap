@@ -1,6 +1,7 @@
 /**
  * Biblioteca de integração com OpenAI (ChatGPT)
- * Suporta ChatGPT Mini (gpt-3.5-turbo) e outros modelos
+ * Modelo padrão: gpt-4o-mini (mais barato e melhor)
+ * Suporta outros modelos: gpt-3.5-turbo, gpt-4, gpt-4-turbo, gpt-4o, etc.
  */
 
 interface ChatMessage {
@@ -55,7 +56,7 @@ export async function callChatGPT(
     throw new Error('OPENAI_API_KEY não configurada. Adicione a chave da API no arquivo .env')
   }
 
-  const model = options?.model || 'gpt-3.5-turbo' // ChatGPT Mini
+  const model = options?.model || 'gpt-4o-mini' // GPT-4o Mini (mais barato e melhor)
   const temperature = options?.temperature ?? 0.7
   const maxTokens = options?.maxTokens ?? 500
 
@@ -167,7 +168,7 @@ export async function generateAIResponse(
       recordAIMetric({
         userId: context?.userId,
         instanceId: context?.instanceId,
-        model: 'gpt-3.5-turbo', // Assumindo modelo padrão
+        model: 'gpt-4o-mini', // Modelo padrão
         promptTokens: 0,
         completionTokens: 0,
         totalTokens: 0,
@@ -215,7 +216,7 @@ export async function generateAIResponse(
 
   // Chama a API com function calling se disponível
   const { log } = await import('./logger')
-  const model = 'gpt-3.5-turbo' // Modelo padrão usado
+  const model = 'gpt-4o-mini' // Modelo padrão usado
   
   log.debug('Chamando OpenAI', {
     messageCount: messages.length,

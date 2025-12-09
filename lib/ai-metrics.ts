@@ -74,6 +74,22 @@ function calculateCost(
 }
 
 /**
+ * Calcula pontos consumidos baseado no custo em dólares
+ * Regra: 1 dólar (USD) = 1000 pontos
+ * Respostas em cache consomem 0 pontos
+ */
+function calculatePoints(
+  costInUSD: number,
+  cached: boolean
+): number {
+  if (cached) {
+    return 0 // Respostas em cache não consomem pontos
+  }
+  // 1 dólar = 1000 pontos, arredondado para cima
+  return Math.ceil(costInUSD * 1000)
+}
+
+/**
  * Registra métrica de uso da IA
  * Salva no banco de dados para persistência
  */
@@ -93,6 +109,30 @@ export async function recordAIMetric(params: {
     params.promptTokens,
     params.completionTokens
   )
+  
+  const pointsConsumed = calculatePoints(
+    cost,
+    params.cached || false
+  )
+
+  // Atualiza pontos consumidos do usuário se houver userId
+  if (params.userId && pointsConsumed > 0) {
+    try {
+      await prisma.user.update({
+        where: { id: params.userId },
+        data: {
+          pointsConsumedThisMonth: {
+            increment: pointsConsumed,
+          },
+          pointsAvailable: {
+            decrement: pointsConsumed,
+          },
+        },
+      })
+    } catch (error) {
+      console.error('Erro ao atualizar pontos do usuário:', error)
+    }
+  }
 
   // Salva no banco de dados
   try {
@@ -105,6 +145,7 @@ export async function recordAIMetric(params: {
         completionTokens: params.completionTokens,
         totalTokens: params.totalTokens,
         cost,
+        pointsConsumed,
         duration: params.duration,
         cached: params.cached || false,
         endpoint: params.endpoint || null,
@@ -165,6 +206,8 @@ export async function getAIStats(params?: {
   totalRequests: number
   totalTokens: number
   totalCost: number
+  totalPointsConsumed: number
+  pointsAvailable?: number
   averageTokens: number
   averageCost: number
   cachedRequests: number
@@ -209,6 +252,7 @@ export async function getAIStats(params?: {
       completionTokens: m.completionTokens,
       totalTokens: m.totalTokens,
       cost: m.cost,
+      pointsConsumed: (m as any).pointsConsumed || 0,
       duration: m.duration,
       cached: m.cached,
     }))
@@ -216,8 +260,23 @@ export async function getAIStats(params?: {
     const totalRequests = filtered.length
     const totalTokens = filtered.reduce((sum, m) => sum + m.totalTokens, 0)
     const totalCost = filtered.reduce((sum, m) => sum + m.cost, 0)
+    const totalPointsConsumed = filtered.reduce((sum, m) => sum + (m.pointsConsumed || 0), 0)
     const cachedRequests = filtered.filter((m) => m.cached).length
     const totalDuration = filtered.reduce((sum, m) => sum + m.duration, 0)
+
+    // Busca pontos disponíveis do usuário se houver userId
+    let pointsAvailable: number | undefined
+    if (params?.userId) {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: params.userId },
+          select: { pointsAvailable: true },
+        })
+        pointsAvailable = user?.pointsAvailable || 0
+      } catch (error) {
+        console.error('Erro ao buscar pontos do usuário:', error)
+      }
+    }
 
     // Agrupa por modelo
     const byModel: Record<string, { requests: number; tokens: number; cost: number }> = {}
@@ -234,6 +293,8 @@ export async function getAIStats(params?: {
       totalRequests,
       totalTokens,
       totalCost,
+      totalPointsConsumed,
+      pointsAvailable,
       averageTokens: totalRequests > 0 ? totalTokens / totalRequests : 0,
       averageCost: totalRequests > 0 ? totalCost / totalRequests : 0,
       cachedRequests,

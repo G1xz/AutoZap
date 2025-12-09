@@ -68,7 +68,7 @@ export default function Navbar() {
         <div className="flex items-center gap-3 pl-4">
           <div className="relative w-10 h-10 sm:w-12 sm:h-12 flex-shrink-0">
             <Image
-              src="/icon.png"
+              src="/logo.png"
               alt="AutoFlow Logo"
               fill
               className="object-contain"

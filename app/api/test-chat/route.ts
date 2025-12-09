@@ -109,10 +109,10 @@ export async function POST(request: NextRequest) {
 
     const instanceId = instance.id
 
-    // Verifica se há um workflow IA-only ativo para esta instância (ou cria um temporário)
-    let workflow
+    // Busca todos os workflows IA-only ativos para esta instância
+    let workflows: any[] = []
     try {
-      workflow = await prisma.workflow.findFirst({
+      workflows = await prisma.workflow.findMany({
         where: {
           userId: session.user.id,
           isActive: true,
@@ -122,9 +122,10 @@ export async function POST(request: NextRequest) {
             { instanceId },
           ],
         },
+        orderBy: { createdAt: 'desc' },
       })
     } catch (dbError: any) {
-      console.error('Erro ao buscar workflow:', dbError)
+      console.error('Erro ao buscar workflows:', dbError)
       return NextResponse.json(
         {
           error: 'Erro de conexão com o banco de dados. Tente novamente em alguns instantes.',
@@ -132,6 +133,21 @@ export async function POST(request: NextRequest) {
         },
         { status: 503 }
       )
+    }
+
+    // Normaliza a mensagem para verificar triggers
+    const messageLower = message.toLowerCase().trim()
+    
+    // Procura workflow cujo trigger está na mensagem
+    let workflow = workflows.find(w => {
+      const trigger = (w.trigger || '').toLowerCase().trim()
+      return trigger && messageLower.includes(trigger)
+    })
+
+    // Se não encontrou por trigger, usa o primeiro workflow IA-only encontrado
+    if (!workflow && workflows.length > 0) {
+      workflow = workflows[0]
+      console.log(`[test-chat] Usando primeiro workflow IA-only encontrado: ${workflow.id} - ${workflow.name}`)
     }
 
     // Se não tiver workflow, cria um temporário para teste
@@ -166,7 +182,16 @@ export async function POST(request: NextRequest) {
         )
       }
     } else {
-      console.log(`[test-chat] Workflow encontrado: ${workflow.id} - ${workflow.name}`)
+      const triggerMatch = workflows.find(w => {
+        const trigger = (w.trigger || '').toLowerCase().trim()
+        return trigger && messageLower.includes(trigger)
+      })
+      
+      if (triggerMatch) {
+        console.log(`[test-chat] Workflow encontrado por trigger "${triggerMatch.trigger}": ${workflow.id} - ${workflow.name}`)
+      } else {
+        console.log(`[test-chat] Workflow encontrado (primeiro IA-only): ${workflow.id} - ${workflow.name}`)
+      }
     }
 
     // Normaliza o número de contato (mesma lógica do WhatsApp)
