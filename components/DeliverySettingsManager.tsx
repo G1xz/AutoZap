@@ -17,6 +17,7 @@ export default function DeliverySettingsManager() {
   const [state, setState] = useState('')
   const [zipCode, setZipCode] = useState('')
   const [deliveryPricePerKm, setDeliveryPricePerKm] = useState<string>('')
+  const [maxDeliveryDistanceKm, setMaxDeliveryDistanceKm] = useState<string>('')
 
   useEffect(() => {
     if (session?.user?.id) {
@@ -76,6 +77,7 @@ export default function DeliverySettingsManager() {
         }
         
         setDeliveryPricePerKm(data.deliveryPricePerKm?.toString() || '')
+        setMaxDeliveryDistanceKm(data.maxDeliveryDistanceKm?.toString() || '')
       }
     } catch (error) {
       console.error('Erro ao buscar configurações de entrega:', error)
@@ -104,6 +106,16 @@ export default function DeliverySettingsManager() {
       return
     }
 
+    // Validação do limite de distância (opcional)
+    let maxDistance: number | null = null
+    if (maxDeliveryDistanceKm.trim()) {
+      maxDistance = parseFloat(maxDeliveryDistanceKm.replace(',', '.'))
+      if (isNaN(maxDistance) || maxDistance <= 0) {
+        toast.error('Por favor, informe um limite de distância válido (número maior que zero) ou deixe em branco para sem limite.')
+        return
+      }
+    }
+
     // Monta endereço completo
     const addressParts = [
       street.trim(),
@@ -122,6 +134,7 @@ export default function DeliverySettingsManager() {
         body: JSON.stringify({
           businessAddress: fullAddress,
           deliveryPricePerKm: price,
+          maxDeliveryDistanceKm: maxDistance,
         }),
       })
 
@@ -282,6 +295,31 @@ export default function DeliverySettingsManager() {
           />
           <p className="text-xs text-gray-500 mt-1">
             Valor cobrado por quilômetro de distância entre o estabelecimento e o endereço de entrega.
+          </p>
+        </div>
+
+        {/* Limite de Distância */}
+        <div>
+          <label className="block text-sm font-semibold text-gray-900 mb-2">
+            Limite de Distância para Entrega (km)
+          </label>
+          <input
+            type="text"
+            value={maxDeliveryDistanceKm}
+            onChange={(e) => {
+              // Permite apenas números, vírgula e ponto
+              const value = e.target.value.replace(/[^\d,.]/g, '')
+              // Garante apenas uma vírgula ou ponto
+              const parts = value.split(/[,.]/)
+              if (parts.length <= 2) {
+                setMaxDeliveryDistanceKm(value)
+              }
+            }}
+            placeholder="Ex: 10 ou deixe em branco para sem limite"
+            className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            Distância máxima em quilômetros para realizar entregas. Se o endereço estiver além deste limite, a entrega não será permitida. Deixe em branco para não ter limite.
           </p>
         </div>
 

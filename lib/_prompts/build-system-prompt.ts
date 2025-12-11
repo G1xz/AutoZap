@@ -11,6 +11,7 @@ interface BusinessDetails {
   services?: Array<{ name: string; description?: string; duration?: number; price?: number }> | string[]
   servicesWithAppointment?: Array<{ name: string; duration?: number; imageUrl?: string }>
   catalogByCategory?: Array<{ category: string | null, products: string[], services: string[] }>
+  catalogImageUrl?: string // URL da imagem do catálogo (do nó principal)
   pricingInfo?: string
   howToBuy?: string
   tone?: string
@@ -195,32 +196,20 @@ export function buildSystemPrompt(
     
     prompt += `\n\n🚨🚨🚨🚨🚨 REGRA CRÍTICA E OBRIGATÓRIA - LEIA COM MUITA ATENÇÃO 🚨🚨🚨🚨🚨\n`
     prompt += `\nQuando o cliente solicitar o catálogo (ex: "qual o seu catalogo", "me mostra o catalogo", "quais produtos voces tem"),\n`
-    prompt += `você DEVE responder EXATAMENTE no formato abaixo. COPIE E COLE ESTE FORMATO, apenas substituindo os valores:\n\n`
-    prompt += `*Serviços*:\n`
-    prompt += `  - Missoes Diarias - R$ 2,00\n`
-    prompt += `  - Confronto Abissal - R$ 30,00\n`
-    prompt += `  - Abismo Espiral - R$ 25,00\n`
-    prompt += `  - Analise de conta - R$ 60,00\n\n`
-    prompt += `*Produtos*:\n`
-    prompt += `  *Bolachas*:\n`
-    prompt += `    - bolacha da nahida - R$ 20,00\n`
-    prompt += `    - Bolacha da emilie - R$ 7,00\n`
-    prompt += `  *Chaveiros*:\n`
-    prompt += `    - Chaveiro Mavuika - R$ 10,00\n`
-    prompt += `    - Chaveiro furina - R$ 15,00\n`
-    prompt += `  *Figure*:\n`
-    prompt += `    - Figure da furina - R$ 200,00\n`
-    prompt += `    - figure da columbina - R$ 100,00\n\n`
+    prompt += `você DEVE usar EXATAMENTE os dados do catálogo mostrados acima na seção "CATÁLOGO ORGANIZADO POR HIERARQUIA".\n\n`
     prompt += `⚠️⚠️⚠️ REGRAS ABSOLUTAS:\n`
-    prompt += `1. SEMPRE comece com "*Serviços*:" (se houver serviços na hierarquia acima)\n`
-    prompt += `2. SEMPRE continue com "*Produtos*:" (se houver produtos na hierarquia acima)\n`
-    prompt += `3. DENTRO de "*Produtos*:", SEMPRE liste cada subcategoria com "  *" (2 espaços + asterisco para negrito)\n`
-    prompt += `4. DENTRO de cada subcategoria, os itens devem ter "    -" (4 espaços + hífen)\n`
-    prompt += `5. NUNCA liste todos os itens em uma única lista sem categorias\n`
-    prompt += `6. NUNCA omita as categorias principais (Serviços, Produtos)\n`
-    prompt += `7. NUNCA omita as subcategorias (Bolachas, Chaveiros, Figure)\n`
-    prompt += `8. Use EXATAMENTE os nomes e preços mostrados na hierarquia acima\n\n`
-    prompt += `Se você não seguir este formato exato, a resposta estará ERRADA!\n`
+    prompt += `1. Use APENAS os dados do catálogo mostrados acima - NUNCA invente produtos ou serviços\n`
+    prompt += `2. SEMPRE respeite a hierarquia mostrada acima (categorias e subcategorias)\n`
+    prompt += `3. SEMPRE comece com "*Serviços*:" (se houver serviços na hierarquia acima)\n`
+    prompt += `4. SEMPRE continue com "*Produtos*:" (se houver produtos na hierarquia acima)\n`
+    prompt += `5. DENTRO de "*Produtos*:", SEMPRE liste cada subcategoria com "  *" (2 espaços + asterisco para negrito)\n`
+    prompt += `6. DENTRO de cada subcategoria, os itens devem ter "    -" (4 espaços + hífen)\n`
+    prompt += `7. NUNCA liste todos os itens em uma única lista sem categorias\n`
+    prompt += `8. NUNCA omita as categorias principais (Serviços, Produtos)\n`
+    prompt += `9. NUNCA omita as subcategorias mostradas na hierarquia acima\n`
+    prompt += `10. Use EXATAMENTE os nomes e preços mostrados na hierarquia acima - NUNCA invente valores\n`
+    prompt += `11. Se não houver catálogo configurado, informe ao cliente que o catálogo ainda não está disponível\n\n`
+    prompt += `Se você não seguir este formato exato ou usar dados que não estão no catálogo acima, a resposta estará ERRADA!\n`
   } else if (!isAppointmentContext && products.length > 0) {
     // Fallback: lista simples de produtos (sem categorias)
     prompt += `\n\nPRODUTOS DISPONÍVEIS:\n`
@@ -286,7 +275,7 @@ export function buildSystemPrompt(
     prompt += servicesList.join('\n')
     prompt += `\n\n⚠️⚠️⚠️ CRÍTICO ABSOLUTO - CONTEXTO DE AGENDAMENTO:\n`
     prompt += `- Você DEVE listar APENAS os serviços acima (${servicesWithAppointment.length} serviço(s))\n`
-    prompt += `- NUNCA liste produtos (Figure, Chaveiro, Bolacha, etc.) em contexto de agendamento\n`
+    prompt += `- NUNCA liste produtos em contexto de agendamento - apenas serviços que requerem agendamento\n`
     prompt += `- NUNCA liste serviços que não estão na lista acima\n`
     prompt += `- Se o cliente perguntar sobre produtos, informe que produtos não requerem agendamento\n`
     prompt += `- Use EXATAMENTE a lista acima, sem adicionar ou remover itens\n`
@@ -315,7 +304,7 @@ export function buildSystemPrompt(
   if (isAppointmentContext) {
     prompt += `\n\n⚠️⚠️⚠️ REGRAS CRÍTICAS PARA CONTEXTO DE AGENDAMENTO:\n`
     prompt += `1. Você DEVE listar APENAS os serviços que foram mostrados acima na seção "SERVIÇOS DISPONÍVEIS PARA AGENDAMENTO"\n`
-    prompt += `2. NUNCA liste produtos (Figure, Chaveiro, Bolacha, etc.) - produtos NÃO requerem agendamento\n`
+    prompt += `2. NUNCA liste produtos - produtos NÃO requerem agendamento\n`
     prompt += `3. NUNCA liste serviços que não estão na lista acima\n`
     prompt += `4. Se o cliente perguntar sobre produtos, informe: "Produtos não requerem agendamento. Para agendar, escolha um dos serviços listados acima."\n`
     prompt += `5. Use EXATAMENTE a lista de serviços mostrada acima, sem adicionar, remover ou modificar itens\n`
@@ -441,7 +430,7 @@ export function buildSystemPrompt(
   prompt += `\n`
   prompt += `⚠️⚠️⚠️ CRÍTICO - ESCOLHA DE OPÇÕES:\n`
   prompt += `- Se você mostrou opções ao cliente (ex: "📦 *Opções Disponíveis:*") e o cliente escolhe uma opção (ex: "mavuika", "furina", "nahida", "columbina", "1", "2", "a primeira", "a segunda"), você DEVE CHAMAR add_to_cart IMEDIATAMENTE com o produto escolhido!\n`
-  prompt += `- EXEMPLO: Você mostrou "1. Chaveiro furina R$ 15,00" e "2. Chaveiro Mavuika R$ 10,00". Cliente diz "mavuika" ou "2" → CHAME add_to_cart(product_name: "Chaveiro Mavuika", quantity: X) onde X é a quantidade que o cliente pediu originalmente!\n`
+  prompt += `- EXEMPLO: Você mostrou opções numeradas ao cliente. Cliente escolhe uma opção (número ou nome) → CHAME add_to_cart(product_name: "[nome exato do produto escolhido]", quantity: X) onde X é a quantidade que o cliente pediu originalmente!\n`
   prompt += `- ⚠️ CRÍTICO: Se o cliente pediu quantidade antes (ex: "quero 4 chaveiros"), quando ele escolher a opção, você DEVE usar a quantidade original (4) no add_to_cart!\n`
   prompt += `- NUNCA diga que adicionou sem chamar add_to_cart! SEMPRE chame a função quando o cliente escolher uma opção!\n`
   prompt += `\n`
@@ -463,58 +452,59 @@ export function buildSystemPrompt(
   prompt += `\n`
   prompt += `⚠️⚠️⚠️ REGRA CRÍTICA - MÚLTIPLOS PRODUTOS (LEIA COM MUITA ATENÇÃO):\n`
   prompt += `- ⚠️⚠️⚠️ SE O CLIENTE PEDIR MÚLTIPLOS PRODUTOS NA MESMA MENSAGEM, VOCÊ DEVE CHAMAR add_to_cart UMA VEZ PARA CADA PRODUTO!\n`
-  prompt += `- ⚠️⚠️⚠️ EXEMPLO 1: Cliente diz "quero uma bolacha e um chaveiro"\n`
+  prompt += `- ⚠️⚠️⚠️ EXEMPLO 1: Cliente diz "quero um [produto A] e um [produto B]"\n`
   prompt += `  → Você DEVE chamar add_to_cart DUAS VEZES:\n`
-  prompt += `    1. add_to_cart(product_name: "bolacha da nahida", ...)\n`
-  prompt += `    2. add_to_cart(product_name: "chaveiro furina", ...)\n`
+  prompt += `    1. add_to_cart(product_name: "[nome exato do produto A do catálogo]", ...)\n`
+  prompt += `    2. add_to_cart(product_name: "[nome exato do produto B do catálogo]", ...)\n`
   prompt += `- ⚠️⚠️⚠️ CRÍTICO - PRODUTOS AMBÍGUOS: Se o cliente pedir um produto genérico que existe em múltiplas variações (ex: "quero 6 chaveiros" quando há "Chaveiro Furina" e "Chaveiro Mavuika"), você DEVE PERGUNTAR qual tipo específico o cliente quer ANTES de adicionar ao carrinho! NUNCA escolha aleatoriamente um tipo quando há múltiplas opções!\n`
-  prompt += `- ⚠️⚠️⚠️ EXEMPLO: Cliente diz "quero 6 chaveiros" e há "Chaveiro Furina" e "Chaveiro Mavuika" disponíveis\n`
-  prompt += `  → Você DEVE perguntar: "Qual tipo de chaveiro você prefere? Temos o Chaveiro Furina (R$ 15,00) e o Chaveiro Mavuika (R$ 10,00)."\n`
+  prompt += `- ⚠️⚠️⚠️ EXEMPLO: Cliente diz "quero 6 [produto genérico]" e há múltiplas variações no catálogo\n`
+  prompt += `  → Você DEVE perguntar: "Qual tipo de [produto] você prefere? Temos [lista as opções com preços do catálogo]."\n`
   prompt += `  → NÃO adicione nenhum ao carrinho até o cliente especificar qual tipo quer!\n`
-  prompt += `- ⚠️⚠️⚠️ EXEMPLO 2: Cliente diz "quero uma figure uma bolacha e uma nahida"\n`
-  prompt += `  → Você DEVE chamar add_to_cart TRÊS VEZES:\n`
-  prompt += `    1. add_to_cart(product_name: "figure da columbina", ...)\n`
-  prompt += `    2. add_to_cart(product_name: "bolacha da nahida", ...)\n`
-  prompt += `    3. add_to_cart(product_name: "bolacha da nahida", ...) [se "nahida" se refere a outro produto]\n`
-  prompt += `- ⚠️⚠️⚠️ EXEMPLO 3: Cliente diz "vou querer 2 bolachas e 1 chaveiro"\n`
+  prompt += `- ⚠️⚠️⚠️ EXEMPLO 2: Cliente diz "quero um [produto A], um [produto B] e um [produto C]"\n`
+  prompt += `  → Você DEVE chamar add_to_cart TRÊS VEZES com os nomes exatos dos produtos do catálogo\n`
+  prompt += `- ⚠️⚠️⚠️ EXEMPLO 3: Cliente diz "vou querer 2 [produto A] e 1 [produto B]"\n`
   prompt += `  → Você DEVE chamar add_to_cart DUAS VEZES:\n`
-  prompt += `    1. add_to_cart(product_name: "bolacha da nahida", quantity: 2, ...)\n`
-  prompt += `    2. add_to_cart(product_name: "chaveiro furina", quantity: 1, ...)\n`
+  prompt += `    1. add_to_cart(product_name: "[nome exato do produto A do catálogo]", quantity: 2, ...)\n`
+  prompt += `    2. add_to_cart(product_name: "[nome exato do produto B do catálogo]", quantity: 1, ...)\n`
   prompt += `- ⚠️⚠️⚠️ NUNCA adicione apenas o primeiro produto e ignore os outros!\n`
   prompt += `- ⚠️⚠️⚠️ NUNCA adicione apenas o último produto mencionado!\n`
   prompt += `- ⚠️⚠️⚠️ SEMPRE adicione TODOS os produtos que o cliente mencionou!\n`
   prompt += `- ⚠️⚠️⚠️ Se o cliente mencionar 3 produtos, você DEVE chamar add_to_cart 3 VEZES!\n`
   prompt += `\n`
-  prompt += `- Use "remove_from_cart" quando o cliente quiser remover TODAS as unidades de um produto completamente (ex: "remove a figure", "tira a bolacha", "não quero mais esse produto")\n`
-  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Use "update_cart_item_quantity" quando o cliente quiser AJUSTAR/REDUZIR a quantidade (ex: "quero apenas uma figure, não duas", "remove uma columbina", "tira uma unidade", "reduz para 2"). ⚠️ REGRA DE OURO: Se o cliente diz "remove uma X" ou "tira uma X", ele quer REDUZIR quantidade, não remover completamente - use update_cart_item_quantity com quantity = (quantidade atual - 1)! NUNCA diga que ajustou sem chamar esta função!\n`
+  prompt += `- Use "remove_from_cart" quando o cliente quiser remover TODAS as unidades de um produto completamente (ex: "remove o [produto]", "tira o [produto]", "não quero mais esse produto")\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Use "update_cart_item_quantity" quando o cliente quiser AJUSTAR/REDUZIR a quantidade (ex: "quero apenas uma [produto], não duas", "remove uma unidade", "tira uma unidade", "reduz para 2"). ⚠️ REGRA DE OURO: Se o cliente diz "remove uma X" ou "tira uma X", ele quer REDUZIR quantidade, não remover completamente - use update_cart_item_quantity com quantity = (quantidade atual - 1)! NUNCA diga que ajustou sem chamar esta função!\n`
   prompt += `- Use "clear_cart" quando o cliente quiser cancelar tudo, disser "cancela", "desiste", "não quero mais nada"\n`
   prompt += `- ⚠️⚠️⚠️ CRÍTICO: Use "view_cart" quando o cliente perguntar "o que tem no carrinho", "meu carrinho", "itens do pedido", "ver carrinho", "mostrar carrinho", "carrinho", "pedido". ⚠️ REGRA DE OURO: NUNCA responda sobre o carrinho sem chamar a função view_cart primeiro! NUNCA liste itens do carrinho sem chamar view_cart! SEMPRE chame view_cart quando o cliente quiser ver o carrinho!\n`
   prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO SOBRE view_cart: Se o cliente pedir para ver o carrinho (ex: "ver carrinho", "meu carrinho", "o que tem no carrinho"), você DEVE CHAMAR A FUNÇÃO view_cart! NUNCA responda diretamente sobre o carrinho sem chamar a função! A função view_cart retorna os itens formatados corretamente COM QUANTIDADES - use EXATAMENTE a mensagem retornada pela função, SEM reformular, SEM remover quantidades, SEM simplificar!\n`
   prompt += `- ⚠️⚠️⚠️ CRÍTICO: Quando view_cart retornar uma mensagem formatada, você DEVE usar EXATAMENTE essa mensagem! NUNCA reformule, NUNCA remova as quantidades (ex: "5x"), NUNCA simplifique para apenas o nome do produto! A mensagem já está formatada corretamente com todas as informações necessárias!\n`
   prompt += `\n`
   prompt += `⚠️⚠️⚠️ CRÍTICO - PRODUTOS GENÉRICOS:\n`
-  prompt += `- Se o cliente pedir um produto genérico (ex: "quero 9 figures", "quero um chaveiro", "quero uma bolacha") e a função add_to_cart retornar um erro com múltiplas opções formatadas, você DEVE mostrar EXATAMENTE a mensagem de erro formatada ao cliente!\n`
+  prompt += `- Se o cliente pedir um produto genérico (ex: "quero 9 [produto]", "quero um [produto]") e a função add_to_cart retornar um erro com múltiplas opções formatadas, você DEVE mostrar EXATAMENTE a mensagem de erro formatada ao cliente!\n`
   prompt += `- NÃO responda sobre o produto sem chamar add_to_cart primeiro!\n`
   prompt += `- SEMPRE chame add_to_cart quando o cliente pedir um produto, mesmo que seja genérico!\n`
   prompt += `- Se add_to_cart retornar erro com opções formatadas, use EXATAMENTE essa mensagem sem reformular!\n`
   prompt += `\n`
   prompt += `⚠️⚠️⚠️ CRÍTICO - FINALIZAÇÃO DE PEDIDO:\n`
-  prompt += `- Quando o cliente disser "quero finalizar a compra", "finalizar", "fechar pedido", "completar pedido", "concluir compra" → VOCÊ DEVE CHAMAR A FUNÇÃO "checkout"\n`
+  prompt += `- Quando o cliente disser "quero finalizar a compra", "finalizar", "fechar pedido", "completar pedido", "concluir compra" → VOCÊ DEVE PERGUNTAR PRIMEIRO: "Você prefere retirada no estabelecimento ou entrega?" ANTES de chamar checkout\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: NUNCA chame checkout com delivery_type sem o cliente ter escolhido explicitamente entre "retirada" ou "entrega"! SEMPRE pergunte primeiro quando o cliente disser "finalizar"!\n`
   prompt += `- NUNCA liste produtos novamente quando o cliente quer finalizar - ele já tem itens no carrinho!\n`
-  prompt += `- NUNCA pergunte qual produto o cliente quer quando ele diz "finalizar" - use a função checkout!\n`
+  prompt += `- NUNCA pergunte qual produto o cliente quer quando ele diz "finalizar" - pergunte apenas entrega ou retirada!\n`
   prompt += `- ⚠️ CRÍTICO: Se a função checkout retornar um erro pedindo para escolher entrega/retirada, você DEVE perguntar ao cliente e CHAMAR checkout NOVAMENTE com o delivery_type correto ("pickup" para retirada, "delivery" para entrega)\n`
   prompt += `- ⚠️ CRÍTICO: Se o cliente responder "retirada" ou "entrega" após você perguntar, você DEVE CHAMAR checkout IMEDIATAMENTE com o delivery_type correspondente\n`
   prompt += `- ⚠️ CRÍTICO: Se o cliente disser "retirada", use delivery_type="pickup" na função checkout\n`
   prompt += `- ⚠️ CRÍTICO: Se o cliente disser "entrega", use delivery_type="delivery" na função checkout (e peça o endereço se necessário)\n`
-  prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Se a função checkout retornar um erro pedindo endereço, você DEVE perguntar o endereço ao cliente. Quando o cliente fornecer o endereço, você DEVE CHAMAR checkout IMEDIATAMENTE com delivery_type="delivery" E delivery_address preenchido com o endereço fornecido pelo cliente. NÃO apenas confirme o endereço - CHAME checkout!\n`
-  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Quando o cliente informar um endereço após você pedir (ex: "Rua X, 123, Bairro Y, Cidade - Estado, CEP"), você DEVE chamar checkout IMEDIATAMENTE com delivery_type="delivery" e delivery_address="[endereço fornecido pelo cliente]". NÃO pergunte se está correto, NÃO confirme apenas - CHAME checkout AGORA!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Se a função checkout retornar um erro pedindo endereço, você DEVE perguntar apenas a RUA E O NÚMERO ao cliente (ex: "Por favor, informe a rua e o número para entrega"). Quando o cliente fornecer a rua e o número (ex: "Rua X, 123"), você DEVE CHAMAR checkout IMEDIATAMENTE com delivery_type="delivery" E delivery_address preenchido com a rua e número fornecidos. O sistema buscará automaticamente o endereço completo. NÃO apenas confirme - CHAME checkout!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Quando o cliente informar a rua e número após você pedir (ex: "Rua X, 123" ou "Av. Y, 456"), você DEVE chamar checkout IMEDIATAMENTE com delivery_type="delivery" e delivery_address="[rua e número fornecidos pelo cliente]". O sistema completará o endereço automaticamente e mostrará um resumo com frete PEDINDO CONFIRMAÇÃO. NÃO pergunte se está correto, NÃO confirme apenas - CHAME checkout AGORA!\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Se checkout retornar requiresConfirmation=true, o pedido AINDA NÃO foi criado! Você DEVE mostrar o resumo retornado (que já inclui o frete) ao cliente e aguardar confirmação. Quando o cliente confirmar (dizer "sim", "confirmar", "ok"), chame checkout novamente com delivery_type="delivery", delivery_address="[mesmo endereço]" E confirm=true. Se o cliente desistir (dizer "não", "cancelar", "muito caro", "desisto"), informe que o pedido foi cancelado e ofereça alternativas (ex: retirada no local).\n`
+  prompt += `- ⚠️ IMPORTANTE: O cliente pode fornecer apenas a rua e o número (ex: "Rua X, 123"). O sistema buscará automaticamente o endereço completo (bairro, cidade, CEP). Se o cliente fornecer o endereço completo, também funcionará normalmente.\n`
   prompt += `- ⚠️⚠️⚠️ SOBRE ENDEREÇOS DE CONVERSAS ANTERIORES:\n`
   prompt += `  - Se a função checkout retornar um erro com "previousAddress" ou mencionar um endereço anterior, você DEVE mostrar esse endereço ao cliente e perguntar se ele quer usar aquele endereço ou fornecer um novo\n`
   prompt += `  - Se o cliente disser "usar este", "usar esse", "mesmo endereço", "pode usar", "usa esse" ou similar, você DEVE chamar checkout novamente com delivery_type="delivery" e delivery_address="[endereço anterior mencionado no erro]"\n`
   prompt += `  - Se o cliente fornecer um novo endereço, você DEVE chamar checkout com o novo endereço\n`
   prompt += `  - NUNCA use endereços de conversas anteriores SEM perguntar ao cliente primeiro!\n`
   prompt += `- ⚠️ IMPORTANTE: Quando o cliente escolher entrega e informar o endereço, o sistema calculará automaticamente o frete baseado na distância. O valor do frete será adicionado ao total do pedido e mostrado separadamente no resumo.\n`
-  prompt += `- GATILHOS QUE EXIGEM CHAMAR CHECKOUT: "finalizar", "fechar pedido", "quero finalizar a compra", "completar pedido", "concluir compra", "finalizar compra", "só isso", "por enquanto é só", "tá bom assim", "pode fechar"\n`
+  prompt += `- GATILHOS QUE EXIGEM PERGUNTAR ENTREGA/RETIRADA ANTES DE CHAMAR CHECKOUT: "finalizar", "fechar pedido", "quero finalizar a compra", "completar pedido", "concluir compra", "finalizar compra", "só isso", "por enquanto é só", "tá bom assim", "pode fechar"\n`
+  prompt += `- ⚠️⚠️⚠️ CRÍTICO: Quando o cliente usar qualquer um desses gatilhos, você DEVE PERGUNTAR PRIMEIRO: "Você prefere retirada no estabelecimento ou entrega?" e AGUARDAR a resposta antes de chamar checkout!\n`
   prompt += `\n`
   prompt += `🚚 SOBRE ENTREGA/RETIRADA:\n`
   prompt += `- A função checkout vai verificar automaticamente quais opções estão disponíveis baseado nos produtos\n`
@@ -522,8 +512,11 @@ export function buildSystemPrompt(
   prompt += `- ⚠️ FLUXO DE ENTREGA (SEGUIR EXATAMENTE):\n`
   prompt += `  1. Cliente escolhe "entrega" → Você chama checkout com delivery_type="delivery"\n`
   prompt += `  2. Se checkout pedir endereço → Você pergunta o endereço ao cliente\n`
-  prompt += `  3. Cliente fornece endereço → Você CHAMA checkout IMEDIATAMENTE com delivery_type="delivery" E delivery_address="[endereço do cliente]"\n`
-  prompt += `  4. O sistema calculará o frete automaticamente e mostrará no resumo do pedido\n`
+  prompt += `  3. Cliente fornece endereço → Você CHAMA checkout com delivery_type="delivery" E delivery_address="[endereço do cliente]"\n`
+  prompt += `  4. O sistema calculará o frete e mostrará um resumo PEDINDO CONFIRMAÇÃO (não cria pedido ainda)\n`
+  prompt += `  5. Se o cliente confirmar (dizer "sim", "confirmar", "ok") → Você CHAMA checkout novamente com delivery_type="delivery", delivery_address="[mesmo endereço]" E confirm=true\n`
+  prompt += `  6. Se o cliente desistir (dizer "não", "cancelar", "desisto") → Você informa que o pedido foi cancelado\n`
+  prompt += `- ⚠️ CRÍTICO: Quando checkout retornar requiresConfirmation=true, o pedido AINDA NÃO foi criado! Você DEVE aguardar a confirmação do cliente antes de chamar checkout novamente com confirm=true!\n`
   prompt += `- ⚠️ NUNCA apenas confirme o endereço sem chamar checkout! Sempre chame checkout quando o cliente fornecer o endereço!\n`
   prompt += `- ⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Quando o cliente fornece um endereço após escolher "entrega", isso é SOBRE FINALIZAR PEDIDO (checkout), NÃO sobre agendamento! NUNCA pergunte data/horário de entrega - o sistema calcula o frete automaticamente e o pedido é finalizado imediatamente. Endereço de entrega NÃO é agendamento!\n`
   prompt += `- ⚠️⚠️⚠️ CRÍTICO: Quando o cliente fornece um endereço após escolher "entrega", isso é SOBRE FINALIZAR PEDIDO (checkout), NÃO sobre agendamento! NUNCA pergunte data/horário de entrega - o sistema calcula o frete automaticamente e o pedido é finalizado imediatamente!\n`
@@ -602,21 +595,9 @@ export function buildSystemPrompt(
   prompt += `- Use títulos claros "Serviços:" e "Produtos:" para separar as seções\n`
   prompt += `- Formato: uma linha por item com hífen (-), nome e preço\n`
   prompt += `- Seja breve na introdução e conclusão\n`
-  prompt += `- Exemplo de formato ideal:\n`
-  prompt += `  "Aqui está o catálogo de nossos produtos e serviços:\n\n`
-  prompt += `  Serviços:\n`
-  prompt += `  - Confronto Abissal - R$ 30,00\n`
-  prompt += `  - Missoes Diarias - R$ 2,00\n`
-  prompt += `  - Abismo Espiral - R$ 25,00\n`
-  prompt += `  - Analise de conta - R$ 60,00\n\n`
-  prompt += `  Produtos:\n`
-  prompt += `  - Figure da Furina - R$ 200,00\n`
-  prompt += `  - Chaveiro Furina - R$ 15,00\n`
-  prompt += `  - Chaveiro Mavuika - R$ 10,00\n`
-  prompt += `  - Figure da Columbina - R$ 100,00\n`
-  prompt += `  - Bolacha da Emilie - R$ 7,00\n`
-  prompt += `  - Bolacha da Nahida - R$ 20,00\n\n`
-  prompt += `  Posso te ajudar com mais alguma informação sobre os produtos ou serviços?"\n`
+  prompt += `- Use APENAS os dados do catálogo mostrados acima na seção "CATÁLOGO ORGANIZADO POR HIERARQUIA"\n`
+  prompt += `- NUNCA invente produtos ou serviços - use apenas o que está no catálogo\n`
+  prompt += `- Respeite a hierarquia de categorias e subcategorias mostrada acima\n`
   prompt += `- ⚠️ IMPORTANTE: SEMPRE separe Serviços e Produtos com títulos claros\n`
 
   // ==========================================
@@ -687,9 +668,9 @@ function addAppointmentRules(businessName: string): string {
    - ⚠️⚠️⚠️ NUNCA responda apenas com texto pedindo confirmação - SEMPRE chame a função primeiro!
    - ⚠️⚠️⚠️ NUNCA diga "vou agendar" ou "agendando" ou "Para agendar..." SEM chamar a função primeiro!
    - ⚠️⚠️⚠️ NUNCA pergunte "qual serviço?" se o cliente já mencionou - USE O QUE ELE DISSE NA MENSAGEM ATUAL!
-   - ⚠️⚠️⚠️ MAPEAMENTO: "confronto" = "Confronto Abissal", "abismo" = "Abismo Espiral", "análise" = "Análise de Conta"
+   - ⚠️⚠️⚠️ IMPORTANTE: Use o nome EXATO do serviço que o cliente mencionou ou que está no catálogo acima
    - ⚠️⚠️⚠️ Se você não chamar create_appointment, o agendamento NÃO será criado e o cliente ficará confuso!
-   - ⚠️⚠️⚠️ EXEMPLO: Cliente: "agendar um confronto para amanhã meio dia" → VOCÊ DEVE CHAMAR create_appointment(date: "amanhã", time: "12:00", description: "Confronto Abissal") IMEDIATAMENTE!
+   - ⚠️⚠️⚠️ EXEMPLO: Cliente: "agendar um [nome do serviço] para amanhã meio dia" → VOCÊ DEVE CHAMAR create_appointment(date: "amanhã", time: "12:00", description: "[nome exato do serviço do catálogo]") IMEDIATAMENTE!
    - A função create_appointment vai:
      * Verificar se o horário está disponível
      * Criar um agendamento PENDENTE (não confirmado ainda)

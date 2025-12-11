@@ -247,41 +247,61 @@ export async function POST(request: NextRequest) {
     }
 
     // Aguarda um pouco para garantir que a mensagem foi salva no banco
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    await new Promise(resolve => setTimeout(resolve, 1500))
 
-    // Busca a resposta mais recente do banco (última mensagem enviada pela IA)
+    // Busca TODAS as mensagens enviadas recentemente (últimas 5 mensagens para capturar mensagem inicial + catálogo)
     let response = 'Nenhuma resposta gerada. Verifique os logs para mais detalhes.'
     let mediaUrl: string | null = null
+    let allMessages: Array<{ body: string; mediaUrl: string | null; messageType: string; timestamp: Date }> = []
     try {
-      // Busca as últimas 2 mensagens (pode ter imagem + texto)
+      // Busca as últimas 5 mensagens para capturar mensagem inicial + catálogo
       const recentMessages = await prisma.message.findMany({
         where: {
           instanceId,
           to: formattedPhone,
           isFromMe: true,
+          timestamp: {
+            gte: new Date(Date.now() - 10000), // Apenas mensagens dos últimos 10 segundos
+          },
         },
         orderBy: {
-          timestamp: 'desc',
+          timestamp: 'asc', // Ordem crescente para manter a ordem de envio
         },
-        take: 2,
+        take: 5,
       })
       
       if (recentMessages.length > 0) {
-        // Pega a mensagem mais recente (texto)
-        const latestMessage = recentMessages[0]
-        response = latestMessage.body || response
+        // Constrói resposta combinando todas as mensagens recentes
+        const messageParts: string[] = []
+        let firstImageUrl: string | null = null
         
-        // Se a mensagem mais recente tem imagem, usa ela
-        // Senão, verifica se a mensagem anterior (segunda mais recente) tem imagem
-        if (latestMessage.mediaUrl) {
-          mediaUrl = latestMessage.mediaUrl
-        } else if (recentMessages.length > 1 && recentMessages[1].mediaUrl) {
-          // Se a mensagem anterior tem imagem e foi enviada há menos de 5 segundos, associa à resposta atual
-          const timeDiff = latestMessage.timestamp.getTime() - recentMessages[1].timestamp.getTime()
-          if (timeDiff < 5000) { // 5 segundos
-            mediaUrl = recentMessages[1].mediaUrl
+        for (const msg of recentMessages) {
+          if (msg.messageType === 'image' && msg.mediaUrl) {
+            // Se é imagem e ainda não temos uma imagem, guarda a primeira
+            if (!firstImageUrl) {
+              firstImageUrl = msg.mediaUrl
+            }
+            // Adiciona o texto da imagem (caption) se houver
+            if (msg.body && msg.body !== '[Imagem]') {
+              messageParts.push(msg.body)
+            }
+          } else if (msg.messageType === 'text' && msg.body) {
+            // Adiciona mensagens de texto
+            messageParts.push(msg.body)
           }
         }
+        
+        // Combina todas as mensagens em uma única resposta
+        response = messageParts.join('\n\n') || response
+        mediaUrl = firstImageUrl
+        
+        // Guarda todas as mensagens para o frontend exibir
+        allMessages = recentMessages.map(msg => ({
+          body: msg.body || '',
+          mediaUrl: msg.mediaUrl,
+          messageType: msg.messageType,
+          timestamp: msg.timestamp,
+        }))
       }
     } catch (dbError: any) {
       console.error('Erro ao buscar resposta do banco:', dbError)
@@ -311,6 +331,7 @@ export async function POST(request: NextRequest) {
       success: true,
       response,
       mediaUrl, // URL da imagem se houver
+      allMessages, // Todas as mensagens enviadas recentemente (para exibir no chat)
       logs: relevantLogs.slice(-50), // Últimos 50 logs relevantes
     })
   } catch (error) {

@@ -157,9 +157,35 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
         
         if (workflow.isAIOnly && workflow.aiBusinessDetails) {
           try {
-            setAiBusinessDetails(JSON.parse(workflow.aiBusinessDetails))
+            const parsedDetails = JSON.parse(workflow.aiBusinessDetails)
+            // Mescla os campos do workflow (initialMessage, initialImageUrl, sendCatalogInInitialMessage) com os detalhes do negócio
+            setAiBusinessDetails({
+              ...parsedDetails,
+              initialMessage: workflow.initialMessage || parsedDetails.initialMessage || '',
+              initialImageUrl: workflow.initialImageUrl || parsedDetails.initialImageUrl || '',
+              sendInitialMessage: parsedDetails.sendInitialMessage !== undefined 
+                ? parsedDetails.sendInitialMessage 
+                : true, // Por padrão, envia a mensagem inicial se não especificado
+              sendInitialImage: parsedDetails.sendInitialImage !== undefined 
+                ? parsedDetails.sendInitialImage 
+                : true, // Por padrão, envia a imagem se não especificado
+              sendCatalogInInitialMessage: workflow.sendCatalogInInitialMessage !== undefined 
+                ? workflow.sendCatalogInInitialMessage 
+                : (parsedDetails.sendCatalogInInitialMessage || false),
+              sendCatalogImageInInitialMessage: parsedDetails.sendCatalogImageInInitialMessage !== undefined 
+                ? parsedDetails.sendCatalogImageInInitialMessage 
+                : true, // Por padrão, envia a imagem se não especificado
+            })
           } catch {
-            setAiBusinessDetails(null)
+            // Se não conseguir fazer parse, cria objeto básico com os campos do workflow
+            setAiBusinessDetails({
+              initialMessage: workflow.initialMessage || '',
+              initialImageUrl: workflow.initialImageUrl || '',
+              sendInitialMessage: true, // Por padrão, envia a mensagem inicial
+              sendInitialImage: true, // Por padrão, envia a imagem
+              sendCatalogInInitialMessage: workflow.sendCatalogInInitialMessage || false,
+              sendCatalogImageInInitialMessage: true, // Por padrão, envia a imagem
+            })
           }
         }
         
@@ -281,6 +307,16 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
         workflowData.nodes = []
         workflowData.edges = []
         workflowData.aiBusinessDetails = JSON.stringify(aiBusinessDetails)
+        // Adiciona campos de mensagem inicial se existirem
+        if (aiBusinessDetails?.initialMessage) {
+          workflowData.initialMessage = aiBusinessDetails.initialMessage
+        }
+        if (aiBusinessDetails?.initialImageUrl) {
+          workflowData.initialImageUrl = aiBusinessDetails.initialImageUrl
+        }
+        if (aiBusinessDetails?.sendCatalogInInitialMessage !== undefined) {
+          workflowData.sendCatalogInInitialMessage = aiBusinessDetails.sendCatalogInInitialMessage
+        }
       } else {
         // Para fluxos manuais, incluir nós e edges normalmente
         workflowData.nodes = nodes.map((node) => ({
@@ -411,7 +447,11 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
         <div className="flex-1 space-y-2">
           <div className="flex items-center gap-2">
             <button
-              onClick={() => router.push('/dashboard/fluxos')}
+              onClick={(e) => {
+                e.preventDefault()
+                e.stopPropagation()
+                router.back()
+              }}
               className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300 transition-colors"
             >
               ← Voltar
@@ -461,8 +501,12 @@ export default function WorkflowEditor({ workflowId, onSave }: WorkflowEditorPro
             <AIWorkflowConfig
               businessDetails={aiBusinessDetails}
               onChange={(details) => {
-                // Atualiza automaticamente quando houver mudanças
-                setAiBusinessDetails(details)
+                // Só atualiza se realmente mudou (evita loop infinito)
+                const currentStr = JSON.stringify(aiBusinessDetails)
+                const newStr = JSON.stringify(details)
+                if (currentStr !== newStr) {
+                  setAiBusinessDetails(details)
+                }
               }}
             />
           </div>

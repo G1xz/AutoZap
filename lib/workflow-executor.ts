@@ -78,8 +78,18 @@ async function queueMessage(
 
   // Cria uma nova promise que aguarda a anterior e então executa a função
   const newPromise = previousPromise
-    .then(() => sendFunction())
+    .then(async () => {
+      console.log(`📋 [queueMessage] Executando função de envio para ${contactKey}`)
+      try {
+        await sendFunction()
+        console.log(`✅ [queueMessage] Função de envio concluída para ${contactKey}`)
+      } catch (error) {
+        console.error(`❌ [queueMessage] Erro na função de envio para ${contactKey}:`, error)
+        throw error
+      }
+    })
     .catch((error) => {
+      console.error(`❌ [queueMessage] Erro ao enviar mensagem na fila para ${contactKey}:`, error)
       log.error(`Erro ao enviar mensagem na fila para ${contactKey}`, error)
       throw error
     })
@@ -88,6 +98,7 @@ async function queueMessage(
       // (a promise atual é a última)
       if (messageQueues.get(contactKey) === newPromise) {
         messageQueues.delete(contactKey)
+        console.log(`🧹 [queueMessage] Fila limpa para ${contactKey}`)
       }
     })
 
@@ -95,7 +106,9 @@ async function queueMessage(
   messageQueues.set(contactKey, newPromise)
 
   // Aguarda a execução completa
+  console.log(`⏳ [queueMessage] Aguardando execução para ${contactKey}...`)
   await newPromise
+  console.log(`✅ [queueMessage] Execução concluída para ${contactKey}`)
 }
 
 /**
@@ -1800,7 +1813,7 @@ export async function executeAIOnlyWorkflow(
         (userMessage.includes('-') && userMessage.split('-').length >= 2 && /\d/.test(userMessage)) // Formato cidade - estado
       )
       
-      // Verifica se a IA acabou de pedir um endereço (última mensagem da IA)
+      // Verifica se a IA acabou de pedir um endereço OU mostrar resumo pedindo confirmação (última mensagem da IA)
       const recentAIMessage = await prisma.message.findFirst({
         where: {
           instanceId,
@@ -1820,6 +1833,38 @@ export async function executeAIOnlyWorkflow(
         recentAIMessage.body.toLowerCase().includes('endereço de entrega')
       )
       
+      // Declara userMessageLower ANTES de usar
+      const userMessageLower = userMessage.toLowerCase().trim()
+      
+      // Detecta se a IA acabou de mostrar resumo pedindo confirmação
+      const aiJustShowedSummary = recentAIMessage && (
+        recentAIMessage.body.includes('Confirma o pedido?') ||
+        (recentAIMessage.body.includes('confirma') && recentAIMessage.body.includes('Total do Pedido')) ||
+        (recentAIMessage.body.includes('Frete:') && recentAIMessage.body.includes('Total') && recentAIMessage.body.includes('confirmar'))
+      )
+      
+      // Detecta se o cliente está confirmando após ver o resumo
+      const looksLikeOrderConfirmation = hasCartItems && aiJustShowedSummary && (
+        userMessageLower === 'confirmar' ||
+        userMessageLower === 'sim' ||
+        userMessageLower === 'ok' ||
+        userMessageLower === 'confirmo' ||
+        userMessageLower === 'tá certo' ||
+        userMessageLower === 'ta certo' ||
+        userMessageLower.includes('pode finalizar') ||
+        userMessageLower.includes('finalizar')
+      )
+      
+      // Detecta se o cliente está desistindo após ver o resumo
+      const looksLikeOrderCancellation = hasCartItems && aiJustShowedSummary && (
+        userMessageLower === 'não' ||
+        userMessageLower === 'cancelar' ||
+        userMessageLower === 'desisto' ||
+        userMessageLower === 'desistir' ||
+        userMessageLower.includes('não quero') ||
+        userMessageLower.includes('muito caro')
+      )
+      
       // Verifica se há agendamento pendente ANTES de decidir o contexto
       const hasPendingAppointment = await prisma.pendingAppointment.findFirst({
         where: {
@@ -1830,7 +1875,6 @@ export async function executeAIOnlyWorkflow(
       
       // Se há itens no carrinho e mensagem é sobre confirmar/finalizar, NÃO processa agendamento
       // CRÍTICO: "sim" só é agendamento se houver agendamento pendente, caso contrário é sobre carrinho/produto
-      const userMessageLower = userMessage.toLowerCase().trim()
       const isSimpleYes = userMessageLower === 'sim' || userMessageLower === 'ok' || userMessageLower === 's'
       
       // CRÍTICO: Detecta se a mensagem é explicitamente sobre AGENDAMENTO
@@ -1844,9 +1888,6 @@ export async function executeAIOnlyWorkflow(
         userMessageLower.includes('consulta') ||
         userMessageLower.includes('serviço') ||
         userMessageLower.includes('servico') ||
-        userMessageLower.includes('confronto') ||
-        userMessageLower.includes('abismo') ||
-        userMessageLower.includes('análise') ||
         userMessageLower.includes('analise')
       
       // Define isCartContext ANTES de usar (fora dos blocos condicionais)
@@ -1858,7 +1899,9 @@ export async function executeAIOnlyWorkflow(
         userMessageLower.includes('finalizar') ||
         userMessageLower.includes('fechar pedido') ||
         userMessageLower.includes('completar pedido') ||
-        userMessageLower.includes('concluir compra')
+        userMessageLower.includes('concluir compra') ||
+        looksLikeOrderConfirmation ||
+        looksLikeOrderCancellation
       )
       
       // CRÍTICO: Se não há agendamento pendente e a mensagem é apenas "sim"/"ok",
@@ -2241,10 +2284,12 @@ export async function executeAIOnlyWorkflow(
           if (catalogMainNodeId) {
             const hierarchy = buildHierarchy(catalogMainNodeId)
             catalogByCategory = hierarchy.map((cat: CatalogHierarchyNode) => ({
+              name: cat.name, // Adiciona 'name' para consistência
               category: cat.name,
               products: cat.products,
               services: cat.services,
               subcategories: cat.subcategories?.map((subcat: CatalogHierarchyNode) => ({
+                name: subcat.name, // Adiciona 'name' para consistência
                 category: subcat.name,
                 products: subcat.products,
                 services: subcat.services,
@@ -2471,84 +2516,301 @@ export async function executeAIOnlyWorkflow(
       hasBusinessDetails: !!workflow.aiBusinessDetails
     })
 
-    // SEMPRE usa resposta pré-definida APENAS se:
+      // Verifica se há mensagem inicial customizada no workflow
+      const initialMessage = (workflow as any).initialMessage
+      const initialImageUrl = (workflow as any).initialImageUrl
+      const sendCatalogInInitialMessage = (workflow as any).sendCatalogInInitialMessage || false
+      
+      // Lê as opções de envio do businessDetails (salvo no aiBusinessDetails)
+      // IMPORTANTE: Se há initialMessage definida, por padrão deve enviar (a menos que explicitamente desativado)
+      const sendInitialMessage = (businessDetails as any).sendInitialMessage !== undefined 
+        ? (businessDetails as any).sendInitialMessage 
+        : (initialMessage && initialMessage.trim() ? true : false) // Por padrão, envia se há mensagem inicial definida
+      const sendInitialImage = (businessDetails as any).sendInitialImage !== undefined 
+        ? (businessDetails as any).sendInitialImage 
+        : true // Por padrão, envia a imagem se não especificado (compatibilidade)
+      const sendCatalogImageInInitialMessage = (businessDetails as any).sendCatalogImageInInitialMessage !== undefined 
+        ? (businessDetails as any).sendCatalogImageInInitialMessage 
+        : true // Por padrão, envia a imagem se não especificado (compatibilidade)
+    
+    // Verifica se a mensagem do usuário corresponde ao trigger (para enviar mensagem inicial mesmo que não seja primeira interação)
+    // userMessageLower já foi declarado anteriormente na linha 1977, então reutilizamos
+    const trigger = workflow.trigger?.toLowerCase().trim() || ''
+    const isTriggerMessage = trigger && userMessageLower.includes(trigger)
+    
+    // SEMPRE usa resposta pré-definida se:
     // 1. É primeira interação (não há resposta da IA ainda) E tem nome do negócio
-    // CRÍTICO: Se já houve resposta da IA, NÃO usa mais pré-definida
-    const shouldUsePredefined = isFirstInteraction && businessDetails.businessName
+    // 2. OU se há mensagem inicial configurada E a mensagem corresponde ao trigger
+    // CRÍTICO: Se já houve resposta da IA, NÃO usa mais pré-definida (exceto se for trigger com mensagem inicial)
+    // IMPORTANTE: Garante que sempre retorne boolean, não a mensagem
+    const shouldUsePredefined = Boolean(
+      (isFirstInteraction && businessDetails.businessName) || 
+      (isTriggerMessage && initialMessage && initialMessage.trim())
+    )
 
     console.log(`🤖 Decisão de resposta:`, {
       shouldUsePredefined,
       isFirstInteraction,
+      isTriggerMessage,
+      hasInitialMessage: !!(initialMessage && initialMessage.trim()),
       hasBusinessName: !!businessDetails.businessName,
       businessName: businessDetails.businessName
     })
 
     if (shouldUsePredefined) {
-      const servicesList = businessDetails.services?.join(', ') || ''
-      const productsList = businessDetails.products?.join(', ') || ''
-      const howToBuyText = businessDetails.howToBuy || ''
-      const pricingText = businessDetails.pricingInfo || ''
-      const businessDesc = businessDetails.businessDescription || ''
-
-      // Monta resposta pré-definida para garantir que sempre apresente o negócio
-      let predefinedResponse = ''
-
-      // Monta resposta mais natural e conversacional
-      if (howToBuyText && howToBuyText.trim().length > 10) {
-        predefinedResponse = `${howToBuyText}`
-      } else {
-        // Não precisa sempre mencionar "assistente da..." - seja mais natural
-        predefinedResponse = `Olá! 👋`
-        if (businessDesc) {
-          predefinedResponse += ` ${businessDesc}`
-        }
-      }
-
-      if (servicesList || productsList) {
-        predefinedResponse += `\n\n`
-        if (servicesList && productsList) {
-          predefinedResponse += `Oferecemos os seguintes serviços:\n${servicesList.split(', ').map((s: string) => `- ${s}`).join('\n')}\n\nTambém temos os seguintes produtos:\n${productsList.split(', ').map((p: string) => `- ${p}`).join('\n')}`
-        } else if (servicesList) {
-          const servicesArray = servicesList.split(', ')
-          predefinedResponse += `Oferecemos os seguintes serviços:\n${servicesArray.map((s: string) => `- ${s}`).join('\n')}`
-        } else if (productsList) {
-          const productsArray = productsList.split(', ')
-          predefinedResponse += `Temos os seguintes produtos:\n${productsArray.map((p: string) => `- ${p}`).join('\n')}`
-        }
-      }
-
-      if (pricingText) {
-        predefinedResponse += `\n\n${pricingText}`
-      }
-
-      // Finalização mais natural e variada
-      const closings = [
-        'Em que posso ajudar?',
-        'Tem alguma dúvida?',
-        'Quer saber mais sobre algum deles?',
-        'Qual te interessa?'
-      ]
-      const randomClosing = closings[Math.floor(Math.random() * closings.length)]
-      predefinedResponse += `\n\n${randomClosing}`
-
-      // Envia imagem primeiro se configurado
-      if (businessDetails.businessImage && businessDetails.sendImageInFirstMessage) {
-        const { sendWhatsAppImage } = await import('./whatsapp-cloud-api')
-        const contactKeyImage = `${instanceId}-${contactNumber}`
-        await queueMessage(contactKeyImage, async () => {
-          await sendWhatsAppImage(instanceId, contactNumber, businessDetails.businessImage!, predefinedResponse.trim())
+      
+      let messageToSend = ''
+      let shouldSendInitialMessage = false
+      
+      // Verifica se deve enviar mensagem inicial (se estiver configurada e a opção estiver ativa)
+      // IMPORTANTE: Mesmo que o catálogo esteja ativo, a mensagem inicial deve ser enviada primeiro se estiver configurada
+      // Se há initialMessage definida e sendInitialMessage não é explicitamente false, deve enviar
+      const shouldActuallySendInitialMessage = initialMessage && initialMessage.trim() && sendInitialMessage !== false && (isFirstInteraction || isTriggerMessage)
+      
+      if (shouldActuallySendInitialMessage) {
+        // Usa mensagem customizada
+        messageToSend = initialMessage.trim()
+        shouldSendInitialMessage = true
+        console.log(`💬 [executeAIOnlyWorkflow] ✅ Mensagem inicial CONFIGURADA para envio:`, {
+          sendInitialMessage,
+          shouldActuallySendInitialMessage,
+          hasMessage: !!(messageToSend && messageToSend.trim()),
+          messagePreview: messageToSend.substring(0, 50) + '...',
+          sendCatalogInInitialMessage,
+          willSendCatalog: sendCatalogInInitialMessage && businessDetails.catalogId,
+          isFirstInteraction,
+          isTriggerMessage
         })
-        console.log(`🖼️ Imagem do negócio enviada na primeira mensagem para ${contactNumber}`)
-      } else {
-        // Envia apenas a mensagem de texto
-        const contactKey = `${instanceId}-${contactNumber}`
+      } else if (isFirstInteraction && !initialMessage) {
+        // Usa lógica antiga (geração automática)
+        const servicesList = businessDetails.services?.join(', ') || ''
+        const productsList = businessDetails.products?.join(', ') || ''
+        const howToBuyText = businessDetails.howToBuy || ''
+        const pricingText = businessDetails.pricingInfo || ''
+        const businessDesc = businessDetails.businessDescription || ''
+
+        // Monta resposta pré-definida para garantir que sempre apresente o negócio
+        let predefinedResponse = ''
+
+        // Monta resposta mais natural e conversacional
+        if (howToBuyText && howToBuyText.trim().length > 10) {
+          predefinedResponse = `${howToBuyText}`
+        } else {
+          // Não precisa sempre mencionar "assistente da..." - seja mais natural
+          predefinedResponse = `Olá! 👋`
+          if (businessDesc) {
+            predefinedResponse += ` ${businessDesc}`
+          }
+        }
+
+        if (servicesList || productsList) {
+          predefinedResponse += `\n\n`
+          if (servicesList && productsList) {
+            predefinedResponse += `Oferecemos os seguintes serviços:\n${servicesList.split(', ').map((s: string) => `- ${s}`).join('\n')}\n\nTambém temos os seguintes produtos:\n${productsList.split(', ').map((p: string) => `- ${p}`).join('\n')}`
+          } else if (servicesList) {
+            const servicesArray = servicesList.split(', ')
+            predefinedResponse += `Oferecemos os seguintes serviços:\n${servicesArray.map((s: string) => `- ${s}`).join('\n')}`
+          } else if (productsList) {
+            const productsArray = productsList.split(', ')
+            predefinedResponse += `Temos os seguintes produtos:\n${productsArray.map((p: string) => `- ${p}`).join('\n')}`
+          }
+        }
+
+        if (pricingText) {
+          predefinedResponse += `\n\n${pricingText}`
+        }
+
+        // Finalização mais natural e variada
+        const closings = [
+          'Em que posso ajudar?',
+          'Tem alguma dúvida?',
+          'Quer saber mais sobre algum deles?',
+          'Qual te interessa?'
+        ]
+        const randomClosing = closings[Math.floor(Math.random() * closings.length)]
+        predefinedResponse += `\n\n${randomClosing}`
+        
+        messageToSend = predefinedResponse
+      }
+
+      const contactKey = `${instanceId}-${contactNumber}`
+      
+      console.log(`🔍 [executeAIOnlyWorkflow] Verificando envio de mensagem inicial:`, {
+        shouldSendInitialMessage,
+        hasMessage: !!(messageToSend && messageToSend.trim()),
+        sendInitialMessage,
+        hasInitialMessage: !!(initialMessage && initialMessage.trim()),
+        sendCatalogInInitialMessage,
+        isFirstInteraction,
+        isTriggerMessage
+      })
+      
+      // Envia mensagem inicial se configurada e a opção estiver ativa
+      // IMPORTANTE: Sempre envia a mensagem inicial primeiro, mesmo que o catálogo também esteja ativo
+      console.log(`🔍 [executeAIOnlyWorkflow] Verificando condições para envio de mensagem inicial:`, {
+        shouldSendInitialMessage,
+        hasMessageToSend: !!(messageToSend && messageToSend.trim()),
+        messageToSendLength: messageToSend ? messageToSend.length : 0,
+        willEnterIf: shouldSendInitialMessage && messageToSend.trim()
+      })
+      
+      if (shouldSendInitialMessage && messageToSend.trim()) {
+        console.log(`💬 [executeAIOnlyWorkflow] ✅ ENVIANDO MENSAGEM INICIAL PRIMEIRO (antes do catálogo)`)
+        console.log(`   - Mensagem: "${messageToSend.substring(0, 100)}..."`)
+        console.log(`   - Catálogo será enviado depois: ${sendCatalogInInitialMessage}`)
+        // Verifica se deve enviar imagem junto com a mensagem inicial
+        const imageToSend = (sendInitialImage && initialImageUrl) 
+          ? initialImageUrl 
+          : (businessDetails.businessImage && businessDetails.sendImageInFirstMessage ? businessDetails.businessImage : null)
+        
+        console.log(`🔍 [executeAIOnlyWorkflow] Verificando imagem para mensagem inicial:`, {
+          sendInitialImage,
+          hasInitialImageUrl: !!(initialImageUrl && initialImageUrl.trim()),
+          initialImageUrl: initialImageUrl ? initialImageUrl.substring(0, 50) + '...' : null,
+          hasBusinessImage: !!(businessDetails.businessImage),
+          sendImageInFirstMessage: businessDetails.sendImageInFirstMessage,
+          imageToSend: imageToSend ? imageToSend.substring(0, 50) + '...' : null
+        })
+        
+        if (imageToSend) {
+          console.log(`📤 [executeAIOnlyWorkflow] Enviando mensagem inicial COM imagem...`)
+          console.log(`📤 [executeAIOnlyWorkflow] ANTES de chamar queueMessage - contactKey: ${contactKey}`)
+          const { sendWhatsAppImage } = await import('./whatsapp-cloud-api')
+          console.log(`📤 [executeAIOnlyWorkflow] sendWhatsAppImage importado, chamando queueMessage...`)
+          try {
+            await queueMessage(contactKey, async () => {
+              console.log(`📤 [queueMessage] Executando envio de imagem inicial...`)
+              const result = await sendWhatsAppImage(instanceId, contactNumber, imageToSend, messageToSend.trim())
+              console.log(`📤 [queueMessage] Resultado do envio de imagem:`, result)
+            })
+            console.log(`🖼️ ✅ Mensagem inicial com imagem enviada para ${contactNumber}`)
+          } catch (error) {
+            console.error(`❌ Erro ao enviar mensagem inicial com imagem:`, error)
+            console.error(`❌ Stack trace:`, error instanceof Error ? error.stack : 'N/A')
+            throw error
+          }
+        } else {
+          console.log(`📤 [executeAIOnlyWorkflow] Enviando mensagem inicial SEM imagem (apenas texto)...`)
+          // Envia apenas a mensagem de texto
+          try {
+            await queueMessage(contactKey, async () => {
+              console.log(`📤 [queueMessage] Executando envio de mensagem inicial (texto)...`)
+              const result = await sendWhatsAppMessage(instanceId, contactNumber, messageToSend.trim(), 'service')
+              console.log(`📤 [queueMessage] Resultado do envio de texto:`, result)
+            })
+            console.log(`💬 ✅ Mensagem inicial enviada para ${contactNumber}`)
+          } catch (error) {
+            console.error(`❌ Erro ao enviar mensagem inicial (texto):`, error)
+            throw error
+          }
+        }
+      } else if (isFirstInteraction && messageToSend.trim() && !shouldSendInitialMessage) {
+        // Se não tem mensagem inicial customizada mas tem mensagem gerada automaticamente
+        const imageToSend = (businessDetails.businessImage && businessDetails.sendImageInFirstMessage ? businessDetails.businessImage : null)
+        
+        if (imageToSend) {
+          const { sendWhatsAppImage } = await import('./whatsapp-cloud-api')
+          await queueMessage(contactKey, async () => {
+            await sendWhatsAppImage(instanceId, contactNumber, imageToSend, messageToSend.trim())
+          })
+          console.log(`🖼️ Mensagem inicial com imagem enviada para ${contactNumber}`)
+        } else {
+          await queueMessage(contactKey, async () => {
+            await sendWhatsAppMessage(instanceId, contactNumber, messageToSend.trim(), 'service')
+          })
+          console.log(`💬 Mensagem inicial gerada automaticamente enviada para ${contactNumber}`)
+        }
+      }
+      
+      // Se configurado, envia catálogo após a mensagem inicial (sempre após, se ambos estiverem ativos)
+      // IMPORTANTE: Sempre envia após a mensagem inicial, mesmo que a mensagem inicial tenha sido enviada
+      if (sendCatalogInInitialMessage && businessDetails.catalogId && businessDetails.catalogByCategory) {
+        console.log(`📚 [executeAIOnlyWorkflow] Catálogo configurado para envio. Mensagem inicial foi enviada: ${shouldSendInitialMessage}`)
+        
+        // Aguarda um pouco antes de enviar o catálogo (para garantir ordem de envio)
+        // Se a mensagem inicial foi enviada, aguarda mais tempo para garantir que chegue primeiro
+        const waitTime = shouldSendInitialMessage ? 2000 : 1000
+        console.log(`⏳ [executeAIOnlyWorkflow] Aguardando ${waitTime}ms antes de enviar catálogo...`)
+        await new Promise(resolve => setTimeout(resolve, waitTime))
+        console.log(`⏳ [executeAIOnlyWorkflow] Aguardou ${waitTime}ms. Agora enviando catálogo...`)
+        
+        console.log(`📚 [executeAIOnlyWorkflow] Enviando catálogo na primeira mensagem (catalogId: ${businessDetails.catalogId})`)
+        
+        // Função para formatar catálogo em hierarquia (mesma usada quando usuário pede catálogo)
+        const formatCatalogResponse = (cats: any[]): string => {
+          let response = 'Aqui está nosso catálogo completo:\n\n'
+          
+          const formatCategory = (cat: any, indent: string = ''): string => {
+            let result = ''
+            const categoryName = cat.name || cat.category || 'Outros'
+            const hasProducts = cat.products && cat.products.length > 0
+            const hasServices = cat.services && cat.services.length > 0
+            const hasSubcategories = cat.subcategories && cat.subcategories.length > 0
+            
+            if (hasProducts || hasServices || hasSubcategories) {
+              result += `${indent}*${categoryName}*:\n`
+              
+              if (hasServices) {
+                cat.services.forEach((service: string) => {
+                  result += `${indent}  - ${service}\n`
+                })
+              }
+              
+              if (hasProducts) {
+                cat.products.forEach((product: string) => {
+                  result += `${indent}  - ${product}\n`
+                })
+              }
+              
+              if (hasSubcategories) {
+                cat.subcategories.forEach((subcat: any) => {
+                  result += formatCategory(subcat, indent + '  ')
+                })
+              }
+              
+              result += `\n`
+            }
+            
+            return result
+          }
+          
+          cats.forEach((cat: any) => {
+            response += formatCategory(cat)
+          })
+          
+          response += 'Como posso te ajudar mais hoje?'
+          return response
+        }
+        
+        const catalogResponse = formatCatalogResponse(businessDetails.catalogByCategory)
+        
+        // Envia imagem do catálogo primeiro (se disponível e se a opção estiver ativada)
+        if (sendCatalogImageInInitialMessage) {
+          const catalogImageUrl = (businessDetails as any).catalogImageUrl
+          if (catalogImageUrl) {
+            await queueMessage(contactKey, async () => {
+              const { sendWhatsAppImage } = await import('./whatsapp-cloud-api')
+              await sendWhatsAppImage(
+                instanceId,
+                contactNumber,
+                catalogImageUrl,
+                '📋 Aqui está nosso catálogo completo!'
+              )
+            })
+            console.log(`📋 Imagem do catálogo enviada para ${contactNumber}`)
+          }
+        }
+        
+        // Envia o catálogo formatado em hierarquia
         await queueMessage(contactKey, async () => {
-          await sendWhatsAppMessage(instanceId, contactNumber, predefinedResponse.trim(), 'service')
+          await sendWhatsAppMessage(instanceId, contactNumber, catalogResponse, 'service')
         })
+        
+        console.log(`📚 Catálogo enviado na primeira mensagem para ${contactNumber} (formato hierárquico)`)
       }
 
-      console.log(`🤖 Resposta pré-definida enviada para ${contactNumber} (primeira interação)`)
-      return // Não gera resposta da IA na primeira vez, usa a pré-definida
+      console.log(`🤖 Resposta pré-definida enviada para ${contactNumber}${isFirstInteraction ? ' (primeira interação)' : ' (trigger enviado)'}`)
+      return // Não gera resposta da IA quando usa pré-definida, usa a mensagem inicial
     }
 
     // Para mensagens seguintes, usa IA normalmente
@@ -2629,7 +2891,7 @@ export async function executeAIOnlyWorkflow(
     // Função principal: criar agendamento
     const appointmentFunction = {
       name: 'create_appointment',
-      description: '⚠️⚠️⚠️⚠️⚠️ CRÍTICO ABSOLUTO - LEIA COM ATENÇÃO: Cria um agendamento na agenda quando o cliente quer marcar um horário. ⚠️⚠️⚠️ REGRA DE OURO: Você SÓ PODE chamar esta função quando o cliente mencionar EXPLICITAMENTE tanto a DATA quanto a HORA na mensagem atual. ⚠️⚠️⚠️ NUNCA INVENTE DATA OU HORA - Se o cliente não mencionou data e/ou hora, você DEVE PERGUNTAR antes de chamar esta função! ⚠️⚠️⚠️ EXEMPLOS CORRETOS: Cliente: "quero agendar um abismo espiral" → NÃO CHAME A FUNÇÃO! Pergunte: "Qual data e horário você prefere?" Cliente: "agendar um confronto para amanhã meio dia" → CHAME: create_appointment(date: "amanhã", time: "12:00", description: "Confronto Abissal") Cliente: "quero marcar para terça às 14h" → CHAME: create_appointment(date: "terça-feira", time: "14:00", description: "serviço solicitado") ⚠️⚠️⚠️ SE O CLIENTE NÃO MENCIONOU DATA E/OU HORA, PERGUNTE! NÃO INVENTE VALORES! MAPEAMENTO DE SERVIÇOS: Se o cliente disser "confronto" ou "um confronto", mapeie para "Confronto Abissal". Se disser "abismo", mapeie para "Abismo Espiral". Se disser "análise" ou "analise", mapeie para "Análise de Conta". Use o nome COMPLETO do serviço na descrição. A função aceita linguagem natural para data (ex: "amanhã", "próxima segunda") e converte automaticamente. A função verifica automaticamente se o horário está disponível antes de criar.',
+      description: '⚠️⚠️⚠️⚠️⚠️ CRÍTICO ABSOLUTO - LEIA COM ATENÇÃO: Cria um agendamento na agenda quando o cliente quer marcar um horário. ⚠️⚠️⚠️ REGRA DE OURO: Você SÓ PODE chamar esta função quando o cliente mencionar EXPLICITAMENTE tanto a DATA quanto a HORA na mensagem atual. ⚠️⚠️⚠️ NUNCA INVENTE DATA OU HORA - Se o cliente não mencionou data e/ou hora, você DEVE PERGUNTAR antes de chamar esta função! ⚠️⚠️⚠️ EXEMPLOS CORRETOS: Cliente: "quero agendar um [serviço]" → NÃO CHAME A FUNÇÃO! Pergunte: "Qual data e horário você prefere?" Cliente: "agendar um [serviço] para amanhã meio dia" → CHAME: create_appointment(date: "amanhã", time: "12:00", description: "[nome exato do serviço do catálogo]") Cliente: "quero marcar para terça às 14h" → CHAME: create_appointment(date: "terça-feira", time: "14:00", description: "[nome exato do serviço mencionado]") ⚠️⚠️⚠️ SE O CLIENTE NÃO MENCIONOU DATA E/OU HORA, PERGUNTE! NÃO INVENTE VALORES! ⚠️⚠️⚠️ IMPORTANTE: Use o nome EXATO do serviço que está no catálogo acima. A função aceita linguagem natural para data (ex: "amanhã", "próxima segunda") e converte automaticamente. A função verifica automaticamente se o horário está disponível antes de criar.',
       parameters: {
         type: 'object',
         properties: {
@@ -4797,6 +5059,7 @@ export async function executeAIOnlyWorkflow(
             })
           } else {
             // Para produtos do catálogo, precisa buscar do CatalogNode
+            console.log(`🛒 [add_to_cart] 🔍 Buscando CatalogNode com product_id: "${args.product_id}" para produto: "${args.product_name}"`)
             const catalogNode = await prisma.catalogNode.findFirst({
               where: {
                 id: args.product_id,
@@ -4809,6 +5072,13 @@ export async function executeAIOnlyWorkflow(
               try {
                 const nodeData = JSON.parse(catalogNode.data)
                 unitPrice = typeof nodeData.price === 'number' ? nodeData.price : parseFloat(nodeData.price) || 0
+                
+                console.log(`🛒 [add_to_cart] 🔍 CatalogNode encontrado:`, {
+                  nodeId: catalogNode.id,
+                  nodeName: nodeData.name || nodeData.title,
+                  productNameEsperado: args.product_name,
+                  match: (nodeData.name || nodeData.title) === args.product_name ? '✅ CORRETO' : '❌ ERRO - NOME DIFERENTE!',
+                })
                 
                 if (unitPrice === 0) {
                   console.warn(`🛒 [add_to_cart] ⚠️ ATENÇÃO: Preço zerado no nodeData para produto ${args.product_name}`)
@@ -4877,13 +5147,9 @@ export async function executeAIOnlyWorkflow(
                 // (ex: "chaveiro" quando há "Chaveiro Furina" e "Chaveiro Mavuika")
                 const userMessageLower = userMessage.toLowerCase().trim()
                 
-                // Lista de termos genéricos e seus tipos específicos conhecidos
-                const genericTerms = {
-                  'chaveiro': ['furina', 'mavuika'],
-                  'figure': ['furina', 'columbina', 'emilie'],
-                  'bolacha': ['nahida', 'emilie'],
-                  'figures': ['furina', 'columbina', 'emilie'], // plural
-                }
+                // Lista de termos genéricos será construída dinamicamente do catálogo
+                // Não há mais termos hardcoded - tudo vem do catálogo do banco
+                const genericTerms: Record<string, string[]> = {}
                 
                 // Verifica se é termo genérico: contém o termo genérico mas NÃO menciona nenhum tipo específico
                 let isGenericTerm = false
@@ -4922,16 +5188,36 @@ export async function executeAIOnlyWorkflow(
                       if (nodeName === searchName) {
                         score = 100 // Match exato - maior prioridade
                       } else if (nodeName.includes(searchName)) {
-                        score = 80 // Nome contém o termo de busca
+                        score = 80 // Nome contém o termo de busca completo
                       } else if (searchName.includes(nodeName)) {
-                        score = 60 // Termo de busca contém o nome
+                        score = 60 // Termo de busca contém o nome completo
                       } else {
                         // Match parcial (palavras em comum)
                         const nodeWords = nodeName.split(/\s+/)
                         const searchWords = searchName.split(/\s+/)
                         const commonWords = nodeWords.filter((w: string) => searchWords.includes(w))
                         if (commonWords.length > 0) {
-                          score = 40 + (commonWords.length * 10)
+                          // Penaliza matches que não contêm palavras-chave importantes do início
+                          // Ex: "X-PICANHA" deve ter prioridade sobre "X-TUDO" quando busca "X-PICANHA"
+                          const firstSearchWord = searchWords[0] // Ex: "x-picanha"
+                          const firstNodeWord = nodeWords[0] // Ex: "x-tudo"
+                          const firstWordMatch = firstSearchWord === firstNodeWord
+                          
+                          // Score baseado em palavras comuns
+                          let baseScore = 40 + (commonWords.length * 10)
+                          
+                          // BONUS: Se a primeira palavra corresponde, aumenta significativamente o score
+                          if (firstWordMatch) {
+                            baseScore += 30
+                          }
+                          
+                          // PENALIDADE: Se a primeira palavra NÃO corresponde, reduz o score
+                          // Isso evita que "X-TUDO" seja escolhido quando busca "X-PICANHA"
+                          if (!firstWordMatch && firstSearchWord.length > 2) {
+                            baseScore -= 20
+                          }
+                          
+                          score = Math.max(0, baseScore)
                         }
                       }
                       
@@ -4961,10 +5247,30 @@ export async function executeAIOnlyWorkflow(
                 const firstSearchWord = searchWords[0] // Ex: "bolacha", "chaveiro", "figure"
                 
                 // Filtra matches que contenham TODAS as palavras-chave importantes
+                // CRÍTICO: Prioriza matches que começam com a mesma primeira palavra distintiva
                 const matchesWithAllKeywords = allMatches.filter(m => {
                   const mNameLower = m.name.toLowerCase()
+                  const mWords = mNameLower.split(/\s+/)
+                  
                   // Verifica se o nome do produto contém TODAS as palavras-chave importantes
-                  return searchWords.every((keyword: string) => mNameLower.includes(keyword.toLowerCase()))
+                  const hasAllKeywords = searchWords.every((keyword: string) => mNameLower.includes(keyword.toLowerCase()))
+                  
+                  // CRÍTICO: Se a primeira palavra da busca é distintiva (não é artigo/comum), 
+                  // ela DEVE corresponder à primeira palavra do produto
+                  // Ex: "X-PICANHA" deve corresponder a produtos que começam com "X-PICANHA", não "X-TUDO"
+                  if (firstSearchWord && firstSearchWord.length > 2) {
+                    const firstMatchWord = mWords[0] || ''
+                    // Se a primeira palavra da busca não corresponde à primeira palavra do produto, 
+                    // e ambas são palavras distintivas (não são artigos), é um match fraco
+                    if (firstMatchWord !== firstSearchWord.toLowerCase() && 
+                        !firstMatchWord.includes(firstSearchWord.toLowerCase()) &&
+                        !firstSearchWord.toLowerCase().includes(firstMatchWord)) {
+                      // Não é um match válido se a primeira palavra distintiva não corresponde
+                      return false
+                    }
+                  }
+                  
+                  return hasAllKeywords
                 })
                 
                 // Se houver matches que contenham todas as palavras-chave, prioriza esses
@@ -5044,8 +5350,12 @@ export async function executeAIOnlyWorkflow(
                 
                 if (bestMatch && bestMatch.price > 0) {
                   console.warn(`   ✅ Node encontrado por nome: "${bestMatch.node.id}"`)
+                  console.warn(`   🔍 Nome do produto encontrado: "${bestMatch.name}"`)
+                  console.warn(`   🔍 Nome do produto esperado: "${args.product_name}"`)
+                  console.warn(`   🔍 Match: ${bestMatch.name === args.product_name ? '✅ CORRETO' : '⚠️ NOME DIFERENTE'}`)
                   unitPrice = bestMatch.price
                   args.product_id = bestMatch.node.id
+                  console.warn(`   ✅ product_id definido: "${args.product_id}"`)
                   console.warn(`   Preço encontrado: R$ ${unitPrice}`)
                 } else {
                   console.warn(`   ❌ Nenhum node válido encontrado por nome "${args.product_name}"`)
@@ -5252,7 +5562,8 @@ export async function executeAIOnlyWorkflow(
             // Extrai palavras-chave da mensagem do usuário para validar
             const userMessageLower = userMessage.toLowerCase()
             const messageWords = userMessageLower.split(/\s+/)
-            const productKeywords = ['chaveiro', 'figure', 'figures', 'bolacha', 'columbina', 'furina', 'mavuika', 'nahida', 'emilie']
+            // Palavras-chave serão extraídas dinamicamente do catálogo - não há mais lista hardcoded
+            const productKeywords: string[] = []
             const foundKeywords = messageWords.filter(word => 
               productKeywords.some(keyword => word.includes(keyword) || keyword.includes(word))
             )
@@ -5287,7 +5598,8 @@ export async function executeAIOnlyWorkflow(
               
               // Extrai termos da mensagem do usuário (ex: "tire 4 chaveiros da mavuka" → ["chaveiro", "mavuka"])
               const messageWords = userMessageLower.split(/\s+/)
-              const productKeywords = ['chaveiro', 'figure', 'figures', 'bolacha', 'columbina', 'furina', 'mavuika', 'nahida', 'emilie']
+              // Palavras-chave serão extraídas dinamicamente do catálogo - não há mais lista hardcoded
+            const productKeywords: string[] = []
               
               // Encontra palavras-chave de produtos na mensagem
               const foundKeywords = messageWords.filter(word => 
@@ -6137,7 +6449,8 @@ export async function executeAIOnlyWorkflow(
           }
           
           if (deliveryType === 'delivery' && !deliveryAddress) {
-            // Verifica se o usuário está confirmando uso de endereço anterior
+            // Se confirm=true, busca endereço anterior automaticamente
+            const isConfirming = args.confirm === true
             const userMessageLower = userMessage.toLowerCase().trim()
             const confirmPatterns = [
               /usar\s+(este|esse|o\s+mesmo|o\s+endereço\s+anterior)/i,
@@ -6145,9 +6458,10 @@ export async function executeAIOnlyWorkflow(
               /endereço\s+anterior/i,
               /pode\s+usar/i,
               /usa\s+(esse|este)/i,
+              /confirmar|sim|ok|tá\s+bom/i, // Padrões de confirmação
             ]
             
-            const isConfirmingPrevious = confirmPatterns.some(pattern => pattern.test(userMessage))
+            const isConfirmingPrevious = isConfirming || confirmPatterns.some(pattern => pattern.test(userMessage))
             
             if (isConfirmingPrevious) {
               // Busca endereço anterior nas mensagens recentes
@@ -6191,7 +6505,7 @@ export async function executeAIOnlyWorkflow(
                 if (!deliveryAddress) {
                   return {
                     success: false,
-                    error: 'Não encontrei um endereço anterior para usar. Por favor, informe o endereço completo de entrega (rua, número, bairro, cidade e CEP se possível).',
+                    error: 'Não encontrei um endereço anterior para usar. Por favor, informe a rua e o número para entrega (ex: "Rua X, 123").',
                     requiresDeliveryAddress: true,
                   }
                 }
@@ -6199,24 +6513,80 @@ export async function executeAIOnlyWorkflow(
                 console.error(`🛒 [checkout] Erro ao buscar endereço anterior:`, error)
             return {
               success: false,
-              error: 'Para entrega, é necessário informar o endereço completo. Por favor, informe o endereço de entrega (rua, número, bairro, cidade e CEP se possível).',
+                error: 'Para entrega, é necessário informar a rua e o número. Por favor, informe a rua e o número para entrega (ex: "Rua X, 123").',
               requiresDeliveryAddress: true,
                 }
               }
             } else {
-              return {
-                success: false,
-                error: 'Para entrega, é necessário informar o endereço completo. Por favor, informe o endereço de entrega (rua, número, bairro, cidade e CEP se possível).',
-                requiresDeliveryAddress: true,
+              // Cliente forneceu um endereço na mensagem atual
+              // Tenta extrair rua e número da mensagem
+              const addressFromMessage = userMessage.trim()
+              
+              // Verifica se parece ser apenas rua e número (não endereço completo)
+              // Aceita formatos flexíveis:
+              // - "Rua X, 123" ou "Rua X 123" ou "Rua X - 123"
+              // - "123 Rua X" ou "123, Rua X" (número antes)
+              // - "Av. Y, 456" ou "Av. Y 456"
+              // - "R. Z, 789" ou "R. Z 789"
+              const hasStreetPattern = /(?:rua|avenida|av\.?|avd\.?|r\.?|estrada|est\.?|rodovia|rod\.?)\s+/i.test(addressFromMessage) ||
+                /^\d+\s*[,\s-]+\s*(?:rua|avenida|av\.?|avd\.?|r\.?|estrada|est\.?|rodovia|rod\.?)/i.test(addressFromMessage) // Número antes da rua
+              const hasNumber = /\d+/.test(addressFromMessage)
+              const commaCount = (addressFromMessage.match(/,/g) || []).length
+              const hasCEP = /\d{5}-?\d{3}/.test(addressFromMessage)
+              const hasCityState = /-\s*(?:sp|rj|mg|pr|sc|rs|ba|go|pe|ce|df|es|pb|al|se|rn|pi|ma|to|pa|ap|ro|ac|rr|am|ms|mt)\b/i.test(addressFromMessage)
+              const hasMultipleCommas = commaCount >= 3 // Provavelmente endereço completo
+              
+              const looksLikeSimpleAddress = hasStreetPattern && hasNumber && 
+                !hasCEP && 
+                !hasCityState &&
+                !hasMultipleCommas &&
+                addressFromMessage.length < 100 // Endereços simples são geralmente mais curtos
+              
+              if (looksLikeSimpleAddress || addressFromMessage.length < 50) {
+                // Parece ser apenas rua e número - busca endereço completo automaticamente
+                console.log(`🔍 [checkout] Endereço simples detectado, buscando endereço completo...`)
+                
+                try {
+                  const { lookupFullAddress } = await import('./address-lookup')
+                  const addressResult = await lookupFullAddress(addressFromMessage)
+                  
+                  if (addressResult.success && addressResult.fullAddress) {
+                    deliveryAddress = addressResult.fullAddress
+                    console.log(`✅ [checkout] Endereço completo encontrado: "${deliveryAddress}"`)
+                  } else {
+                    // Se não encontrou, pede endereço completo
+                    return {
+                      success: false,
+                      error: addressResult.error || 'Não foi possível encontrar o endereço automaticamente. Por favor, informe a rua e o número novamente ou o endereço completo.',
+                      requiresDeliveryAddress: true,
+                    }
+                  }
+                } catch (error) {
+                  console.error(`❌ [checkout] Erro ao buscar endereço:`, error)
+                  return {
+                    success: false,
+                    error: 'Não foi possível buscar o endereço automaticamente. Por favor, informe a rua e o número novamente ou o endereço completo.',
+                    requiresDeliveryAddress: true,
+                  }
+                }
+              } else {
+                // Parece ser endereço completo - usa direto
+                deliveryAddress = addressFromMessage
               }
             }
           }
           
           // ⚠️ VALIDAÇÃO CRÍTICA: Verifica se o endereço foi fornecido na mensagem ATUAL do usuário
           // Previne que a IA use endereços de conversas anteriores
-          if (deliveryType === 'delivery' && deliveryAddress) {
+          // NOTA: Se confirm=true, pula a validação pois o endereço já foi validado anteriormente
+          // NOTA: Se o endereço foi expandido automaticamente, verifica apenas se a rua e número estão na mensagem
+          if (deliveryType === 'delivery' && deliveryAddress && !args.confirm) {
             const userMessageLower = userMessage.toLowerCase().trim()
             const deliveryAddressLower = deliveryAddress.toLowerCase().trim()
+            
+            // Extrai rua e número do endereço completo (para validação)
+            const streetMatch = deliveryAddressLower.match(/(?:rua|avenida|av\.?|r\.?|estrada|rodovia)\s+([^,\n]+)/i)
+            const numberMatch = deliveryAddressLower.match(/,?\s*(\d+)/)
             
             // Extrai palavras-chave significativas do endereço (rua, número, bairro, cidade, CEP)
             // Remove palavras comuns que não são específicas do endereço
@@ -6228,12 +6598,20 @@ export async function executeAIOnlyWorkflow(
               .slice(0, 6) // Pega até 6 palavras-chave específicas
             
             // Verifica se pelo menos 2 palavras-chave específicas do endereço estão na mensagem atual
+            // OU se a rua e número estão na mensagem (caso o endereço tenha sido expandido)
             const keywordsInMessage = addressKeywords.filter((keyword: string) => 
               userMessageLower.includes(keyword)
             )
             
-            // Se menos de 2 palavras-chave específicas estão na mensagem, o endereço não foi fornecido agora
-            if (addressKeywords.length > 0 && keywordsInMessage.length < 2) {
+            const hasStreetInMessage = streetMatch && userMessageLower.includes(streetMatch[1].toLowerCase().trim())
+            const hasNumberInMessage = numberMatch && userMessageLower.includes(numberMatch[1])
+            
+            // Se o endereço foi expandido (tem mais de 2 partes), aceita se rua e número estão na mensagem
+            const addressWasExpanded = deliveryAddressLower.split(',').length > 2
+            const isValidIfExpanded = addressWasExpanded && (hasStreetInMessage || hasNumberInMessage)
+            
+            // Se menos de 2 palavras-chave específicas estão na mensagem E não foi expandido com rua/número válidos, o endereço não foi fornecido agora
+            if (addressKeywords.length > 0 && keywordsInMessage.length < 2 && !isValidIfExpanded) {
               console.warn(`🛒 [checkout] ⚠️ Endereço fornecido pela IA não está na mensagem atual do usuário`)
               console.warn(`   Mensagem do usuário: "${userMessage}"`)
               console.warn(`   Endereço fornecido pela IA: "${deliveryAddress}"`)
@@ -6300,7 +6678,7 @@ export async function executeAIOnlyWorkflow(
               // Se não encontrou endereço anterior, pede um novo
               return {
                 success: false,
-                error: 'Para entrega, é necessário informar o endereço completo na mensagem atual. Por favor, informe o endereço de entrega (rua, número, bairro, cidade e CEP se possível).',
+                error: 'Para entrega, é necessário informar a rua e o número na mensagem atual. Por favor, informe a rua e o número para entrega (ex: "Rua X, 123").',
                 requiresDeliveryAddress: true,
               }
             }
@@ -6317,15 +6695,39 @@ export async function executeAIOnlyWorkflow(
                 select: {
                   businessAddress: true,
                   deliveryPricePerKm: true,
-                },
+                  maxDeliveryDistanceKm: true,
+                } as any, // Cast temporário até Prisma Client ser regenerado
               })
 
-              if (user?.businessAddress && user?.deliveryPricePerKm && user.deliveryPricePerKm > 0) {
+              const userConfig = user as { businessAddress: string | null; deliveryPricePerKm: number | null; maxDeliveryDistanceKm?: number | null } | null;
+              
+              if (userConfig?.businessAddress && userConfig?.deliveryPricePerKm && userConfig.deliveryPricePerKm > 0) {
                 // Importa função de cálculo de frete
                 const { calculateFrete } = await import('./delivery')
-                const freightResult = await calculateFrete(user.businessAddress, deliveryAddress.trim(), user.deliveryPricePerKm)
+                const freightResult = await calculateFrete(userConfig.businessAddress, deliveryAddress.trim(), userConfig.deliveryPricePerKm)
                 
-                if (freightResult && freightResult.success) {
+                if (freightResult && freightResult.success && freightResult.distance !== undefined) {
+                  // Verifica limite de distância
+                  const maxDistance = userConfig.maxDeliveryDistanceKm;
+                  if (maxDistance && freightResult.distance > maxDistance) {
+                    console.log(`🛒 [checkout] ⚠️ Distância (${freightResult.distance}km) excede o limite permitido (${maxDistance}km)`)
+                    // Retorna erro indicando que a entrega não é possível
+                    const contactKey = `${instanceId}-${contactNumber}`;
+                    await queueMessage(contactKey, async () => {
+                      await sendWhatsAppMessage(
+                        instanceId,
+                        contactNumber,
+                        `⚠️ *Entrega não disponível*\n\nO endereço informado está a ${freightResult.distance!.toFixed(1)}km do estabelecimento, mas nossa área de entrega é limitada a ${maxDistance}km.\n\nPor favor, escolha outro endereço ou opte por retirada no local.`,
+                        'service'
+                      );
+                    });
+                    return {
+                      success: false,
+                      error: `Distância de ${freightResult.distance.toFixed(1)}km excede o limite de ${maxDistance}km`,
+                      distanceExceeded: true,
+                    };
+                  }
+                  
                   freightAmount = freightResult.freightPrice ?? null
                   console.log(`🛒 [checkout] Frete calculado: R$ ${freightAmount} (distância: ${freightResult.distance}km)`)
                 } else {
@@ -6348,6 +6750,69 @@ export async function executeAIOnlyWorkflow(
             freightAmount: freightAmount || 0,
           })
 
+          // Calcula o total ANTES de criar o pedido
+          const cartSubtotal = cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
+          const freight = freightAmount && freightAmount > 0 ? freightAmount : 0
+          const totalAmount = cartSubtotal + freight
+          const formattedSubtotal = cartSubtotal.toFixed(2).replace('.', ',')
+          const formattedFreight = freight.toFixed(2).replace('.', ',')
+          const formattedTotal = totalAmount.toFixed(2).replace('.', ',')
+
+          // ⚠️ NOVO FLUXO: Se for entrega e tiver endereço, mostra resumo e PEDE CONFIRMAÇÃO antes de criar pedido
+          const needsConfirmation = deliveryType === 'delivery' && deliveryAddress && !args.confirm
+          
+          if (needsConfirmation) {
+            console.log(`🛒 [checkout] Entrega detectada - mostrando resumo e pedindo confirmação antes de criar pedido`)
+            
+            // Monta mensagem de resumo (SEM criar pedido ainda)
+            let summaryMessage = `📋 *Resumo do Pedido*\n`
+            summaryMessage += `━━━━━━━━━━━━━━━━━━━━\n\n`
+            
+            // Lista de itens
+            summaryMessage += `📦 *Itens do Pedido:*\n\n`
+            cart.items.forEach((item, index) => {
+              const itemTotal = item.quantity * item.unitPrice
+              const formattedUnitPrice = item.unitPrice.toFixed(2).replace('.', ',')
+              const formattedItemTotal = itemTotal.toFixed(2).replace('.', ',')
+              
+              summaryMessage += `${index + 1}. *${item.productName}*\n`
+              summaryMessage += `   ${item.quantity}x R$ ${formattedUnitPrice} = R$ ${formattedItemTotal}\n\n`
+            })
+            
+            summaryMessage += `━━━━━━━━━━━━━━━━━━━━\n`
+            summaryMessage += `📦 *Subtotal dos Itens: R$ ${formattedSubtotal}*\n`
+            
+            // Adiciona frete
+            if (freight > 0) {
+              summaryMessage += `🚚 *Frete: R$ ${formattedFreight}*\n`
+            }
+            
+            summaryMessage += `💰 *Total do Pedido: R$ ${formattedTotal}*\n\n`
+            
+            // Informações de entrega
+            summaryMessage += `🚚 *Informações de Entrega:*\n`
+            summaryMessage += `📍 Endereço: ${deliveryAddress}\n`
+            if (freight > 0) {
+              summaryMessage += `💰 Frete calculado: R$ ${formattedFreight}\n`
+            }
+            
+            summaryMessage += `\n━━━━━━━━━━━━━━━━━━━━\n\n`
+            summaryMessage += `❓ *Confirma o pedido?*\n\n`
+            summaryMessage += `Digite "confirmar" ou "sim" para finalizar o pedido, ou "cancelar" para desistir.`
+            
+            return {
+              success: false,
+              error: summaryMessage,
+              requiresConfirmation: true,
+              freightAmount: freight,
+              totalAmount: totalAmount,
+            }
+          }
+
+          // Se chegou aqui, é porque:
+          // 1. Não é entrega (é retirada) OU
+          // 2. É entrega mas o cliente já confirmou (args.confirm = true)
+          
           // Log antes de criar pedido
           console.log(`🛒 [checkout] Criando pedido...`, {
             userId,
@@ -6356,6 +6821,7 @@ export async function executeAIOnlyWorkflow(
             itemCount: cart.items.length,
             deliveryType,
             freightAmount,
+            confirmed: args.confirm || false,
           })
 
           // Cria o pedido
@@ -6384,14 +6850,6 @@ export async function executeAIOnlyWorkflow(
               error: `Erro ao criar pedido: ${error instanceof Error ? error.message : 'Erro desconhecido'}`,
             }
           }
-
-          // Calcula o total
-          const cartSubtotal = cart.items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0)
-          const freight = freightAmount && freightAmount > 0 ? freightAmount : 0
-          const totalAmount = cartSubtotal + freight
-          const formattedSubtotal = cartSubtotal.toFixed(2).replace('.', ',')
-          const formattedFreight = freight.toFixed(2).replace('.', ',')
-          const formattedTotal = totalAmount.toFixed(2).replace('.', ',')
 
           // Monta mensagem de confirmação com resumo detalhado e bonito
           let message = `✅ *Pedido Confirmado com Sucesso!*\n`
@@ -6715,7 +7173,7 @@ export async function executeAIOnlyWorkflow(
         },
         {
           name: 'add_to_cart',
-          description: '⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Adiciona um produto ou serviço ao carrinho de compras. Você DEVE CHAMAR ESTA FUNÇÃO SEMPRE que o cliente pedir um produto! EXEMPLOS: "quero 9 figures da furina" → CHAME add_to_cart(product_name: "figure da furina", quantity: 9), "quero um chaveiro" → CHAME add_to_cart(product_name: "chaveiro"), "vou querer uma bolacha" → CHAME add_to_cart(product_name: "bolacha da nahida"). NUNCA diga "adicionei" ou "vou adicionar" SEM chamar esta função primeiro! Se você não chamar esta função, o produto NÃO será adicionado ao carrinho e o cliente ficará confuso! FLUXO OBRIGATÓRIO: Cliente pede produto → Você CHAMA add_to_cart → Função retorna → Você informa o cliente.',
+          description: '⚠️⚠️⚠️ CRÍTICO ABSOLUTO: Adiciona um produto ou serviço ao carrinho de compras. Você DEVE CHAMAR ESTA FUNÇÃO SEMPRE que o cliente pedir um produto! Use o nome EXATO do produto que está no catálogo acima. EXEMPLOS: "quero 9 [produto]" → CHAME add_to_cart(product_name: "[nome exato do produto do catálogo]", quantity: 9), "quero um [produto]" → CHAME add_to_cart(product_name: "[nome exato do produto do catálogo]"). NUNCA diga "adicionei" ou "vou adicionar" SEM chamar esta função primeiro! Se você não chamar esta função, o produto NÃO será adicionado ao carrinho e o cliente ficará confuso! FLUXO OBRIGATÓRIO: Cliente pede produto → Você CHAMA add_to_cart → Função retorna → Você informa o cliente.',
           parameters: {
             type: 'object',
             properties: {
@@ -6806,7 +7264,7 @@ export async function executeAIOnlyWorkflow(
         },
         {
           name: 'checkout',
-          description: '⚠️⚠️⚠️ CRÍTICO: Finaliza o pedido e cria a ordem de compra. VOCÊ DEVE CHAMAR ESTA FUNÇÃO quando: (1) O cliente disser "quero finalizar a compra", "finalizar", "fechar pedido", "completar pedido", "concluir compra", "confirmar compra", "confirmar pedido", "confirmar", "sim", "ok", "só isso", "por enquanto é só", "tá bom assim", "pode fechar". (2) Você acabou de mostrar o carrinho (via view_cart) e o cliente responde "confirmar", "sim", "ok", "finalizar" - CHAME checkout IMEDIATAMENTE! NUNCA liste produtos novamente quando o cliente quer finalizar - ele já tem itens no carrinho! Esta função mostra automaticamente o que está no carrinho e processa o pedido. Se não souber o tipo de entrega, use "pickup" como padrão.',
+          description: '⚠️⚠️⚠️ CRÍTICO: Finaliza o pedido e cria a ordem de compra. FLUXO IMPORTANTE: (1) Se for RETIRADA (pickup): chame checkout com delivery_type="pickup" - o pedido é criado imediatamente. (2) Se for ENTREGA (delivery): chame checkout com delivery_type="delivery" e delivery_address - o sistema calculará o frete e mostrará um resumo PEDINDO CONFIRMAÇÃO. Quando o cliente confirmar (dizer "sim", "confirmar", "ok"), chame checkout novamente com confirm=true para criar o pedido. VOCÊ DEVE CHAMAR ESTA FUNÇÃO quando: cliente disser "finalizar", "fechar pedido", "confirmar", "sim", "ok", "só isso", "tá bom assim". Se não souber o tipo de entrega, use "pickup" como padrão.',
           parameters: {
             type: 'object',
             properties: {
@@ -6817,11 +7275,15 @@ export async function executeAIOnlyWorkflow(
               },
               delivery_address: {
                 type: 'string',
-                description: 'Endereço completo de entrega (obrigatório APENAS se delivery_type for "delivery"). Inclua rua, número, bairro, cidade e CEP se possível. Se for pickup, pode omitir este campo.',
+                description: 'Endereço de entrega (obrigatório APENAS se delivery_type for "delivery"). Pode ser apenas rua e número (ex: "Rua X, 123") - o sistema buscará o endereço completo automaticamente. Se for pickup, pode omitir este campo.',
               },
               notes: {
                 type: 'string',
                 description: 'Observações gerais do pedido (opcional).',
+              },
+              confirm: {
+                type: 'boolean',
+                description: 'Confirmação do pedido (obrigatório APENAS se a função retornou requiresConfirmation=true anteriormente). Use confirm=true quando o cliente confirmar após ver o resumo com frete. Se omitido ou false, a função mostrará o resumo e pedirá confirmação (para entregas).',
               },
             },
             required: [],

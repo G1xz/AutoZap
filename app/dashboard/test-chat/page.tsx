@@ -85,14 +85,31 @@ export default function TestChatPage() {
         setMessages(prev => [...prev, errorMessage])
       } else {
         addLog(`✅ Resposta recebida: ${data.response.substring(0, 50)}...`)
-        const assistantMessage: Message = {
-          id: (Date.now() + 1).toString(),
-          role: 'assistant',
-          content: data.response,
-          timestamp: new Date(),
-          mediaUrl: data.mediaUrl || null, // Inclui URL da imagem se houver
+        
+        // Se a API retornou múltiplas mensagens (allMessages), processa todas
+        if (data.allMessages && Array.isArray(data.allMessages) && data.allMessages.length > 0) {
+          // Cria uma mensagem para cada item retornado pela API
+          data.allMessages.forEach((msg: any, index: number) => {
+            const assistantMessage: Message = {
+              id: `${Date.now()}-${index}`,
+              role: 'assistant',
+              content: msg.body || '',
+              timestamp: new Date(msg.timestamp),
+              mediaUrl: msg.mediaUrl || null,
+            }
+            setMessages(prev => [...prev, assistantMessage])
+          })
+        } else {
+          // Fallback: cria uma única mensagem com a resposta (compatibilidade com código antigo)
+          const assistantMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'assistant',
+            content: data.response,
+            timestamp: new Date(),
+            mediaUrl: data.mediaUrl || null, // Inclui URL da imagem se houver
+          }
+          setMessages(prev => [...prev, assistantMessage])
         }
-        setMessages(prev => [...prev, assistantMessage])
 
         // Adiciona logs do servidor se disponíveis
         if (data.logs && Array.isArray(data.logs)) {

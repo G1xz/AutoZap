@@ -20,6 +20,7 @@ model User {
   slotConfig String? // JSON com configuração de slots de agendamento { slotSizeMinutes: number, bufferMinutes?: number }
   businessAddress String? // Endereço completo do estabelecimento (rua, número, bairro, cidade, CEP)
   deliveryPricePerKm Float? // Preço por quilômetro para cálculo de frete
+  maxDeliveryDistanceKm Float? // Limite máximo de quilômetros para entrega (null = sem limite)
   messageRetentionDays Int? // Número de dias para manter mensagens (padrão: 90 dias)
   isAdmin   Boolean  @default(false) // Se o usuário é administrador do sistema
   planName  String?  // Nome do plano (ex: "Básico", "Premium", "Enterprise")
@@ -159,6 +160,9 @@ model Workflow {
   usesAI            Boolean  @default(false) // Indica se o workflow usa nós de IA
   isAIOnly          Boolean  @default(false) // Indica se é um fluxo exclusivo de IA (conversação autônoma)
   aiBusinessDetails String? // JSON com detalhes do negócio para a IA (nome, produtos, serviços, etc)
+  initialMessage    String? // Mensagem inicial customizada
+  initialImageUrl   String? // URL da imagem a ser enviada junto com a mensagem inicial
+  sendCatalogInInitialMessage Boolean @default(false) // Se deve enviar o catálogo junto com a mensagem inicial
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

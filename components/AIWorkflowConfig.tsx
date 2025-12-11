@@ -24,6 +24,12 @@ interface BusinessDetails {
   aiInstructions?: string // Instruções específicas para a IA sobre como se comportar
   businessImage?: string // URL da imagem do negócio
   sendImageInFirstMessage?: boolean // Se deve enviar imagem na primeira mensagem
+  initialMessage?: string // Mensagem inicial customizada
+  initialImageUrl?: string // URL da imagem a ser enviada junto com a mensagem inicial
+  sendInitialMessage?: boolean // Se deve enviar a mensagem inicial (mesmo que esteja definida)
+  sendInitialImage?: boolean // Se deve enviar a imagem inicial junto com a mensagem inicial
+  sendCatalogInInitialMessage?: boolean // Se deve enviar o catálogo junto com a mensagem inicial
+  sendCatalogImageInInitialMessage?: boolean // Se deve enviar a imagem do catálogo junto com o catálogo na mensagem inicial
   targetAudience?: string // Público-alvo
   mainBenefits?: string // Principais benefícios/diferenciais
   businessValues?: string // Valores do negócio
@@ -48,11 +54,7 @@ export default function AIWorkflowConfig({
     businessDetails || {
       businessName: '',
       businessDescription: '',
-      businessType: 'services',
-      products: [],
-      services: [],
       catalogId: undefined,
-      pricingInfo: '',
       howToBuy: '',
       contactInfo: {},
       tone: 'friendly',
@@ -62,6 +64,12 @@ export default function AIWorkflowConfig({
       aiInstructions: '',
       businessImage: '',
       sendImageInFirstMessage: false,
+      initialMessage: '',
+      initialImageUrl: '',
+      sendInitialMessage: true, // Por padrão, envia a mensagem inicial se estiver definida
+      sendInitialImage: true, // Por padrão, envia a imagem se estiver definida
+      sendCatalogInInitialMessage: false,
+      sendCatalogImageInInitialMessage: false,
       targetAudience: '',
       mainBenefits: '',
       businessValues: '',
@@ -69,60 +77,38 @@ export default function AIWorkflowConfig({
     }
   )
 
-  const [newProduct, setNewProduct] = useState('')
-  const [newService, setNewService] = useState('')
   const [catalogs, setCatalogs] = useState<any[]>([])
   const [isLoadingCatalogs, setIsLoadingCatalogs] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Atualiza o estado quando businessDetails mudar externamente
+  // Usa uma comparação para evitar loops infinitos
+  const prevBusinessDetailsRef = useRef<string>('')
   useEffect(() => {
     if (businessDetails) {
-      setDetails(businessDetails)
+      const newStr = JSON.stringify(businessDetails)
+      // Só atualiza se realmente mudou
+      if (prevBusinessDetailsRef.current !== newStr) {
+        prevBusinessDetailsRef.current = newStr
+        setDetails(businessDetails)
+      }
     }
   }, [businessDetails])
 
   // Notifica mudanças em tempo real para o componente pai
+  // Usa useRef para evitar chamadas desnecessárias
+  const prevDetailsRef = useRef<string>('')
   useEffect(() => {
     if (onChange) {
-      onChange(details)
+      const currentStr = JSON.stringify(details)
+      // Só notifica se realmente mudou
+      if (prevDetailsRef.current !== currentStr) {
+        prevDetailsRef.current = currentStr
+        onChange(details)
+      }
     }
   }, [details, onChange])
-
-  const handleAddProduct = () => {
-    if (newProduct.trim()) {
-      setDetails({
-        ...details,
-        products: [...(details.products || []), newProduct.trim()],
-      })
-      setNewProduct('')
-    }
-  }
-
-  const handleRemoveProduct = (index: number) => {
-    setDetails({
-      ...details,
-      products: details.products?.filter((_, i) => i !== index) || [],
-    })
-  }
-
-  const handleAddService = () => {
-    if (newService.trim()) {
-      setDetails({
-        ...details,
-        services: [...(details.services || []), newService.trim()],
-      })
-      setNewService('')
-    }
-  }
-
-  const handleRemoveService = (index: number) => {
-    setDetails({
-      ...details,
-      services: details.services?.filter((_, i) => i !== index) || [],
-    })
-  }
 
   // Buscar catálogos disponíveis
   useEffect(() => {
@@ -274,6 +260,185 @@ export default function AIWorkflowConfig({
             </p>
           </div>
 
+          {/* Mensagem Inicial Customizada */}
+          <div className="space-y-3">
+            <div>
+              <label className="block text-sm font-semibold text-gray-900 mb-2">
+                Mensagem Inicial Customizada (opcional)
+              </label>
+              <textarea
+                value={details.initialMessage || ''}
+                onChange={(e) =>
+                  setDetails({ ...details, initialMessage: e.target.value })
+                }
+                placeholder="Ex: Olá! 👋 Bem-vindo à nossa lanchonete! Temos os melhores lanches da região..."
+                rows={3}
+                className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Esta mensagem será enviada automaticamente quando um cliente iniciar uma conversa. Se deixar em branco, a IA gerará uma mensagem automaticamente.
+              </p>
+            </div>
+
+            {/* Opção de Enviar Mensagem Inicial */}
+            {details.initialMessage && (
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={details.sendInitialMessage !== undefined ? details.sendInitialMessage : true}
+                    onChange={(e) =>
+                      setDetails({ ...details, sendInitialMessage: e.target.checked })
+                    }
+                    className="w-4 h-4 rounded border-gray-300 text-autozap-primary focus:ring-autozap-primary"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Enviar mensagem inicial
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1 ml-6">
+                  Se marcado, a mensagem inicial será enviada quando um cliente iniciar uma conversa.
+                </p>
+              </div>
+            )}
+
+            {/* Imagem da Mensagem Inicial */}
+            {details.initialMessage && (
+              <div>
+                <label className="block text-sm font-semibold text-gray-900 mb-2">
+                  Imagem para Mensagem Inicial (opcional)
+                </label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]
+                    if (!file) return
+                    
+                    setUploadingImage(true)
+                    try {
+                      const formData = new FormData()
+                      formData.append('file', file)
+                      
+                      const response = await fetch('/api/upload', {
+                        method: 'POST',
+                        body: formData,
+                      })
+                      
+                      if (response.ok) {
+                        const data = await response.json()
+                        setDetails({ ...details, initialImageUrl: data.url })
+                        toast.success('Imagem enviada com sucesso.')
+                      } else {
+                        throw new Error('Erro ao enviar imagem')
+                      }
+                    } catch (error) {
+                      console.error('Erro ao enviar imagem:', error)
+                      toast.error('Não foi possível enviar a imagem.')
+                    } finally {
+                      setUploadingImage(false)
+                    }
+                  }}
+                  className="hidden"
+                  id="initial-image-input"
+                />
+                <div className="flex gap-2 items-center">
+                  <button
+                    type="button"
+                    onClick={() => document.getElementById('initial-image-input')?.click()}
+                    disabled={uploadingImage}
+                    className="px-4 py-2 bg-autozap-primary text-white rounded-md hover:bg-autozap-light disabled:opacity-50 transition-colors"
+                  >
+                    {uploadingImage ? 'Enviando...' : details.initialImageUrl ? 'Trocar Imagem' : 'Escolher Imagem'}
+                  </button>
+                  {details.initialImageUrl && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setDetails({ ...details, initialImageUrl: '' })}
+                        className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors"
+                      >
+                        Remover
+                      </button>
+                      <div className="w-16 h-16 rounded-md overflow-hidden border border-gray-300">
+                        <img src={details.initialImageUrl} alt="Mensagem inicial" className="w-full h-full object-cover" />
+                      </div>
+                    </>
+                  )}
+                </div>
+                
+                {/* Opção de Enviar Imagem Inicial */}
+                {details.initialImageUrl && (
+                  <div className="mt-2">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={details.sendInitialImage !== undefined ? details.sendInitialImage : true}
+                        onChange={(e) =>
+                          setDetails({ ...details, sendInitialImage: e.target.checked })
+                        }
+                        className="w-4 h-4 rounded border-gray-300 text-autozap-primary focus:ring-autozap-primary"
+                      />
+                      <span className="text-sm text-gray-700">
+                        Enviar imagem junto com a mensagem inicial
+                      </span>
+                    </label>
+                    <p className="text-xs text-gray-500 mt-1 ml-6">
+                      Se marcado, a imagem será enviada junto com a mensagem inicial.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Opção de Enviar Catálogo na Mensagem Inicial */}
+          {details.catalogId && (
+            <div className="space-y-3">
+              <div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={details.sendCatalogInInitialMessage || false}
+                    onChange={(e) =>
+                      setDetails({ ...details, sendCatalogInInitialMessage: e.target.checked })
+                    }
+                    className="w-4 h-4 rounded border-gray-300 text-autozap-primary focus:ring-autozap-primary"
+                  />
+                  <span className="text-sm text-gray-700">
+                    Enviar catálogo junto com a mensagem inicial
+                  </span>
+                </label>
+                <p className="text-xs text-gray-500 mt-1 ml-6">
+                  Se marcado, o catálogo completo será enviado automaticamente quando um cliente iniciar uma conversa. {details.initialMessage ? 'Será enviado logo após a mensagem inicial customizada.' : 'Será enviado como primeira mensagem (ou após a mensagem inicial, se você configurar uma).'}
+                </p>
+              </div>
+              
+              {/* Opção de Enviar Imagem do Catálogo */}
+              {details.sendCatalogInInitialMessage && (
+                <div className="ml-6">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={details.sendCatalogImageInInitialMessage || false}
+                      onChange={(e) =>
+                        setDetails({ ...details, sendCatalogImageInInitialMessage: e.target.checked })
+                      }
+                      className="w-4 h-4 rounded border-gray-300 text-autozap-primary focus:ring-autozap-primary"
+                    />
+                    <span className="text-sm text-gray-700">
+                      Enviar imagem do catálogo junto com o catálogo
+                    </span>
+                  </label>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Se marcado, a imagem do catálogo (se houver uma configurada) será enviada antes do catálogo formatado.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Descrição do Negócio */}
           <div>
             <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -290,27 +455,6 @@ export default function AIWorkflowConfig({
             />
             <p className="text-xs text-gray-500 mt-1">
               Seja específico! A IA usará isso para explicar seu negócio aos clientes.
-            </p>
-          </div>
-
-          {/* Tipo de Negócio */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">
-              Tipo de Negócio *
-            </label>
-            <select
-              value={details.businessType || 'services'}
-              onChange={(e) =>
-                setDetails({ ...details, businessType: e.target.value as 'products' | 'services' | 'both' })
-              }
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
-            >
-              <option value="services">Apenas Serviços</option>
-              <option value="products">Apenas Produtos</option>
-              <option value="both">Produtos e Serviços</option>
-            </select>
-            <p className="text-xs text-gray-500 mt-1">
-              Isso ajuda a IA a entender se você vende produtos, serviços ou ambos.
             </p>
           </div>
 
@@ -347,88 +491,6 @@ export default function AIWorkflowConfig({
             )}
           </div>
 
-          {/* Produtos */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">
-              Produtos (opcional - use apenas se não selecionou um catálogo)
-            </label>
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                value={newProduct}
-                onChange={(e) => setNewProduct(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleAddProduct()}
-                placeholder="Adicionar produto..."
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
-              />
-              <button
-                onClick={handleAddProduct}
-                className="px-4 py-2 bg-autozap-primary text-white rounded-md hover:bg-autozap-light transition-colors"
-              >
-                Adicionar
-              </button>
-            </div>
-            {details.products && details.products.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {details.products.map((product, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center gap-1 px-3 py-1 bg-purple-100 text-purple-700 rounded-full text-sm"
-                  >
-                    {product}
-                    <button
-                      onClick={() => handleRemoveProduct(index)}
-                      className="text-purple-700 hover:text-purple-900"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Serviços */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">
-              Serviços (opcional - use apenas se não selecionou um catálogo)
-            </label>
-            <div className="flex gap-2 mb-2">
-              <input
-                type="text"
-                value={newService}
-                onChange={(e) => setNewService(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleAddService()}
-                placeholder="Adicionar serviço..."
-                className="flex-1 px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
-              />
-              <button
-                onClick={handleAddService}
-                className="px-4 py-2 bg-autozap-primary text-white rounded-md hover:bg-autozap-light transition-colors"
-              >
-                Adicionar
-              </button>
-            </div>
-            {details.services && details.services.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {details.services.map((service, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center gap-1 px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm"
-                  >
-                    {service}
-                    <button
-                      onClick={() => handleRemoveService(index)}
-                      className="text-blue-700 hover:text-blue-900"
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
-
           {/* Tom de Conversa */}
           <div>
             <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -451,25 +513,6 @@ export default function AIWorkflowConfig({
             </select>
           </div>
 
-          {/* Informações de Preço */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">
-              Informações de Preço (opcional)
-            </label>
-            <textarea
-              value={details.pricingInfo || ''}
-              onChange={(e) =>
-                setDetails({ ...details, pricingInfo: e.target.value })
-              }
-              placeholder="Ex: Preços a partir de R$ 50,00. Pacotes disponíveis. Descontos para compras em quantidade..."
-              rows={2}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Como a IA deve falar sobre preços quando perguntado.
-            </p>
-          </div>
-
           {/* Como Comprar/Contratar */}
           <div>
             <label className="block text-sm font-semibold text-gray-900 mb-2">
@@ -485,7 +528,7 @@ export default function AIWorkflowConfig({
               className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
             />
             <p className="text-xs text-gray-500 mt-1">
-              Instruções sobre como o cliente pode comprar ou contratar seus produtos/serviços.
+              Instruções sobre como o cliente pode comprar ou contratar seus produtos/serviços. Ex: "Entre em contato pelo WhatsApp, envie uma mensagem com seu pedido, aguarde nosso retorno" ou "Você pode fazer o pedido aqui mesmo pelo chat, depois enviamos o link de pagamento".
             </p>
           </div>
 
@@ -562,25 +605,6 @@ export default function AIWorkflowConfig({
             />
             <p className="text-xs text-gray-500 mt-1">
               Quais são os valores que guiam seu negócio? Isso ajuda a IA a transmitir a identidade da marca.
-            </p>
-          </div>
-
-          {/* Horários de Funcionamento (Texto Livre - Apenas para exibição) */}
-          <div>
-            <label className="block text-sm font-semibold text-gray-900 mb-2">
-              Horários de Funcionamento - Texto Livre (opcional, para exibição)
-            </label>
-            <textarea
-              value={details.workingHours || ''}
-              onChange={(e) =>
-                setDetails({ ...details, workingHours: e.target.value })
-              }
-              placeholder="Ex: Segunda a Sexta: 9h às 18h | Sábado: 9h às 13h | Domingo: Fechado"
-              rows={2}
-              className="w-full px-4 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
-            />
-            <p className="text-xs text-gray-500 mt-1">
-              Este campo é apenas para exibição na conversa. Os horários estruturados que bloqueiam agendamentos devem ser configurados em <strong>Configurações → Horários de Funcionamento</strong>.
             </p>
           </div>
 

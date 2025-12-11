@@ -12,6 +12,7 @@ interface Plan {
   adminPercentage: number
   pointsAmount: number
   isActive: boolean
+  isCurrentPlan?: boolean
 }
 
 export default function PlansPage() {
@@ -104,12 +105,19 @@ export default function PlansPage() {
             <div
               key={plan.id}
               className={`bg-white rounded-lg shadow-lg border-2 ${
-                plan.name === 'enterprise'
-                  ? 'border-blue-600 transform scale-105'
+                plan.isCurrentPlan
+                  ? 'border-green-500 transform scale-105'
+                  : plan.name === 'enterprise'
+                  ? 'border-blue-600'
                   : 'border-gray-200'
-              } overflow-hidden`}
+              } overflow-hidden relative`}
             >
-              {plan.name === 'enterprise' && (
+              {plan.isCurrentPlan && (
+                <div className="bg-green-500 text-white text-center py-2 text-sm font-semibold">
+                  ✓ Plano Ativo
+                </div>
+              )}
+              {!plan.isCurrentPlan && plan.name === 'enterprise' && (
                 <div className="bg-blue-600 text-white text-center py-2 text-sm font-semibold">
                   Mais Popular
                 </div>
@@ -149,14 +157,20 @@ export default function PlansPage() {
 
                 <button
                   onClick={() => handleSubscribe(plan.id, plan.price)}
-                  disabled={subscribing === plan.id}
+                  disabled={subscribing === plan.id || plan.isCurrentPlan}
                   className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors ${
-                    plan.name === 'enterprise'
+                    plan.isCurrentPlan
+                      ? 'bg-green-500 text-white cursor-not-allowed'
+                      : plan.name === 'enterprise'
                       ? 'bg-blue-600 hover:bg-blue-700 text-white'
                       : 'bg-gray-900 hover:bg-gray-800 text-white'
                   } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
-                  {subscribing === plan.id ? 'Processando...' : 'Assinar Plano'}
+                  {subscribing === plan.id
+                    ? 'Processando...'
+                    : plan.isCurrentPlan
+                    ? 'Plano Atual'
+                    : 'Assinar Plano'}
                 </button>
               </div>
             </div>

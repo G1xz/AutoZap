@@ -15,6 +15,7 @@ export async function GET(request: NextRequest) {
       select: {
         businessAddress: true,
         deliveryPricePerKm: true,
+        maxDeliveryDistanceKm: true,
       },
     })
 
@@ -25,6 +26,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       businessAddress: user.businessAddress,
       deliveryPricePerKm: user.deliveryPricePerKm,
+      maxDeliveryDistanceKm: user.maxDeliveryDistanceKm,
     })
   } catch (error) {
     console.error('Erro ao buscar configurações de entrega:', error)
@@ -43,7 +45,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { businessAddress, deliveryPricePerKm } = body
+    const { businessAddress, deliveryPricePerKm, maxDeliveryDistanceKm } = body
 
     console.log('📦 [delivery-settings] Dados recebidos:', { businessAddress, deliveryPricePerKm })
 
@@ -79,6 +81,26 @@ export async function POST(request: NextRequest) {
       updateData.deliveryPricePerKm = null
     }
 
+    // Processa limite de distância
+    if (maxDeliveryDistanceKm !== undefined) {
+      if (maxDeliveryDistanceKm === null || maxDeliveryDistanceKm === '') {
+        updateData.maxDeliveryDistanceKm = null
+      } else {
+        const distance = typeof maxDeliveryDistanceKm === 'string' 
+          ? parseFloat(maxDeliveryDistanceKm.replace(',', '.'))
+          : parseFloat(maxDeliveryDistanceKm.toString())
+        
+        if (isNaN(distance) || distance <= 0) {
+          return NextResponse.json(
+            { error: 'Limite de distância deve ser um número válido maior que zero' },
+            { status: 400 }
+          )
+        }
+        
+        updateData.maxDeliveryDistanceKm = distance
+      }
+    }
+
     console.log('📦 [delivery-settings] Dados para atualizar:', updateData)
 
     const updated = await prisma.user.update({
@@ -87,6 +109,7 @@ export async function POST(request: NextRequest) {
       select: {
         businessAddress: true,
         deliveryPricePerKm: true,
+        maxDeliveryDistanceKm: true,
       },
     })
 

@@ -12,6 +12,9 @@ const workflowSchema = z.object({
   instanceId: z.string().nullable().optional(),
   isAIOnly: z.boolean().optional(),
   aiBusinessDetails: z.string().nullable().optional(),
+  initialMessage: z.string().nullable().optional(),
+  initialImageUrl: z.string().nullable().optional(),
+  sendCatalogInInitialMessage: z.boolean().optional(),
   nodes: z.array(
     z.object({
       id: z.string(),
@@ -140,6 +143,9 @@ export async function POST(request: NextRequest) {
           usesAI,
           isAIOnly,
           aiBusinessDetails: isAIOnly ? (data.aiBusinessDetails || null) : null,
+          initialMessage: data.initialMessage || null,
+          initialImageUrl: data.initialImageUrl || null,
+          sendCatalogInInitialMessage: data.sendCatalogInInitialMessage ?? false,
       },
     })
     } catch (error: any) {

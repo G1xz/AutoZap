@@ -11,6 +11,9 @@ const workflowUpdateSchema = z.object({
   isActive: z.boolean().optional(),
   isAIOnly: z.boolean().optional(),
   aiBusinessDetails: z.string().nullable().optional(),
+  initialMessage: z.string().nullable().optional(),
+  initialImageUrl: z.string().nullable().optional(),
+  sendCatalogInInitialMessage: z.boolean().optional(),
   nodes: z
     .array(
       z.object({
@@ -151,6 +154,9 @@ export async function PUT(
     if (data.isActive !== undefined) updateData.isActive = data.isActive
     if (data.isAIOnly !== undefined) updateData.isAIOnly = data.isAIOnly
     if (data.aiBusinessDetails !== undefined) updateData.aiBusinessDetails = data.aiBusinessDetails
+    if (data.initialMessage !== undefined) updateData.initialMessage = data.initialMessage
+    if (data.initialImageUrl !== undefined) updateData.initialImageUrl = data.initialImageUrl
+    if (data.sendCatalogInInitialMessage !== undefined) updateData.sendCatalogInInitialMessage = data.sendCatalogInInitialMessage
     if (data.nodes) updateData.usesAI = usesAI
 
     const workflow = await prisma.workflow.update({
