@@ -2249,15 +2249,18 @@ export async function executeAIOnlyWorkflow(
                     hierarchyNode.services.push(serviceName)
                     
                     // Coleta informações de agendamento
-                    if (directChild.data.requiresAppointment) {
-                      const alreadyAdded = servicesWithAppointment.some((s: any) => s.name === directChild.data.name)
-                      if (!alreadyAdded) {
-                        servicesWithAppointment.push({
-                          name: directChild.data.name,
-                          duration: directChild.data.appointmentDuration,
-                          imageUrl: directChild.data.imageUrl,
-                        })
-                      }
+                    // IMPORTANTE: Adiciona TODOS os serviços ao servicesWithAppointment
+                    // para que possam ser agendados, mesmo que requiresAppointment não esteja configurado
+                    const alreadyAdded = servicesWithAppointment.some((s: any) => s.name === directChild.data.name)
+                    if (!alreadyAdded) {
+                      // Usa appointmentDuration se disponível, senão usa 60 minutos como padrão
+                      const duration = directChild.data.appointmentDuration || 60
+                      servicesWithAppointment.push({
+                        name: directChild.data.name,
+                        duration: duration,
+                        imageUrl: directChild.data.imageUrl,
+                      })
+                      console.log(`✅ [buildHierarchy] Serviço adicionado ao servicesWithAppointment: ${directChild.data.name} (${duration} min)`)
                     }
                     
                     // NOTA: Não registramos interesse aqui durante a construção da hierarquia
@@ -2314,15 +2317,18 @@ export async function executeAIOnlyWorkflow(
                 }
                 itemsWithoutCategory.services.push(serviceName)
                 
-                if (node.data.requiresAppointment) {
-                  const alreadyAdded = servicesWithAppointment.some((s: any) => s.name === node.data.name)
-                  if (!alreadyAdded) {
-                    servicesWithAppointment.push({
-                      name: node.data.name,
-                      duration: node.data.appointmentDuration,
-                      imageUrl: node.data.imageUrl,
-                    })
-                  }
+                // IMPORTANTE: Adiciona TODOS os serviços ao servicesWithAppointment
+                // para que possam ser agendados, mesmo que requiresAppointment não esteja configurado
+                const alreadyAdded = servicesWithAppointment.some((s: any) => s.name === node.data.name)
+                if (!alreadyAdded) {
+                  // Usa appointmentDuration se disponível, senão usa 60 minutos como padrão
+                  const duration = node.data.appointmentDuration || 60
+                  servicesWithAppointment.push({
+                    name: node.data.name,
+                    duration: duration,
+                    imageUrl: node.data.imageUrl,
+                  })
+                  console.log(`✅ [buildHierarchy] Serviço adicionado ao servicesWithAppointment (sem categoria): ${node.data.name} (${duration} min)`)
                 }
               }
             })
@@ -2356,6 +2362,14 @@ export async function executeAIOnlyWorkflow(
           businessDetails.products = catalogProducts.length > 0 ? catalogProducts : []
           businessDetails.services = catalogServices.length > 0 ? catalogServices : []
           businessDetails.servicesWithAppointment = servicesWithAppointment
+          
+          console.log(`📋 [buildHierarchy] Total de serviços com agendamento adicionados: ${servicesWithAppointment.length}`)
+          if (servicesWithAppointment.length > 0) {
+            console.log(`📋 [buildHierarchy] Serviços disponíveis para agendamento:`)
+            servicesWithAppointment.forEach((s: any) => {
+              console.log(`   - ${s.name} (${s.duration || 'sem duração'} min)`)
+            })
+          }
           
           // NOVO: Armazena estrutura organizada por categoria
           businessDetails.catalogByCategory = catalogByCategory
@@ -3902,24 +3916,39 @@ export async function executeAIOnlyWorkflow(
           const serviceName = args.description?.toLowerCase().trim() || ''
 
           console.log(`🔍 [handleFunctionCall] Buscando dados do serviço: "${serviceName}"`)
-          console.log(`🔍 [handleFunctionCall] Serviços disponíveis:`, servicesWithAppointment.map((s) => `${s.name} (${s.duration || 'sem duração'} min)`))
+          console.log(`🔍 [handleFunctionCall] Total de serviços disponíveis: ${servicesWithAppointment.length}`)
+          if (servicesWithAppointment.length > 0) {
+            console.log(`🔍 [handleFunctionCall] Serviços disponíveis:`, servicesWithAppointment.map((s) => `${s.name} (${s.duration || 'sem duração'} min)`))
+          } else {
+            console.error(`❌ [handleFunctionCall] NENHUM serviço disponível em servicesWithAppointment!`)
+            console.error(`   businessDetails.servicesWithAppointment:`, businessDetails.servicesWithAppointment)
+          }
 
           let matchedService: ServiceWithAppointment | null = null
 
           if (serviceName && servicesWithAppointment.length > 0) {
             for (const service of servicesWithAppointment) {
               if (!service.name) continue
-              const serviceNameLower = service.name.toLowerCase()
+              const serviceNameLower = service.name.toLowerCase().trim()
+              const serviceNameSearch = serviceName.toLowerCase().trim()
               const firstWord = serviceNameLower.split(' ')[0]
+              const lastWord = serviceNameLower.split(' ').pop() || ''
 
-              // Verifica se o nome do serviço está na descrição OU se a descrição está no nome do serviço
-              if (
-                serviceName.includes(serviceNameLower) ||
-                serviceNameLower.includes(serviceName) ||
-                (firstWord && serviceName.includes(firstWord))
-              ) {
+              // Verifica múltiplas formas de matching:
+              // 1. Nome exato (ignorando case)
+              // 2. Nome do serviço contém a busca OU busca contém nome do serviço
+              // 3. Primeira palavra do serviço está na busca
+              // 4. Última palavra do serviço está na busca (útil para "CORTE" vs "CORTE COM TESOURA")
+              const matches = 
+                serviceNameLower === serviceNameSearch ||
+                serviceNameLower.includes(serviceNameSearch) ||
+                serviceNameSearch.includes(serviceNameLower) ||
+                (firstWord && serviceNameSearch.includes(firstWord)) ||
+                (lastWord && serviceNameSearch.includes(lastWord))
+
+              if (matches) {
                 matchedService = service
-                console.log(`✅ [handleFunctionCall] Serviço identificado: ${service.name}`)
+                console.log(`✅ [handleFunctionCall] Serviço identificado: ${service.name} (match com "${serviceName}")`)
                 break
               }
             }
