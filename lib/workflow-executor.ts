@@ -1067,21 +1067,21 @@ export async function processAppointmentConfirmation(
     console.log(`   - instanceId: "${instanceId}"`)
     console.log(`   - contactNumber: "${contactNumber}"`)
 
-    // CRÍTICO: Aumenta tentativas e delays para lidar com race conditions
-    // Quando o usuário confirma muito rápido após criar o agendamento pendente,
-    // pode haver um delay de sincronização do banco de dados
-    const maxSearchRetries = 5 // Aumentado de 3 para 5
+    // OTIMIZAÇÃO: Reduzido tentativas e delays para melhorar performance
+    // Apenas 2 tentativas com delay curto (100ms) - suficiente para casos de race condition raros
+    const maxSearchRetries = 2
     for (let attempt = 1; attempt <= maxSearchRetries; attempt++) {
       // Usa número normalizado para busca
       pendingAppointment = await getPendingAppointment(instanceId, normalizedContactNumber)
 
       if (pendingAppointment) {
-        console.log(`✅ [processAppointmentConfirmation] Agendamento pendente encontrado na tentativa ${attempt}/${maxSearchRetries}`)
+        if (attempt > 1) {
+          console.log(`✅ [processAppointmentConfirmation] Agendamento pendente encontrado na tentativa ${attempt}/${maxSearchRetries}`)
+        }
         break
       } else if (attempt < maxSearchRetries) {
-        console.log(`⚠️ [processAppointmentConfirmation] Tentativa ${attempt}/${maxSearchRetries} não encontrou agendamento, tentando novamente...`)
-        // Delay crescente mais agressivo: 200ms, 400ms, 600ms, 800ms
-        await new Promise(resolve => setTimeout(resolve, 200 * attempt))
+        // Delay curto: apenas 100ms (reduzido de 200ms * attempt)
+        await new Promise(resolve => setTimeout(resolve, 100))
       }
     }
 
@@ -1929,59 +1929,14 @@ export async function executeAIOnlyWorkflow(
           console.log(`🔍 [executeAIOnlyWorkflow] Há agendamento pendente, verificando confirmação...`)
         }
         
-        // Processa agendamento se não foi contexto de carrinho OU se é explicitamente sobre agendamento
-        if (!isCartContext || isExplicitlyAboutAppointment) {
-
-    // PRIMEIRO: Processa confirmação/cancelamento de agendamento pendente
-    // Se processou algo, retorna imediatamente SEM chamar a IA
-    console.log(`🔍 [executeAIOnlyWorkflow] Verificando agendamento pendente antes de chamar IA`)
-    console.log(`   Mensagem do usuário: "${userMessage}"`)
-
-    const processedAppointment = await processAppointmentConfirmation(
-      instanceId,
-      contactNumber,
-      userMessage,
-      userId,
-      contactNameFinal
-    )
-
-    console.log(`🔍 [executeAIOnlyWorkflow] Resultado processAppointmentConfirmation: ${processedAppointment}`)
-
-    if (processedAppointment) {
-      console.log(`✅✅✅ [executeAIOnlyWorkflow] Agendamento processado, RETORNANDO SEM CHAMAR IA ✅✅✅`)
-      console.log(`✅✅✅ [executeAIOnlyWorkflow] FUNÇÃO RETORNADA - IA NÃO SERÁ CHAMADA ✅✅✅`)
-
-      // CRÍTICO: Limpa a execução do workflow após processar agendamento
-      // Isso permite que novas mensagens iniciem um novo fluxo limpo
-      const executionKeyAI = `${instanceId}-${contactNumber}`
-      if (workflowExecutions.has(executionKeyAI)) {
-        console.log(`🧹 [executeAIOnlyWorkflow] Limpando execução do workflow após processar agendamento`)
-              workflowExecutions.delete(executionKeyAI)
-            }
-            
-            return // Retorna sem chamar IA
-          }
-        }
+        // OTIMIZAÇÃO: processAppointmentConfirmation já foi chamado em executeWorkflows
+        // Não precisa chamar novamente aqui para evitar trabalho duplicado
+        // Se chegou aqui, significa que não havia agendamento pendente para processar
       }
     } catch (cartError) {
       console.error(`🛒 [executeAIOnlyWorkflow] Erro ao verificar carrinho, continuando normalmente:`, cartError)
-      // Se houver erro ao verificar carrinho, continua normalmente verificando agendamento
-      const processedAppointment = await processAppointmentConfirmation(
-        instanceId,
-        contactNumber,
-        userMessage,
-        userId,
-        contactNameFinal
-      )
-
-      if (processedAppointment) {
-        const executionKeyAI = `${instanceId}-${contactNumber}`
-        if (workflowExecutions.has(executionKeyAI)) {
-        workflowExecutions.delete(executionKeyAI)
-      }
-
-      return // CRÍTICO: Retorna aqui se processou confirmação/cancelamento - NÃO CHAMA IA
-      }
+      // OTIMIZAÇÃO: processAppointmentConfirmation já foi chamado em executeWorkflows
+      // Não precisa chamar novamente aqui
     }
 
     // PROTEÇÃO CRÍTICA: Verifica se acabou de confirmar um agendamento
@@ -4258,23 +4213,23 @@ export async function executeAIOnlyWorkflow(
             throw storeError // Propaga o erro
           }
 
-          // CRÍTICO: Aguarda e verifica se foi salvo corretamente ANTES de retornar
-          // Tenta múltiplas vezes com delays crescentes para garantir sincronização
-          // CRÍTICO: Aumenta tentativas e delays para garantir que está salvo antes de retornar
+          // OTIMIZAÇÃO: Verificação rápida após criar agendamento pendente
+          // Reduzido para 2 tentativas com delay curto (50ms) - suficiente na maioria dos casos
           let verification: any = null
-          const maxRetries = 5 // Aumentado de 3 para 5
+          const maxRetries = 2
           for (let attempt = 1; attempt <= maxRetries; attempt++) {
-            // Delay crescente mais agressivo: 200ms, 400ms, 600ms, 800ms, 1000ms
-            await new Promise(resolve => setTimeout(resolve, 200 * attempt))
+            // Delay curto: apenas 50ms (reduzido de 200ms * attempt)
+            if (attempt > 1) {
+              await new Promise(resolve => setTimeout(resolve, 50))
+            }
 
-            // CRÍTICO: Usa número normalizado para verificação
+            // Usa número normalizado para verificação
             verification = await verifyPending(instanceId, normalizedContactNumber)
             if (verification) {
-              console.log(`✅✅✅ [handleFunctionCall] VERIFICAÇÃO (tentativa ${attempt}/${maxRetries}): Agendamento pendente confirmado no banco`)
-              console.log(`✅✅✅ [handleFunctionCall] Dados verificados:`, JSON.stringify(verification, null, 2))
+              if (attempt > 1) {
+                console.log(`✅ [handleFunctionCall] Agendamento pendente confirmado no banco (tentativa ${attempt})`)
+              }
               break
-            } else if (attempt < maxRetries) {
-              console.log(`⚠️ [handleFunctionCall] Tentativa ${attempt}/${maxRetries} falhou, tentando novamente...`)
             }
           }
 

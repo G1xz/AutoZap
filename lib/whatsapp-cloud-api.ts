@@ -2,6 +2,7 @@ import { prisma } from './prisma'
 import { executeWorkflows, WhatsAppMessage } from './workflow-executor'
 import { getBaseUrl } from './localtunnel'
 import { getAccessToken } from './meta-config'
+import { log } from './logger'
 
 export type { WhatsAppMessage }
 
@@ -89,12 +90,20 @@ export async function sendWhatsAppInteractiveMessage(
 
     if (!response.ok) {
       const error = await response.json()
-      console.error('Erro ao enviar mensagem interativa WhatsApp:', error)
+      log.error('Erro ao enviar mensagem interativa WhatsApp', error, {
+        instanceId,
+        to: formattedPhone,
+        errorMessage: error.error?.message,
+      })
       throw new Error(`Erro ao enviar mensagem: ${error.error?.message || 'Erro desconhecido'}`)
     }
 
     const data = await response.json()
-    console.log('Mensagem interativa enviada com sucesso:', data)
+    log.info('Mensagem interativa enviada com sucesso', {
+      instanceId,
+      to: formattedPhone,
+      messageId: data.messages?.[0]?.id,
+    })
 
     // Salva a mensagem no banco como enviada com dados dos botões
     try {
@@ -118,12 +127,12 @@ export async function sendWhatsAppInteractiveMessage(
         },
       })
     } catch (dbError) {
-      console.error('Erro ao salvar mensagem interativa no banco:', dbError)
+      log.error('Erro ao salvar mensagem interativa no banco', dbError, { instanceId, to: formattedPhone })
     }
 
     return true
   } catch (error) {
-    console.error('Erro ao enviar mensagem interativa WhatsApp:', error)
+    log.error('Erro ao enviar mensagem interativa WhatsApp', error, { instanceId, to })
     throw error
   }
 }
@@ -140,7 +149,7 @@ export async function sendWhatsAppMessage(
   try {
     // MODO DE TESTE: Apenas salva no banco, não envia via WhatsApp
     if (testMode) {
-      console.log(`🧪 [TEST MODE] Salvando mensagem no banco (não enviando via WhatsApp)`)
+      log.debug('Modo de teste: salvando mensagem no banco', { instanceId, to })
       const cleanPhoneNumber = to.replace(/\D/g, '')
       const formattedPhone = cleanPhoneNumber.startsWith('55')
         ? cleanPhoneNumber
@@ -244,12 +253,20 @@ export async function sendWhatsAppMessage(
 
     if (!response.ok) {
       const error = await response.json()
-      console.error('Erro ao enviar mensagem WhatsApp:', error)
+      log.error('Erro ao enviar mensagem WhatsApp', error, {
+        instanceId,
+        to: formattedPhone,
+        errorMessage: error.error?.message,
+      })
       throw new Error(`Erro ao enviar mensagem: ${error.error?.message || 'Erro desconhecido'}`)
     }
 
     const data = await response.json()
-    console.log('Mensagem enviada com sucesso:', data)
+    log.info('Mensagem enviada com sucesso', {
+      instanceId,
+      to: formattedPhone,
+      messageId: data.messages?.[0]?.id,
+    })
 
     // 🔒 PROTEÇÃO: Incrementar contador de mensagens após envio bem-sucedido
     try {
@@ -260,7 +277,7 @@ export async function sendWhatsAppMessage(
         },
       })
     } catch (counterError) {
-      console.error('Erro ao incrementar contador de mensagens:', counterError)
+      log.error('Erro ao incrementar contador de mensagens', counterError, { instanceId })
       // Não falha o envio se houver erro no contador
     }
 
@@ -278,16 +295,24 @@ export async function sendWhatsAppMessage(
           messageId: data.messages?.[0]?.id || `sent_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         },
       })
-      console.log(`✅ Mensagem enviada SALVA no banco: id=${savedMessage.id}, to=${formattedPhone}, isFromMe=${savedMessage.isFromMe}`)
+      log.debug('Mensagem enviada salva no banco', {
+        messageId: savedMessage.id,
+        instanceId,
+        to: formattedPhone,
+        isFromMe: savedMessage.isFromMe,
+      })
     } catch (dbError) {
       // Loga erro mas não falha o envio se houver problema ao salvar
-      console.error('❌ Erro ao salvar mensagem no banco:', dbError)
-      console.error(`   Detalhes: instanceId=${instanceId}, to=${formattedPhone}, messageId=${data.messages?.[0]?.id}`)
+      log.error('Erro ao salvar mensagem no banco', dbError, {
+        instanceId,
+        to: formattedPhone,
+        whatsappMessageId: data.messages?.[0]?.id,
+      })
     }
 
     return true
   } catch (error) {
-    console.error('Erro ao enviar mensagem WhatsApp:', error)
+    log.error('Erro ao enviar mensagem WhatsApp', error, { instanceId, to })
     throw error
   }
 }
@@ -304,7 +329,7 @@ export async function sendWhatsAppImage(
   try {
     // MODO DE TESTE: Apenas salva no banco, não envia via WhatsApp
     if (testMode) {
-      console.log(`🧪 [TEST MODE] Salvando imagem no banco (não enviando via WhatsApp)`)
+      log.debug('Modo de teste: salvando imagem no banco', { instanceId, to })
       const cleanPhoneNumber = to.replace(/\D/g, '')
       const formattedPhone = cleanPhoneNumber.startsWith('55')
         ? cleanPhoneNumber
@@ -363,10 +388,10 @@ export async function sendWhatsAppImage(
       
       const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${imageUrl}`
-      console.log(`📸 Enviando imagem (URL relativa): ${absoluteUrl}`)
+      log.debug('Enviando imagem (URL relativa convertida)', { instanceId, to, url: absoluteUrl })
     } else if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
       // URL absoluta (Cloudinary ou outra) - usa diretamente
-      console.log(`📸 Enviando imagem (URL absoluta): ${absoluteUrl}`)
+      log.debug('Enviando imagem (URL absoluta)', { instanceId, to, url: absoluteUrl })
     } else {
       throw new Error('URL de imagem inválida. Use URL completa (HTTPS) ou caminho relativo.')
     }
@@ -395,12 +420,20 @@ export async function sendWhatsAppImage(
 
     if (!response.ok) {
       const error = await response.json()
-      console.error('Erro ao enviar imagem WhatsApp:', error)
+      log.error('Erro ao enviar imagem WhatsApp', error, {
+        instanceId,
+        to: formattedPhone,
+        errorMessage: error.error?.message,
+      })
       throw new Error(`Erro ao enviar imagem: ${error.error?.message || 'Erro desconhecido'}`)
     }
 
     const data = await response.json()
-    console.log('Imagem enviada com sucesso:', data)
+    log.info('Imagem enviada com sucesso', {
+      instanceId,
+      to: formattedPhone,
+      messageId: data.messages?.[0]?.id,
+    })
 
     // Salva a mensagem no banco como enviada
     try {
@@ -417,12 +450,12 @@ export async function sendWhatsAppImage(
         },
       })
     } catch (dbError) {
-      console.error('Erro ao salvar imagem no banco:', dbError)
+      log.error('Erro ao salvar imagem no banco', dbError, { instanceId, to: formattedPhone })
     }
 
     return true
   } catch (error) {
-    console.error('Erro ao enviar imagem WhatsApp:', error)
+    log.error('Erro ao enviar imagem WhatsApp', error, { instanceId, to })
     throw error
   }
 }
@@ -466,10 +499,10 @@ export async function sendWhatsAppVideo(
       
       const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${videoUrl}`
-      console.log(`🎥 Enviando vídeo (URL relativa): ${absoluteUrl}`)
+      log.debug('Enviando vídeo (URL relativa convertida)', { instanceId, to, url: absoluteUrl })
     } else if (videoUrl.startsWith('http://') || videoUrl.startsWith('https://')) {
       // URL absoluta (Cloudinary ou outra) - usa diretamente
-      console.log(`🎥 Enviando vídeo (URL absoluta): ${absoluteUrl}`)
+      log.debug('Enviando vídeo (URL absoluta)', { instanceId, to, url: absoluteUrl })
     } else {
       throw new Error('URL de vídeo inválida. Use URL completa (HTTPS) ou caminho relativo.')
     }
@@ -498,7 +531,11 @@ export async function sendWhatsAppVideo(
 
     if (!response.ok) {
       const error = await response.json()
-      console.error('Erro ao enviar vídeo WhatsApp:', error)
+      log.error('Erro ao enviar vídeo WhatsApp', error, {
+        instanceId,
+        to: formattedPhone,
+        errorMessage: error.error?.message,
+      })
       throw new Error(`Erro ao enviar vídeo: ${error.error?.message || 'Erro desconhecido'}`)
     }
 
@@ -519,12 +556,12 @@ export async function sendWhatsAppVideo(
         },
       })
     } catch (dbError) {
-      console.error('Erro ao salvar vídeo no banco:', dbError)
+      log.error('Erro ao salvar vídeo no banco', dbError, { instanceId, to: formattedPhone })
     }
 
     return true
   } catch (error) {
-    console.error('Erro ao enviar vídeo WhatsApp:', error)
+    log.error('Erro ao enviar vídeo WhatsApp', error, { instanceId, to })
     throw error
   }
 }
@@ -569,10 +606,10 @@ export async function sendWhatsAppDocument(
       
       const baseUrl = getBaseUrl(instance.userId)
       absoluteUrl = `${baseUrl}${documentUrl}`
-      console.log(`📄 Enviando documento (URL relativa): ${absoluteUrl}`)
+      log.debug('Enviando documento (URL relativa convertida)', { instanceId, to, url: absoluteUrl })
     } else if (documentUrl.startsWith('http://') || documentUrl.startsWith('https://')) {
       // URL absoluta (Cloudinary ou outra) - usa diretamente
-      console.log(`📄 Enviando documento (URL absoluta): ${absoluteUrl}`)
+      log.debug('Enviando documento (URL absoluta)', { instanceId, to, url: absoluteUrl })
     } else {
       throw new Error('URL de documento inválida. Use URL completa (HTTPS) ou caminho relativo.')
     }
@@ -602,7 +639,11 @@ export async function sendWhatsAppDocument(
 
     if (!response.ok) {
       const error = await response.json()
-      console.error('Erro ao enviar documento WhatsApp:', error)
+      log.error('Erro ao enviar documento WhatsApp', error, {
+        instanceId,
+        to: formattedPhone,
+        errorMessage: error.error?.message,
+      })
       throw new Error(`Erro ao enviar documento: ${error.error?.message || 'Erro desconhecido'}`)
     }
 
@@ -623,12 +664,12 @@ export async function sendWhatsAppDocument(
         },
       })
     } catch (dbError) {
-      console.error('Erro ao salvar documento no banco:', dbError)
+      log.error('Erro ao salvar documento no banco', dbError, { instanceId, to: formattedPhone })
     }
 
     return true
   } catch (error) {
-    console.error('Erro ao enviar documento WhatsApp:', error)
+    log.error('Erro ao enviar documento WhatsApp', error, { instanceId, to })
     throw error
   }
 }
@@ -664,7 +705,7 @@ export async function fetchAndSaveProfilePicture(
     })
 
     if (!instance || !instance.phoneId) {
-      console.log('⚠️ Instância não configurada para buscar foto de perfil')
+      log.warn('Instância não configurada para buscar foto de perfil', { instanceId })
       return null
     }
 
@@ -690,7 +731,7 @@ export async function fetchAndSaveProfilePicture(
 
       if (profileResponse.ok) {
         const profileData = await profileResponse.json()
-        console.log('📸 Dados do perfil:', profileData)
+        log.debug('Dados do perfil obtidos', { instanceId, phoneNumber: formattedPhone })
         
         // Se a API retornar URL da foto, baixa e salva no Cloudinary
         if (profileData.profile?.picture_url) {
@@ -719,19 +760,23 @@ export async function fetchAndSaveProfilePicture(
             const { setContactInfo } = await import('./contacts')
             await setContactInfo(instanceId, phoneNumber, undefined, uploadResult.secure_url)
 
-            console.log(`✅ Foto de perfil salva: ${uploadResult.secure_url}`)
+            log.info('Foto de perfil salva', {
+              instanceId,
+              phoneNumber: formattedPhone,
+              url: uploadResult.secure_url,
+            })
             return uploadResult.secure_url
           }
         }
       }
     } catch (apiError) {
       // API pode não ter este endpoint - não é crítico
-      console.log('ℹ️ Endpoint de foto de perfil não disponível ou erro:', apiError)
+      log.debug('Endpoint de foto de perfil não disponível', { instanceId, phoneNumber: formattedPhone, error: apiError })
     }
 
     return null
   } catch (error) {
-    console.error('Erro ao buscar foto de perfil:', error)
+    log.error('Erro ao buscar foto de perfil', error, { instanceId, phoneNumber })
     return null
   }
 }
@@ -801,10 +846,15 @@ export async function downloadAndSaveMedia(
       mediaType
     )
 
-    console.log(`✅ Mídia salva no Cloudinary: ${uploadResult.secure_url}`)
+    log.info('Mídia salva no Cloudinary', {
+      instanceId,
+      mediaId,
+      mediaType,
+      url: uploadResult.secure_url,
+    })
     return uploadResult.secure_url
   } catch (error) {
-    console.error('Erro ao baixar e salvar mídia:', error)
+    log.error('Erro ao baixar e salvar mídia', error, { instanceId, mediaId, mediaType })
     throw error
   }
 }
@@ -828,16 +878,19 @@ export async function processIncomingMessage(
   message: WhatsAppMessage
 ): Promise<void> {
   try {
-    console.log(`\n📨📨📨 [processIncomingMessage] ========== NOVA MENSAGEM RECEBIDA ==========`)
-    console.log(`   📱 De: ${message.from}`)
-    console.log(`   💬 Mensagem: "${message.body}"`)
-    console.log(`   🆔 InstanceId: ${instanceId}`)
-    console.log(`   👤 Nome do contato: ${message.contactName || 'não disponível'}`)
-    console.log(`📨📨📨 [processIncomingMessage] =========================================\n`)
+    log.info('Nova mensagem recebida', {
+      instanceId,
+      from: message.from,
+      to: message.to,
+      messageId: message.messageId,
+      contactName: message.contactName,
+      messageType: message.type,
+      hasMedia: !!message.mediaUrl,
+    })
     
     // ⚠️⚠️⚠️ CRÍTICO: PRIMEIRA COISA - Verifica confirmação de agendamento ANTES de qualquer outra operação
     // Isso garante que confirmações sejam processadas imediatamente, mesmo antes de salvar mensagem ou garantir status
-    console.log(`🔍 [processIncomingMessage] PRIMEIRA VERIFICAÇÃO: Confirmação de agendamento`)
+    log.debug('Verificando confirmação de agendamento', { instanceId, from: message.from })
     
     try {
       // Busca userId da instância
@@ -860,7 +913,11 @@ export async function processIncomingMessage(
         )
         
         if (processedAppointment) {
-          console.log(`✅✅✅ [processIncomingMessage] Agendamento processado, RETORNANDO SEM PROCESSAR MENSAGEM ✅✅✅`)
+          log.info('Agendamento processado, retornando sem processar mensagem', {
+            instanceId,
+            from: message.from,
+            processedAppointment,
+          })
           // Salva a mensagem mesmo assim para histórico
           await prisma.message.create({
             data: {
@@ -881,7 +938,7 @@ export async function processIncomingMessage(
         }
       }
     } catch (error) {
-      console.error(`❌ [processIncomingMessage] Erro ao verificar agendamento pendente:`, error)
+      log.error('Erro ao verificar agendamento pendente', error, { instanceId, from: message.from })
       // Continua processamento normal mesmo se houver erro
     }
 
@@ -935,16 +992,23 @@ export async function processIncomingMessage(
     
     // Se a conversa está encerrada mas a mensagem contém um gatilho, reinicia a conversa
     if (status === 'closed' && hasTrigger) {
-      console.log(`🔄 Conversa encerrada, mas gatilho detectado. Reiniciando conversa para ${message.from}`)
+      log.info('Conversa encerrada, mas gatilho detectado. Reiniciando conversa', {
+        instanceId,
+        from: message.from,
+      })
       await updateConversationStatus(instanceId, message.from, 'active')
       await executeWorkflows(instanceId, message)
     } else if (status !== 'closed') {
       await executeWorkflows(instanceId, message)
     } else {
-      console.log(`⚠️ Conversa encerrada, ignorando workflow para ${message.from}`)
+      log.debug('Conversa encerrada, ignorando workflow', { instanceId, from: message.from })
     }
   } catch (error) {
-    console.error('Erro ao processar mensagem recebida:', error)
+    log.error('Erro ao processar mensagem recebida', error, {
+      instanceId,
+      from: message.from,
+      messageId: message.messageId,
+    })
   }
 }
 

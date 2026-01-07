@@ -109,35 +109,8 @@ export async function getPendingAppointment(
     const withCountryCode = normalizedNumber.startsWith('55') ? normalizedNumber : `55${normalizedNumber}`
     const withoutCountryCode = normalizedNumber.startsWith('55') ? normalizedNumber.substring(2) : normalizedNumber
     
-    console.log(`🔍 [getPendingAppointment] Formatos de número a tentar:`)
-    console.log(`   Original: "${contactNumber}"`)
-    console.log(`   Normalizado: "${normalizedNumber}"`)
-    console.log(`   Com código país: "${withCountryCode}"`)
-    console.log(`   Sem código país: "${withoutCountryCode}"`)
-    
-    // Busca TODOS os agendamentos pendentes para esta instância (para debug completo)
-    const allPendingForInstance = await prisma.pendingAppointment.findMany({
-      where: {
-        instanceId,
-      },
-    })
-    console.log(`🔍 [getPendingAppointment] Total de agendamentos pendentes para esta instância: ${allPendingForInstance.length}`)
-    if (allPendingForInstance.length > 0) {
-      allPendingForInstance.forEach((p, i) => {
-        console.log(`   [${i + 1}] contactNumber: "${p.contactNumber}", Data: ${p.date}, Hora: ${p.time}, Expira: ${p.expiresAt.toISOString()}`)
-      })
-    }
-    
-    // Busca TODOS os agendamentos pendentes para este contato (para debug) - usa número normalizado
-    const allPending = await prisma.pendingAppointment.findMany({
-      where: {
-        instanceId,
-        contactNumber: normalizedNumber, // Usa número normalizado
-      },
-    })
-    console.log(`🔍 [getPendingAppointment] Total de agendamentos pendentes encontrados com contactNumber exato: ${allPending.length}`)
-    
-    // Tenta primeiro com findUnique usando o número normalizado (formato padrão)
+    // OTIMIZAÇÃO: Tenta primeiro com findUnique usando o número normalizado (formato padrão)
+    // Esta é a busca mais rápida e eficiente (usa índice único)
     let pending = await prisma.pendingAppointment.findUnique({
       where: {
         instanceId_contactNumber: {
@@ -147,25 +120,20 @@ export async function getPendingAppointment(
       },
     })
 
-    // Se não encontrou, tenta com diferentes formatos do número
+    // OTIMIZAÇÃO: Se não encontrou, tenta apenas com formatos alternativos se necessário
+    // (removido logs excessivos e queries de debug para melhorar performance)
     if (!pending) {
-      console.log(`⚠️ [getPendingAppointment] Não encontrado com número original, tentando formatos alternativos...`)
-      
-      // Se ainda não encontrou, tenta com outros formatos (para compatibilidade com dados antigos)
-      // Tenta com código do país
-      if (!pending && withCountryCode !== normalizedNumber) {
+      // Tenta com código do país (se diferente do normalizado)
+      if (withCountryCode !== normalizedNumber) {
         pending = await prisma.pendingAppointment.findFirst({
           where: {
             instanceId,
             contactNumber: withCountryCode,
           },
         })
-        if (pending) {
-          console.log(`✅ [getPendingAppointment] Encontrado com código do país!`)
-        }
       }
       
-      // Tenta sem código do país
+      // Tenta sem código do país (se diferente)
       if (!pending && withoutCountryCode !== normalizedNumber && withoutCountryCode !== withCountryCode) {
         pending = await prisma.pendingAppointment.findFirst({
           where: {
@@ -173,12 +141,9 @@ export async function getPendingAppointment(
             contactNumber: withoutCountryCode,
           },
         })
-        if (pending) {
-          console.log(`✅ [getPendingAppointment] Encontrado sem código do país!`)
-        }
       }
       
-      // Tenta com número original (caso tenha sido salvo com formatação)
+      // Tenta com número original (se diferente do normalizado)
       if (!pending && contactNumber !== normalizedNumber) {
         pending = await prisma.pendingAppointment.findFirst({
           where: {
@@ -186,41 +151,9 @@ export async function getPendingAppointment(
             contactNumber: contactNumber,
           },
         })
-        if (pending) {
-          console.log(`✅ [getPendingAppointment] Encontrado com número original!`)
-        }
       }
       
       if (!pending) {
-        console.log(`❌❌❌ [getPendingAppointment] NENHUM agendamento pendente encontrado após tentar todos os formatos`)
-        console.log(`❌❌❌ [getPendingAppointment] Parâmetros usados:`)
-        console.log(`   instanceId: "${instanceId}"`)
-        console.log(`   contactNumber original: "${contactNumber}"`)
-        console.log(`   contactNumber normalizado: "${normalizedNumber}"`)
-        console.log(`   contactNumber com código: "${withCountryCode}"`)
-        console.log(`   contactNumber sem código: "${withoutCountryCode}"`)
-        
-        // Busca todos os agendamentos pendentes da instância para comparar
-        if (allPendingForInstance.length > 0) {
-          console.log(`⚠️⚠️⚠️ [getPendingAppointment] Agendamentos pendentes encontrados para esta instância (mas com contactNumber diferente):`)
-          allPendingForInstance.forEach((p, i) => {
-            const pNormalized = p.contactNumber.replace(/\D/g, '')
-            const pWithCode = pNormalized.startsWith('55') ? pNormalized : `55${pNormalized}`
-            const pWithoutCode = pNormalized.startsWith('55') ? pNormalized.substring(2) : pNormalized
-            
-            const matches = 
-              p.contactNumber === contactNumber ||
-              p.contactNumber === normalizedNumber ||
-              p.contactNumber === withCountryCode ||
-              p.contactNumber === withoutCountryCode ||
-              pNormalized === normalizedNumber ||
-              pWithCode === withCountryCode ||
-              pWithoutCode === withoutCountryCode
-            
-            console.log(`   [${i + 1}] contactNumber: "${p.contactNumber}" (normalizado: "${pNormalized}") ${matches ? '✅ PODE SER O MESMO!' : '❌'}`)
-          })
-        }
-        
         return null
       }
     }
