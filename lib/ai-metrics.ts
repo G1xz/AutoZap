@@ -326,8 +326,27 @@ export async function getAIStats(params?: {
     const totalRequests = filtered.length
     const totalTokens = filtered.reduce((sum, m) => sum + m.totalTokens, 0)
     const totalCost = filtered.reduce((sum, m) => sum + m.cost, 0)
+    const totalPointsConsumed = filtered.reduce((sum, m) => {
+      // Calcula pontos baseado no custo se não tiver pointsConsumed
+      const points = calculatePoints(m.cost, m.cached)
+      return sum + points
+    }, 0)
     const cachedRequests = filtered.filter((m) => m.cached).length
     const totalDuration = filtered.reduce((sum, m) => sum + m.duration, 0)
+
+    // Busca pontos disponíveis do usuário se houver userId
+    let pointsAvailable: number | undefined
+    if (params?.userId) {
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: params.userId },
+          select: { pointsAvailable: true },
+        })
+        pointsAvailable = user?.pointsAvailable || 0
+      } catch (error) {
+        // Ignora erro se não conseguir buscar
+      }
+    }
 
     const byModel: Record<string, { requests: number; tokens: number; cost: number }> = {}
     filtered.forEach((m) => {
@@ -343,6 +362,8 @@ export async function getAIStats(params?: {
       totalRequests,
       totalTokens,
       totalCost,
+      totalPointsConsumed,
+      pointsAvailable,
       averageTokens: totalRequests > 0 ? totalTokens / totalRequests : 0,
       averageCost: totalRequests > 0 ? totalCost / totalRequests : 0,
       cachedRequests,
