@@ -542,8 +542,14 @@ export function buildSystemPrompt(
     servicesWithAppointment.forEach((s: any) => {
       prompt += `  - ${s.name}`
       // Busca preço do serviço se disponível
-      const serviceWithPrice = services.find((serv: any) => serv.name === s.name)
-      if (serviceWithPrice?.price) {
+      const serviceWithPrice = services.find((serv: any) => {
+        // Verifica se é objeto e tem propriedade name
+        if (typeof serv === 'object' && serv !== null && 'name' in serv) {
+          return serv.name === s.name
+        }
+        return false
+      })
+      if (serviceWithPrice && typeof serviceWithPrice === 'object' && 'price' in serviceWithPrice && typeof serviceWithPrice.price === 'number') {
         prompt += ` (R$ ${serviceWithPrice.price})`
       }
       prompt += `\n`
