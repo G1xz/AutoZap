@@ -57,6 +57,18 @@ export async function GET(request: NextRequest) {
         log.debug('Verificação webhook OK com token global')
         return new NextResponse(challenge, { status: 200 })
       } else {
+        // Log detalhado sem redact para debug (tokens parciais apenas)
+        console.log('🔍 DEBUG TOKEN:', {
+          receivedLength: tokenReceivedLength,
+          expectedLength: tokenExpectedLength,
+          receivedStart: tokenReceivedStart,
+          receivedEnd: tokenReceivedEnd,
+          expectedStart: tokenExpectedStart,
+          expectedEnd: tokenExpectedEnd,
+          receivedFull: token, // Temporário para debug
+          expectedFull: globalWebhookToken, // Temporário para debug
+        })
+        
         log.warn('Token global não corresponde', {
           tokenReceivedLength,
           tokenExpectedLength,
