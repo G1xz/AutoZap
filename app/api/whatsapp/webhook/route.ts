@@ -34,9 +34,23 @@ export async function GET(request: NextRequest) {
     const globalWebhookToken = process.env.WEBHOOK_VERIFY_TOKEN
     
     if (globalWebhookToken) {
+      // Debug detalhado para comparar tokens
+      const tokenReceivedLength = token?.length || 0
+      const tokenExpectedLength = globalWebhookToken.length
+      const tokenReceivedStart = token ? token.substring(0, 5) : null
+      const tokenReceivedEnd = token && token.length > 5 ? token.substring(token.length - 5) : null
+      const tokenExpectedStart = globalWebhookToken.substring(0, 5)
+      const tokenExpectedEnd = globalWebhookToken.substring(globalWebhookToken.length - 5)
+      
       log.debug('Token global encontrado, verificando...', {
         tokenMatches: token === globalWebhookToken,
         modeCorrect: mode === 'subscribe',
+        tokenReceivedLength,
+        tokenExpectedLength,
+        tokenReceivedStart,
+        tokenReceivedEnd,
+        tokenExpectedStart,
+        tokenExpectedEnd,
       })
       
       if (verifyWebhook(mode, token, globalWebhookToken)) {
@@ -44,9 +58,14 @@ export async function GET(request: NextRequest) {
         return new NextResponse(challenge, { status: 200 })
       } else {
         log.warn('Token global não corresponde', {
-          tokenReceived: token ? `${token.substring(0, 10)}...` : null,
-          tokenExpected: `${globalWebhookToken.substring(0, 10)}...`,
+          tokenReceivedLength,
+          tokenExpectedLength,
+          tokenReceivedStart,
+          tokenReceivedEnd,
+          tokenExpectedStart,
+          tokenExpectedEnd,
           mode,
+          areLengthsEqual: tokenReceivedLength === tokenExpectedLength,
         })
       }
     } else {
