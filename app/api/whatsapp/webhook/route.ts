@@ -21,15 +21,36 @@ export async function GET(request: NextRequest) {
     const token = searchParams.get('hub.verify_token')
     const challenge = searchParams.get('hub.challenge')
 
-    log.debug('Verificação webhook', { mode, hasToken: !!token, hasChallenge: !!challenge })
+    log.debug('Verificação webhook', { 
+      mode, 
+      hasToken: !!token, 
+      hasChallenge: !!challenge,
+      tokenReceived: token ? `${token.substring(0, 10)}...` : null,
+      hasGlobalToken: !!process.env.WEBHOOK_VERIFY_TOKEN,
+    })
 
     // Verificação do webhook - tenta com token global ou busca em todas as instâncias
     // Opção 1: Token global (se configurado)
     const globalWebhookToken = process.env.WEBHOOK_VERIFY_TOKEN
     
-    if (globalWebhookToken && verifyWebhook(mode, token, globalWebhookToken)) {
-      log.debug('Verificação webhook OK com token global')
-      return new NextResponse(challenge, { status: 200 })
+    if (globalWebhookToken) {
+      log.debug('Token global encontrado, verificando...', {
+        tokenMatches: token === globalWebhookToken,
+        modeCorrect: mode === 'subscribe',
+      })
+      
+      if (verifyWebhook(mode, token, globalWebhookToken)) {
+        log.debug('Verificação webhook OK com token global')
+        return new NextResponse(challenge, { status: 200 })
+      } else {
+        log.warn('Token global não corresponde', {
+          tokenReceived: token ? `${token.substring(0, 10)}...` : null,
+          tokenExpected: `${globalWebhookToken.substring(0, 10)}...`,
+          mode,
+        })
+      }
+    } else {
+      log.warn('WEBHOOK_VERIFY_TOKEN não configurado no ambiente')
     }
 
     // Opção 2: Tenta verificar com qualquer instância que tenha o token correto
