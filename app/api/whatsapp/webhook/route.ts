@@ -124,6 +124,14 @@ export async function POST(request: NextRequest) {
     await rateLimitMiddleware(request, 'webhook')
 
     const body = await request.json()
+    
+    // Log mais detalhado para debug
+    console.log('🔍 WEBHOOK POST RECEBIDO:', {
+      hasEntry: !!body.entry,
+      entryCount: body.entry?.length || 0,
+      entry: body.entry ? JSON.stringify(body.entry).substring(0, 200) : null,
+    })
+    
     log.debug('Webhook recebido', {
       hasEntry: !!body.entry,
       entryCount: body.entry?.length || 0,
