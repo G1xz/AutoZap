@@ -225,7 +225,8 @@ export async function POST(request: NextRequest) {
     }
 
     // ATIVA MODO DE TESTE: Faz com que as funções do WhatsApp apenas salvem no banco
-    setTestMode(true)
+    // ⚠️ IMPORTANTE: O modo de teste agora não afeta mensagens do webhook (WhatsApp real)
+    setTestMode(true, 'test-chat-endpoint')
     
     // Processa a mensagem capturando logs (USA A MESMA FUNÇÃO DO WHATSAPP!)
     let logs: string[] = []

@@ -514,14 +514,14 @@ async function executeNode(
             log.error('Erro ao enviar arquivo', error)
             // Se falhar, tenta enviar pelo menos a mensagem de texto
             if (messageText) {
-              await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service')
+              await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service', 'webhook')
             }
             throw error // Propaga o erro para a fila
           }
         } else {
           // Se não houver arquivo, envia apenas a mensagem de texto
           if (messageText) {
-            await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service')
+            await sendWhatsAppMessage(instanceId, contactNumber, messageText, 'service', 'webhook')
           }
         }
       })
@@ -560,17 +560,18 @@ async function executeNode(
             instanceId,
             contactNumber,
             questionText,
-            buttons
+            buttons,
+            'webhook'
           )
         } else {
           // Fallback para texto simples se tiver mais de 3 opções ou nenhuma
-          await sendWhatsAppMessage(instanceId, contactNumber, questionText, 'service')
+          await sendWhatsAppMessage(instanceId, contactNumber, questionText, 'service', 'webhook')
 
           if (data.options && data.options.length > 0) {
             const optionsText = data.options
               .map((opt: any, index: number) => `${index + 1}. ${replaceVariables(opt.label, execution.variables)}`)
               .join('\n')
-            await sendWhatsAppMessage(instanceId, contactNumber, optionsText, 'service')
+            await sendWhatsAppMessage(instanceId, contactNumber, optionsText, 'service', 'webhook')
           }
         }
       })
@@ -587,7 +588,7 @@ async function executeNode(
       const transferMessage = data.message || 'Nossa equipe entrará em contato em breve. Aguarde um momento, por favor.'
       const contactKeyTransfer = `${instanceId}-${contactNumber}`
       await queueMessage(contactKeyTransfer, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, transferMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, transferMessage, 'service', 'webhook')
       })
 
       // Encerra o workflow atual
@@ -603,7 +604,7 @@ async function executeNode(
       const closeMessage = data.message || 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
       const contactKeyClose = `${instanceId}-${contactNumber}`
       await queueMessage(contactKeyClose, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service', 'webhook')
       })
 
       // Encerra o workflow atual
@@ -656,7 +657,7 @@ async function executeNode(
         // Envia a resposta gerada pela IA
         const aiContactKey = `${instanceId}-${contactNumber}`
         await queueMessage(aiContactKey, async () => {
-          await sendWhatsAppMessage(instanceId, contactNumber, finalResponse, 'service')
+          await sendWhatsAppMessage(instanceId, contactNumber, finalResponse, 'service', 'webhook')
         })
 
         log.debug('Resposta de IA gerada', { contactNumber })
@@ -667,7 +668,7 @@ async function executeNode(
         const errorMessage = 'Desculpe, ocorreu um erro ao processar sua mensagem. Nossa equipe foi notificada.'
         const errorContactKey = `${instanceId}-${contactNumber}`
         await queueMessage(errorContactKey, async () => {
-          await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+          await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service', 'webhook')
         })
       }
 
@@ -873,7 +874,8 @@ export async function processQuestionnaireResponse(
           instanceId,
           contactNumber,
           'Desculpe, não entendi sua resposta. Por favor, responda com o número ou texto da opção.',
-          'service'
+          'service',
+          'webhook'
         )
       })
     }
@@ -971,7 +973,7 @@ export async function processAppointmentConfirmation(
       const closeMessage = 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service', 'webhook')
       })
 
       // Limpa execução do workflow
@@ -989,7 +991,7 @@ export async function processAppointmentConfirmation(
       const cancelCloseMessage = 'Entendido! A conversa continuará ativa. Como posso ajudar?'
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, cancelCloseMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, cancelCloseMessage, 'service', 'webhook')
       })
 
       return true
@@ -1009,7 +1011,7 @@ export async function processAppointmentConfirmation(
 
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, confirmCloseMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, confirmCloseMessage, 'service', 'webhook')
       })
 
       // Armazena temporariamente que está aguardando confirmação de encerramento
@@ -1039,7 +1041,7 @@ export async function processAppointmentConfirmation(
       const closeMessage = 'Obrigado pelo contato! Esta conversa foi encerrada. Se precisar de mais alguma coisa, é só nos chamar novamente.'
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service', 'webhook')
       })
 
       // Limpa execução do workflow
@@ -1165,7 +1167,7 @@ export async function processAppointmentConfirmation(
             const infoMessage = `✅ Seu agendamento já foi confirmado com sucesso! Se precisar de mais alguma coisa, estou à disposição.`
             const contactKey = `${instanceId}-${contactNumber}`
             await queueMessage(contactKey, async () => {
-              await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service')
+              await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service', 'webhook')
             })
             return true
           }
@@ -1198,7 +1200,7 @@ export async function processAppointmentConfirmation(
         const infoMessage = `Não há agendamento pendente para confirmar. Se você acabou de confirmar um agendamento, ele já foi processado com sucesso! Se precisar de mais alguma coisa, estou à disposição.`
         const contactKey = `${instanceId}-${contactNumber}`
         await queueMessage(contactKey, async () => {
-          await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service')
+          await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service', 'webhook')
         })
         return true // Retorna true para evitar que a IA seja chamada e cause loop
       }
@@ -1421,7 +1423,7 @@ export async function processAppointmentConfirmation(
           const infoMessage = `✅ Seu agendamento já foi confirmado com sucesso! Se precisar de mais alguma coisa, estou à disposição.`
           const contactKey = `${instanceId}-${contactNumber}`
           await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service')
+            await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service', 'webhook')
           })
           return true
         }
@@ -1432,7 +1434,7 @@ export async function processAppointmentConfirmation(
       const infoMessage = `Não há agendamento pendente para confirmar no momento. Se você acabou de confirmar um agendamento, ele já foi processado. Se precisar de mais alguma coisa, estou à disposição.`
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, infoMessage, 'service', 'webhook')
       })
       return true
     }
@@ -1476,7 +1478,7 @@ export async function processAppointmentConfirmation(
       const errorMessage = `Não foi possível determinar a duração do serviço "${pendingAppointment.service}". Por favor, verifique se o serviço tem duração configurada.`
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service', 'webhook')
       })
       return true // Processou (com erro), não deve chamar IA
     }
@@ -1546,7 +1548,7 @@ export async function processAppointmentConfirmation(
 
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, confirmationMessage, 'service', 'webhook')
       })
       console.log(`✅ Confirmação processada e mensagem enviada - RETORNANDO TRUE`)
       return true // Processou confirmação, não deve chamar IA
@@ -1557,7 +1559,7 @@ export async function processAppointmentConfirmation(
       const errorMessage = `❌ Erro ao confirmar agendamento: ${result.error}. Por favor, tente novamente.`
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service', 'webhook')
       })
       console.log(`❌ Erro ao confirmar - RETORNANDO TRUE`)
       return true // Processou (mesmo com erro), não deve chamar IA
@@ -1632,20 +1634,20 @@ export async function processAppointmentConfirmation(
 
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service', 'webhook')
       })
       console.log(`✅ Cancelamento de agendamento confirmado processado`)
     } else if (cancelledPending) {
       const cancelMessage = `✅ Agendamento pendente cancelado. Se precisar de mais alguma coisa, estou à disposição!`
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service', 'webhook')
       })
     } else {
       const cancelMessage = `Não encontrei agendamentos para cancelar. Se precisar de mais alguma coisa, estou à disposição!`
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, cancelMessage, 'service', 'webhook')
       })
     }
 
@@ -1714,7 +1716,7 @@ export async function processAppointmentConfirmation(
     
     const contactKey = `${instanceId}-${contactNumber}`
     await queueMessage(contactKey, async () => {
-      await sendWhatsAppMessage(instanceId, contactNumber, updatedMessage, 'service')
+      await sendWhatsAppMessage(instanceId, contactNumber, updatedMessage, 'service', 'webhook')
     })
     
     return true // Processou mudança de horário, não deve chamar IA
@@ -1730,7 +1732,7 @@ export async function processAppointmentConfirmation(
 
   const contactKey = `${instanceId}-${contactNumber}`
   await queueMessage(contactKey, async () => {
-    await sendWhatsAppMessage(instanceId, contactNumber, reminderMessage, 'service')
+    await sendWhatsAppMessage(instanceId, contactNumber, reminderMessage, 'service', 'webhook')
   })
   console.log(`📅 Relembrando agendamento pendente - RETORNANDO TRUE`)
   return true // Relembrou, não deve chamar IA
@@ -2649,7 +2651,7 @@ export async function executeAIOnlyWorkflow(
           try {
             await queueMessage(contactKey, async () => {
               console.log(`📤 [queueMessage] Executando envio de imagem inicial...`)
-              const result = await sendWhatsAppImage(instanceId, contactNumber, imageToSend, messageToSend.trim())
+              const result = await sendWhatsAppImage(instanceId, contactNumber, imageToSend, messageToSend.trim(), 'webhook')
               console.log(`📤 [queueMessage] Resultado do envio de imagem:`, result)
             })
             console.log(`🖼️ ✅ Mensagem inicial com imagem enviada para ${contactNumber}`)
@@ -2664,7 +2666,7 @@ export async function executeAIOnlyWorkflow(
           try {
             await queueMessage(contactKey, async () => {
               console.log(`📤 [queueMessage] Executando envio de mensagem inicial (texto)...`)
-              const result = await sendWhatsAppMessage(instanceId, contactNumber, messageToSend.trim(), 'service')
+              const result = await sendWhatsAppMessage(instanceId, contactNumber, messageToSend.trim(), 'service', 'webhook')
               console.log(`📤 [queueMessage] Resultado do envio de texto:`, result)
             })
             console.log(`💬 ✅ Mensagem inicial enviada para ${contactNumber}`)
@@ -2680,12 +2682,12 @@ export async function executeAIOnlyWorkflow(
         if (imageToSend) {
           const { sendWhatsAppImage } = await import('./whatsapp-cloud-api')
           await queueMessage(contactKey, async () => {
-            await sendWhatsAppImage(instanceId, contactNumber, imageToSend, messageToSend.trim())
+            await sendWhatsAppImage(instanceId, contactNumber, imageToSend, messageToSend.trim(), 'webhook')
           })
           console.log(`🖼️ Mensagem inicial com imagem enviada para ${contactNumber}`)
         } else {
           await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, messageToSend.trim(), 'service')
+            await sendWhatsAppMessage(instanceId, contactNumber, messageToSend.trim(), 'service', 'webhook')
           })
           console.log(`💬 Mensagem inicial gerada automaticamente enviada para ${contactNumber}`)
         }
@@ -2772,7 +2774,7 @@ export async function executeAIOnlyWorkflow(
         
         // Envia o catálogo formatado em hierarquia
         await queueMessage(contactKey, async () => {
-          await sendWhatsAppMessage(instanceId, contactNumber, catalogResponse, 'service')
+          await sendWhatsAppMessage(instanceId, contactNumber, catalogResponse, 'service', 'webhook')
         })
         
         console.log(`📚 Catálogo enviado na primeira mensagem para ${contactNumber} (formato hierárquico)`)
@@ -4670,7 +4672,7 @@ export async function executeAIOnlyWorkflow(
           // Envia mensagem de encerramento
           const contactKey = `${instanceId}-${contactNumber}`
           await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service')
+            await sendWhatsAppMessage(instanceId, contactNumber, closeMessage, 'service', 'webhook')
           })
 
           // CRÍTICO: Limpa a execução do workflow após encerrar o chat
@@ -4963,7 +4965,7 @@ export async function executeAIOnlyWorkflow(
           // Envia mensagem com promoção
           const contactKey = `${instanceId}-${contactNumber}`
           await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, message, 'service')
+            await sendWhatsAppMessage(instanceId, contactNumber, message, 'service', 'webhook')
           })
 
           const promotion = {
@@ -6702,7 +6704,8 @@ export async function executeAIOnlyWorkflow(
                         instanceId,
                         contactNumber,
                         `⚠️ *Entrega não disponível*\n\nO endereço informado está a ${freightResult.distance!.toFixed(1)}km do estabelecimento, mas nossa área de entrega é limitada a ${maxDistance}km.\n\nPor favor, escolha outro endereço ou opte por retirada no local.`,
-                        'service'
+                        'service',
+                        'webhook'
                       );
                     });
                     return {
@@ -6918,7 +6921,7 @@ export async function executeAIOnlyWorkflow(
           // Envia mensagem de confirmação
           const contactKey = `${instanceId}-${contactNumber}`
           await queueMessage(contactKey, async () => {
-            await sendWhatsAppMessage(instanceId, contactNumber, message, 'service')
+            await sendWhatsAppMessage(instanceId, contactNumber, message, 'service', 'webhook')
           })
 
           return {
@@ -7282,7 +7285,7 @@ export async function executeAIOnlyWorkflow(
       console.log(`🛒 [executeAIOnlyWorkflow] Usando mensagem exata de view_cart em vez da resposta da IA`)
       const contactKey = `${instanceId}-${contactNumber}`
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, viewCartExactMessage!, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, viewCartExactMessage!, 'service', 'webhook')
       })
       return
     }
@@ -7305,7 +7308,7 @@ export async function executeAIOnlyWorkflow(
 
       // Envia mensagem de confirmação (em modo de teste, apenas salva no banco)
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, pendingAppointmentResponse!, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, pendingAppointmentResponse!, 'service', 'webhook')
       })
       console.log(`📅 Mensagem de confirmação de agendamento enviada`)
       return
@@ -7518,7 +7521,7 @@ export async function executeAIOnlyWorkflow(
       
       // Depois envia a resposta formatada
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, catalogResponse, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, catalogResponse, 'service', 'webhook')
       })
       
       console.log(`📋 [executeAIOnlyWorkflow] Resposta do catálogo enviada (formato hierárquico${requestedCategory ? `, filtrado por: ${requestedCategory}` : ''})`)
@@ -7530,7 +7533,7 @@ export async function executeAIOnlyWorkflow(
     // Envia a resposta gerada pela IA (em modo de teste, apenas salva no banco)
     const contactKey = `${instanceId}-${contactNumber}`
     await queueMessage(contactKey, async () => {
-      await sendWhatsAppMessage(instanceId, contactNumber, aiResponse, 'service')
+      await sendWhatsAppMessage(instanceId, contactNumber, aiResponse, 'service', 'webhook')
     })
 
     console.log(`🤖 Resposta de IA autônoma gerada para ${contactNumber}`)
@@ -7552,7 +7555,7 @@ export async function executeAIOnlyWorkflow(
     const contactKey = `${instanceId}-${contactNumber}`
     try {
       await queueMessage(contactKey, async () => {
-        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service')
+        await sendWhatsAppMessage(instanceId, contactNumber, errorMessage, 'service', 'webhook')
       })
     } catch (sendError) {
       console.error('Erro ao enviar mensagem de erro:', sendError)

@@ -7,12 +7,36 @@ import { log } from './logger'
 export type { WhatsAppMessage }
 
 // Flag global para modo de teste (não envia via WhatsApp, apenas salva no banco)
+// ⚠️ IMPORTANTE: Esta flag é usada apenas para testes locais e NÃO deve afetar mensagens reais do WhatsApp
 let testMode = false
-export function setTestMode(enabled: boolean) {
+let testModeContext: string | null = null // Contexto que ativou o modo de teste
+
+export function setTestMode(enabled: boolean, context?: string) {
   testMode = enabled
+  testModeContext = enabled ? (context || 'unknown') : null
+  if (enabled) {
+    log.debug('Modo de teste ATIVADO', { context: testModeContext })
+  } else {
+    log.debug('Modo de teste DESATIVADO', { context: testModeContext })
+  }
 }
+
 export function isTestMode() {
   return testMode
+}
+
+// Função para verificar se deve ignorar o modo de teste (para mensagens reais do WhatsApp)
+export function shouldIgnoreTestMode(source: 'webhook' | 'api' | 'test' = 'api'): boolean {
+  // Mensagens do webhook (WhatsApp real) SEMPRE ignoram o modo de teste
+  if (source === 'webhook') {
+    if (testMode) {
+      log.warn('Modo de teste está ativo, mas ignorando para mensagem do webhook (WhatsApp real)', {
+        testModeContext,
+      })
+    }
+    return true // Ignora o modo de teste para webhook
+  }
+  return false // Para outras fontes, respeita o modo de teste
 }
 
 // WhatsApp Cloud API Base URL
@@ -25,9 +49,40 @@ export async function sendWhatsAppInteractiveMessage(
   instanceId: string,
   to: string,
   message: string,
-  buttons: Array<{ id: string; title: string }>
+  buttons: Array<{ id: string; title: string }>,
+  source: 'webhook' | 'api' | 'test' = 'api'
 ): Promise<boolean> {
   try {
+    // ⚠️ CRÍTICO: Mensagens do webhook (WhatsApp real) SEMPRE ignoram o modo de teste
+    if (testMode && !shouldIgnoreTestMode(source)) {
+      log.debug('Modo de teste: salvando mensagem interativa no banco', { instanceId, to })
+      const cleanPhoneNumber = to.replace(/\D/g, '')
+      const formattedPhone = cleanPhoneNumber.startsWith('55')
+        ? cleanPhoneNumber
+        : `55${cleanPhoneNumber}`
+      
+      await prisma.message.create({
+        data: {
+          instanceId,
+          from: instanceId,
+          to: formattedPhone,
+          body: message,
+          messageId: `test-interactive-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          timestamp: new Date(),
+          isFromMe: true,
+          isGroup: false,
+          messageType: 'interactive',
+          interactiveData: JSON.stringify({
+            buttons: buttons.map(btn => ({
+              id: btn.id,
+              title: btn.title,
+            })),
+          }),
+        },
+      })
+      return true
+    }
+
     const instance = await prisma.whatsAppInstance.findUnique({
       where: { id: instanceId },
     })
@@ -144,11 +199,13 @@ export async function sendWhatsAppMessage(
   instanceId: string,
   to: string,
   message: string,
-  messageType: 'service' | 'utility' | 'marketing' | 'authentication' = 'service'
+  messageType: 'service' | 'utility' | 'marketing' | 'authentication' = 'service',
+  source: 'webhook' | 'api' | 'test' = 'api'
 ): Promise<boolean> {
   try {
     // MODO DE TESTE: Apenas salva no banco, não envia via WhatsApp
-    if (testMode) {
+    // ⚠️ CRÍTICO: Mensagens do webhook (WhatsApp real) SEMPRE ignoram o modo de teste
+    if (testMode && !shouldIgnoreTestMode(source)) {
       log.debug('Modo de teste: salvando mensagem no banco', { instanceId, to })
       const cleanPhoneNumber = to.replace(/\D/g, '')
       const formattedPhone = cleanPhoneNumber.startsWith('55')
@@ -324,11 +381,13 @@ export async function sendWhatsAppImage(
   instanceId: string,
   to: string,
   imageUrl: string,
-  caption?: string
+  caption?: string,
+  source: 'webhook' | 'api' | 'test' = 'api'
 ): Promise<boolean> {
   try {
     // MODO DE TESTE: Apenas salva no banco, não envia via WhatsApp
-    if (testMode) {
+    // ⚠️ CRÍTICO: Mensagens do webhook (WhatsApp real) SEMPRE ignoram o modo de teste
+    if (testMode && !shouldIgnoreTestMode(source)) {
       log.debug('Modo de teste: salvando imagem no banco', { instanceId, to })
       const cleanPhoneNumber = to.replace(/\D/g, '')
       const formattedPhone = cleanPhoneNumber.startsWith('55')

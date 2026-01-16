@@ -1,25 +1,25 @@
-# AutoFlow - Automação WhatsApp
+# AutoZap - Sistema de Automação WhatsApp
 
-Sistema de automação de conversas para WhatsApp com Editor Visual de Fluxos, Next.js, TypeScript, Prisma e Neon.
+Sistema completo de automação e gestão de mensagens via WhatsApp Business API.
 
-## 🚀 Tecnologias
+## 🚀 Funcionalidades Principais
 
-- **Next.js 14** - Framework React
-- **TypeScript** - Tipagem estática
-- **Prisma** - ORM para banco de dados
-- **Neon** - PostgreSQL Serverless
-- **Tailwind CSS** - Estilização
-- **NextAuth.js** - Autenticação
-- **WhatsApp Cloud API** - API oficial do WhatsApp
-- **ReactFlow** - Editor visual de fluxos
+- **Gestão de Instâncias WhatsApp**: Conecte múltiplas contas WhatsApp Business
+- **Workflows Automatizados**: Crie fluxos de conversa com IA ou questionários
+- **Chat em Tempo Real**: Interface para conversar com clientes
+- **Agendamentos**: Sistema completo de agendamento de serviços
+- **Carrinho de Compras**: Integração de e-commerce via WhatsApp
+- **IA Integrada**: Respostas automáticas inteligentes com OpenAI
 
 ## 📋 Pré-requisitos
 
-- Node.js 18+ instalado
-- Conta no Neon (PostgreSQL)
-- Conta do WhatsApp para testes
+- Node.js 18+ 
+- PostgreSQL
+- Conta Meta/Facebook Developer
+- App WhatsApp Business configurado
+- OpenAI API Key (para funcionalidades de IA)
 
-## 🛠️ Instalação
+## 🔧 Instalação
 
 1. Clone o repositório
 2. Instale as dependências:
@@ -27,60 +27,145 @@ Sistema de automação de conversas para WhatsApp com Editor Visual de Fluxos, N
 npm install
 ```
 
-3. Configure as variáveis de ambiente:
-```bash
-cp .env.example .env
+3. Configure as variáveis de ambiente (`.env`):
+```env
+DATABASE_URL="postgresql://..."
+NEXTAUTH_SECRET="..."
+NEXTAUTH_URL="http://localhost:3000"
+FACEBOOK_CLIENT_ID="..."
+FACEBOOK_CLIENT_SECRET="..."
+OPENAI_API_KEY="..."
+CLOUDINARY_URL="..."
+WEBHOOK_VERIFY_TOKEN="..."
 ```
 
-4. Edite o arquivo `.env` e adicione:
-   - `DATABASE_URL` - URL de conexão do Neon
-   - `NEXTAUTH_SECRET` - Gere uma chave secreta (use: `openssl rand -base64 32`)
-   - `NEXTAUTH_URL` - URL da aplicação (http://localhost:3000 para desenvolvimento)
-
-5. Configure o banco de dados:
+4. Execute as migrações:
 ```bash
-npm run db:generate
-npm run db:push
+npx prisma migrate dev
 ```
 
-6. Inicie o servidor de desenvolvimento:
+5. Inicie o servidor:
 ```bash
 npm run dev
 ```
 
-## 📱 Como usar
+## 🔗 Configuração WhatsApp Business
 
-1. Acesse `http://localhost:3000`
-2. Crie uma conta ou faça login
-3. Conecte sua instância do WhatsApp
-4. Configure regras de automação
-5. O sistema responderá automaticamente às mensagens recebidas
+### 1. Criar App no Meta for Developers
 
-## 🔐 Credenciais Necessárias
+1. Acesse https://developers.facebook.com
+2. Crie um novo app do tipo "Business"
+3. Adicione o produto "WhatsApp"
+4. Configure as permissões necessárias
 
-Para usar o sistema, você precisará fornecer:
+### 2. Configurar Webhook
 
-1. **DATABASE_URL do Neon**: URL de conexão do seu banco PostgreSQL
-2. **NEXTAUTH_SECRET**: Chave secreta para autenticação (pode gerar uma)
+1. No app, vá em WhatsApp → Configuração
+2. Configure a URL do webhook: `https://seu-dominio.com/api/whatsapp/webhook`
+3. Configure o token de verificação (use `WEBHOOK_VERIFY_TOKEN`)
+4. Marque os eventos: `messages` (obrigatório)
 
-## 🚀 Deploy (Produção)
+### 3. Conectar Instância
 
-Veja o arquivo `GUIA_DEPLOY.md` para instruções completas de deploy na Vercel.
+1. No dashboard, vá em "Instâncias WhatsApp"
+2. Clique em "Conectar"
+3. Autorize o app no Facebook
+4. A instância será configurada automaticamente
 
-### Resumo Rápido:
+## 🧪 Testes
 
-1. Crie um repositório no GitHub
-2. Faça push do código
-3. Importe na Vercel
-4. Configure as variáveis de ambiente
-5. Deploy automático! 🎉
+### Teste Rápido - Mensagens
 
-## ⚠️ Avisos Importantes
+1. **Verificar Status da Instância**
+   - Dashboard → Instâncias WhatsApp
+   - Status deve estar "Conectado" e ativa
 
-- Este projeto usa WhatsApp Cloud API oficial
-- Use apenas para testes e desenvolvimento pessoal
-- Para uso em produção com múltiplos clientes, verifique os limites da API
-- Mensagens dentro da janela de 24h são gratuitas (tipo "Service")
+2. **Enviar Mensagem pelo Site**
+   - Vá em Chat/Conversas
+   - Envie uma mensagem de teste
+   - Verifique se foi entregue no WhatsApp
 
+3. **Receber e Responder pelo WhatsApp**
+   - Envie uma mensagem do WhatsApp para o número conectado
+   - Use palavras como "oi", "olá" ou o trigger do workflow
+   - Aguarde resposta automática
 
+### Verificar Logs
 
+**Logs de Sucesso:**
+```
+✅ Nova mensagem recebida { instanceId: '...', from: '...' }
+✅ Mensagem enviada com sucesso { instanceId: '...', to: '...' }
+```
+
+**Logs de Problema:**
+```
+❌ Instância não está conectada
+❌ Erro ao enviar mensagem WhatsApp
+```
+
+## 🐛 Troubleshooting
+
+### Mensagens não são enviadas
+
+- Verifique se a instância está conectada (`status: 'connected'`)
+- Verifique se a instância está ativa (`active: true`)
+- Verifique se o `phoneId` está configurado
+- Verifique se o `accessToken` está válido
+- Verifique se o limite mensal não foi excedido
+
+### Mensagens recebidas mas sem resposta automática
+
+- Verifique se há workflows ativos configurados
+- Verifique se o trigger corresponde à mensagem recebida
+- Verifique se a conversa não está encerrada (`status: 'closed'`)
+- Verifique os logs para erros no `executeWorkflows`
+
+### Webhook não recebe mensagens
+
+- Verifique se os eventos estão marcados no Meta (`messages`)
+- Verifique se o webhook está verificado
+- Verifique se a URL do webhook está correta
+- Verifique os logs do servidor
+
+## 📁 Estrutura do Projeto
+
+```
+├── app/                    # Next.js App Router
+│   ├── api/               # API Routes
+│   │   ├── whatsapp/     # Endpoints WhatsApp
+│   │   ├── chat/         # Endpoints de chat
+│   │   └── ...
+│   └── dashboard/        # Páginas do dashboard
+├── components/            # Componentes React
+├── lib/                  # Bibliotecas e utilitários
+│   ├── whatsapp-cloud-api.ts  # API WhatsApp
+│   ├── workflow-executor.ts   # Executor de workflows
+│   └── ...
+├── prisma/               # Schema e migrações
+└── public/               # Arquivos estáticos
+```
+
+## 🔐 Segurança
+
+- Tokens e senhas nunca devem ser commitados
+- Use variáveis de ambiente para dados sensíveis
+- Valide todas as requisições do webhook
+- Implemente rate limiting onde necessário
+
+## 📝 Notas Importantes
+
+- **Modo de Teste**: O sistema tem proteção para que o modo de teste não interfira com mensagens reais do WhatsApp
+- **Limites Mensais**: Cada instância tem um limite configurável de mensagens por mês
+- **Status de Conversa**: Conversas podem ser encerradas automaticamente ou manualmente
+
+## 🆘 Suporte
+
+Para problemas ou dúvidas:
+1. Verifique os logs do servidor
+2. Verifique a configuração da instância
+3. Verifique os logs do Meta for Developers
+
+---
+
+**Última atualização**: Sistema corrigido para garantir que mensagens do WhatsApp sempre sejam enviadas, mesmo com modo de teste ativo.
