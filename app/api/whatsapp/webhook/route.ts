@@ -321,6 +321,14 @@ export async function POST(request: NextRequest) {
       }
 
 
+      console.log('📨 Chamando processIncomingMessage', {
+        instanceId: instance.id,
+        from: msg.from,
+        messageBody: messageBody.substring(0, 50),
+        messageType,
+      })
+
+      try {
       await processIncomingMessage(instance.id, {
         from: msg.from,
         to: value.metadata?.display_phone_number || '',
@@ -332,6 +340,16 @@ export async function POST(request: NextRequest) {
         mediaUrl: mediaUrl || undefined, // URL da mídia salva no Cloudinary (se houver)
         interactiveData: interactiveData || undefined, // Dados interativos (botões, etc)
       })
+        console.log('✅ processIncomingMessage concluído com sucesso')
+      } catch (error) {
+        console.error('❌ ERRO ao processar mensagem:', error)
+        log.error('Erro ao processar mensagem do webhook', error, {
+          instanceId: instance.id,
+          from: msg.from,
+          messageId: msg.id,
+        })
+        // Continua processando outras mensagens mesmo se uma falhar
+      }
     }
 
     // Processa status de mensagens (entregue, lida, etc.)

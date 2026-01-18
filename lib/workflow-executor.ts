@@ -145,6 +145,12 @@ export async function executeWorkflows(
   message: WhatsAppMessage
 ): Promise<void> {
   try {
+    console.log('🔄 executeWorkflows chamado', {
+      instanceId,
+      from: message.from,
+      body: message.body.substring(0, 50),
+    })
+    
     const contactNumber = message.from
     const messageBody = message.body.toLowerCase().trim()
 
@@ -245,8 +251,11 @@ export async function executeWorkflows(
 
     // Para fluxos IA-only: verifica se há algum ativo e responde sempre
     const aiOnlyWorkflows = workflows.filter(w => w.isAIOnly && w.isActive)
+    console.log('🤖 Workflows IA-only encontrados:', aiOnlyWorkflows.length)
+    
     if (aiOnlyWorkflows.length > 0) {
       const workflow = aiOnlyWorkflows[0] // Usa o primeiro workflow IA-only encontrado
+      console.log('🤖 Usando workflow IA-only:', workflow.name, 'trigger:', workflow.trigger)
 
       // Verifica se já houve interação anterior com este workflow
       const recentMessages = await prisma.message.findMany({
@@ -265,7 +274,22 @@ export async function executeWorkflows(
       const hasRecentInteraction = recentMessages.length > 0
       const matchesTrigger = messageBody.includes(workflow.trigger.toLowerCase().trim())
 
+      console.log('🤖 Verificando condições:', {
+        hasRecentInteraction,
+        matchesTrigger,
+        recentMessagesCount: recentMessages.length,
+        messageBody,
+        trigger: workflow.trigger.toLowerCase().trim(),
+      })
+
       if (hasRecentInteraction || matchesTrigger) {
+        console.log('✅ Workflow IA-only será executado', {
+          workflowName: workflow.name,
+          contactNumber,
+          hasRecentInteraction,
+          matchesTrigger,
+        })
+
         log.debug('Workflow IA-only respondendo', {
           workflowName: workflow.name,
           contactNumber,
@@ -283,16 +307,28 @@ export async function executeWorkflows(
         }
         workflowExecutions.set(executionKey, execution)
 
+        console.log('🚀 Executando executeAIOnlyWorkflow...')
         await executeAIOnlyWorkflow(workflow, instanceId, contactNumber, messageBody, message.contactName)
+        console.log('✅ executeAIOnlyWorkflow concluído')
         return
+      } else {
+        console.log('⏭️ Workflow IA-only não será executado (sem interação recente e trigger não corresponde)')
       }
     }
 
     // Procura workflow que corresponde ao trigger
+    console.log('🔍 Procurando workflows por trigger...', {
+      totalWorkflows: workflows.length,
+      messageBody,
+    })
+    
     for (const workflow of workflows) {
       const trigger = workflow.trigger.toLowerCase().trim()
+      console.log('🔍 Verificando workflow:', workflow.name, 'trigger:', trigger)
 
       if (messageBody.includes(trigger)) {
+        console.log('✅ Trigger encontrado! Executando workflow:', workflow.name)
+        
         log.event('workflow_triggered', {
           workflowId: workflow.id,
           workflowName: workflow.name,

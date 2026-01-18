@@ -18,7 +18,7 @@ export function setTestMode(enabled: boolean, context?: string) {
     log.debug('Modo de teste ATIVADO', { context: testModeContext })
   } else {
     log.debug('Modo de teste DESATIVADO', { context: testModeContext })
-  }
+}
 }
 
 export function isTestMode() {
