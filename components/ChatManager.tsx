@@ -707,8 +707,9 @@ export default function ChatManager() {
                     {selectedTemplate.variables.map((v) => (
                       <label key={v.key} className="text-xs text-gray-700">
                         <div className="mb-1">
-                          {{}}{/* manter JSX feliz */}
-                          {`{{${v.key}}}`} — {v.label}
+                          {'{{'}
+                          {v.key}
+                          {'}}'} — {v.label}
                         </div>
                         <input
                           type="text"
