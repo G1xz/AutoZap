@@ -181,13 +181,20 @@ export default function ChatManager() {
 
     setSending(true)
     try {
+      // Substitui placeholders automaticamente na hora do envio (ex: {{1}} = nome do contato)
+      const contactDisplayName =
+        selectedConversation.contactName ||
+        formatPhoneNumber(selectedConversation.contactNumber)
+
+      const messageToSend = newMessage.replaceAll('{{1}}', contactDisplayName)
+
       const response = await fetch('/api/chat/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           instanceId: selectedConversation.instanceId,
           to: selectedConversation.contactNumber,
-          message: newMessage,
+          message: messageToSend,
         }),
       })
 
@@ -216,7 +223,8 @@ export default function ChatManager() {
       selectedConversation.contactName ||
       formatPhoneNumber(selectedConversation.contactNumber)
 
-    const text = `Hello ${nome}, this is a test message sent from our application using the WhatsApp API.`
+    // Mantém o placeholder {{1}} no campo; substituição acontece no envio
+    const text = `Hello {{1}}, this is a test message sent from our application using the WhatsApp API.`
     setNewMessage(text)
   }
 
