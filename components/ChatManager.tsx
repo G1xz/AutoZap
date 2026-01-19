@@ -30,6 +30,13 @@ interface Message {
 
 type ChatTab = 'active' | 'waiting_human' | 'closed'
 
+type MessageTemplate = {
+  id: string
+  name: string
+  body: string
+  variables: Array<{ key: string; label: string; placeholder?: string }>
+}
+
 export default function ChatManager() {
   const { data: session } = useSession()
   const { toast } = useToast()
@@ -43,6 +50,53 @@ export default function ChatManager() {
   const [sending, setSending] = useState(false)
   const [showSidebar, setShowSidebar] = useState(true)
   const previousConversationsRef = useRef<Conversation[]>([])
+
+  // Templates (MVP): prontos e funcionais dentro do chat, sem depender da Meta
+  const templates: MessageTemplate[] = [
+    {
+      id: 'welcome_snack',
+      name: 'Boas-vindas (Lanchonete)',
+      body:
+        'Olá {{1}}!\\n\\nBem-vindo(a) à {{2}}.\\n\\nQuer ver o cardápio? Responda com *menu* ou me diga o que você está com vontade de comer.\\n\\nHoje estamos abertos de {{3}} às {{4}}.',
+      variables: [
+        { key: '1', label: 'Nome do cliente', placeholder: 'Ex: João' },
+        { key: '2', label: 'Nome da lanchonete', placeholder: 'Ex: Lanchonete do Zé' },
+        { key: '3', label: 'Abertura', placeholder: 'Ex: 10h' },
+        { key: '4', label: 'Fechamento', placeholder: 'Ex: 22h' },
+      ],
+    },
+    {
+      id: 'order_confirm',
+      name: 'Confirmação de pedido',
+      body:
+        'Olá {{1}}! ✅\\n\\nSeu pedido foi confirmado.\\n\\n📦 Pedido #{{2}}\\n{{3}}\\n\\n💰 Total: R$ {{4}}\\n⏰ Tempo estimado: {{5}} min\\n\\n{{6}}\\n\\nObrigado pela preferência!',
+      variables: [
+        { key: '1', label: 'Nome do cliente', placeholder: 'Ex: Maria' },
+        { key: '2', label: 'Número do pedido', placeholder: 'Ex: 1234' },
+        { key: '3', label: 'Itens do pedido', placeholder: 'Ex: 1x X-Burger (R$ 25,00)\\n1x Refri (R$ 6,00)' },
+        { key: '4', label: 'Total', placeholder: 'Ex: 31,00' },
+        { key: '5', label: 'Tempo estimado (min)', placeholder: 'Ex: 35' },
+        { key: '6', label: 'Pagamento / retirada', placeholder: 'Ex: Pagamento via Pix. Chave: ...' },
+      ],
+    },
+    {
+      id: 'payment_pix',
+      name: 'Pagamento (Pix)',
+      body:
+        'Olá {{1}}! 💳\\n\\nPara finalizar, o total ficou em R$ {{2}}.\\n\\nChave Pix: {{3}}\\nNome: {{4}}\\n\\nDepois do pagamento, pode mandar o comprovante por aqui.',
+      variables: [
+        { key: '1', label: 'Nome do cliente', placeholder: 'Ex: João' },
+        { key: '2', label: 'Total', placeholder: 'Ex: 58,90' },
+        { key: '3', label: 'Chave Pix', placeholder: 'Ex: email@exemplo.com' },
+        { key: '4', label: 'Nome do recebedor', placeholder: 'Ex: Lanchonete do Zé LTDA' },
+      ],
+    },
+  ]
+
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false)
+  const [templateQuery, setTemplateQuery] = useState('')
+  const [selectedTemplate, setSelectedTemplate] = useState<MessageTemplate | null>(null)
+  const [templateVars, setTemplateVars] = useState<Record<string, string>>({})
 
   // Notificação sonora quando conversa vai para "aguardando resposta"
   useEffect(() => {
@@ -207,6 +261,24 @@ export default function ChatManager() {
     } finally {
       setSending(false)
     }
+  }
+
+  const openTemplateModal = () => {
+    setTemplateQuery('')
+    setSelectedTemplate(null)
+    setTemplateVars({})
+    setIsTemplateModalOpen(true)
+  }
+
+  const applyTemplate = () => {
+    if (!selectedTemplate) return
+    let text = selectedTemplate.body
+    for (const v of selectedTemplate.variables) {
+      const value = (templateVars[v.key] || '').trim()
+      text = text.replaceAll(`{{${v.key}}}`, value)
+    }
+    setNewMessage(text)
+    setIsTemplateModalOpen(false)
   }
 
   const formatTime = (dateString: string) => {
@@ -530,6 +602,15 @@ export default function ChatManager() {
                 </div>
               ) : (
               <div className="flex gap-1.5 sm:gap-2">
+                <button
+                  type="button"
+                  onClick={openTemplateModal}
+                  disabled={sending}
+                  className="px-3 sm:px-4 py-1.5 sm:py-2 text-sm sm:text-base border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  title="Inserir template"
+                >
+                  Templates
+                </button>
                 <input
                   type="text"
                   value={newMessage}
@@ -562,6 +643,108 @@ export default function ChatManager() {
         )}
       </div>
       <ConfirmDialog />
+
+      {/* Modal simples de templates */}
+      {isTemplateModalOpen && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-xl rounded-lg bg-white border border-gray-200 shadow-lg">
+            <div className="p-4 border-b border-gray-200 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="font-semibold text-gray-900">Templates</h3>
+                <p className="text-xs text-gray-500 truncate">
+                  Selecione um template e preencha as variáveis para inserir no chat.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsTemplateModalOpen(false)}
+                className="px-3 py-1.5 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+              >
+                Fechar
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3">
+              <input
+                type="text"
+                value={templateQuery}
+                onChange={(e) => setTemplateQuery(e.target.value)}
+                placeholder="Buscar template..."
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-autozap-primary focus:border-transparent"
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {templates
+                  .filter((t) => t.name.toLowerCase().includes(templateQuery.toLowerCase().trim()))
+                  .map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedTemplate(t)
+                        setTemplateVars({})
+                      }}
+                      className={`text-left p-3 rounded-md border transition-colors ${
+                        selectedTemplate?.id === t.id
+                          ? 'border-autozap-primary bg-autozap-primary/5'
+                          : 'border-gray-200 hover:bg-gray-50'
+                      }`}
+                    >
+                      <div className="font-medium text-sm text-gray-900">{t.name}</div>
+                      <div className="text-xs text-gray-500 mt-1 line-clamp-2">
+                        {t.body.replaceAll('\\n', ' ').slice(0, 120)}
+                      </div>
+                    </button>
+                  ))}
+              </div>
+
+              {selectedTemplate && (
+                <div className="pt-2 border-t border-gray-200 space-y-2">
+                  <div className="text-sm font-semibold text-gray-900">
+                    Preencher variáveis ({selectedTemplate.name})
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {selectedTemplate.variables.map((v) => (
+                      <label key={v.key} className="text-xs text-gray-700">
+                        <div className="mb-1">
+                          {{}}{/* manter JSX feliz */}
+                          {`{{${v.key}}}`} — {v.label}
+                        </div>
+                        <input
+                          type="text"
+                          value={templateVars[v.key] || ''}
+                          onChange={(e) =>
+                            setTemplateVars((prev) => ({ ...prev, [v.key]: e.target.value }))
+                          }
+                          placeholder={v.placeholder}
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md"
+                        />
+                      </label>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center justify-end gap-2 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setIsTemplateModalOpen(false)}
+                      className="px-4 py-2 text-sm border border-gray-300 rounded-md hover:bg-gray-50"
+                    >
+                      Cancelar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={applyTemplate}
+                      className="px-4 py-2 text-sm bg-autozap-primary text-white rounded-md hover:bg-autozap-light"
+                    >
+                      Inserir no chat
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
