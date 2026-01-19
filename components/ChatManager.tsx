@@ -209,20 +209,14 @@ export default function ChatManager() {
     }
   }
 
-  // Insere automaticamente um template de saudação com bom dia/tarde/noite + nome
+  // Insere automaticamente um template simples com o nome do contato
   const insertAutoGreeting = () => {
     if (!selectedConversation) return
-    const now = new Date()
-    const hour = now.getHours()
-    let saudacao = 'Boa noite'
-    if (hour < 12) saudacao = 'Bom dia'
-    else if (hour < 18) saudacao = 'Boa tarde'
-
     const nome =
       selectedConversation.contactName ||
       formatPhoneNumber(selectedConversation.contactNumber)
 
-    const text = `${saudacao}, ${nome}! Tudo bem?`
+    const text = `Hello ${nome}, this is a test message sent from our application using the WhatsApp API.`
     setNewMessage(text)
   }
 
@@ -552,9 +546,9 @@ export default function ChatManager() {
                   onClick={insertAutoGreeting}
                   disabled={sending || !selectedConversation}
                   className="px-3 sm:px-4 py-1.5 sm:py-2 text-xs sm:text-sm border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  title="Inserir saudação automática"
+                  title="Inserir mensagem de teste"
                 >
-                  Saudação
+                  Template
                 </button>
                 <input
                   type="text"
